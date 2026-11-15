@@ -1,212 +1,56 @@
-//! Serializes an `Ast` to ESTree as JSON text, and maps its positions to what JavaScript counts.
+//! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, CommentRow, List, NodeId, NodeKind, Span, Value};
-use crate::handed::Handed;
+use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
+use crate::engine;
+use crate::host::{self, Grammar};
 use crate::interner::StrId;
-use crate::layout::Ty;
+use crate::json::Json;
+use crate::layout::{Ty, tag};
 use crate::parser::Entry;
-use crate::recipe::{Op, Slot};
+use crate::positions::{Cursor, Positions};
+use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
-use std::fmt::Write;
 
-/// JSON text.
-pub struct Json {
-	out: String,
-	/// Whether the next entry of the open container is its first.
-	first: bool,
-	/// The open containers, `true` for a list.
-	stack: Vec<bool>,
+/// One entry at a byte offset, as JSON.
+pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
+	assert!(
+		source.is_char_boundary(offset as usize),
+		"offset {offset} is not a character boundary"
+	);
+	written(source, entry, offset, options, None)
 }
 
-impl Default for Json {
-	fn default() -> Self {
-		Json {
-			out: String::new(),
-			first: true,
-			stack: Vec::new(),
-		}
-	}
+/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
+pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
+	let grammar = engine::grammar(grammar).unwrap_or_else(|why| panic!("{why}"));
+	written(source, Entry::Program, 0, options, engine::grammar_at(grammar))
 }
 
-impl Json {
-	pub fn finish(self) -> String {
-		self.out
-	}
-
-	fn sep(&mut self) {
-		if !self.first {
-			self.out.push(',');
-		}
-		self.first = false;
-	}
-
-	fn open(&mut self, list: bool) {
-		self.sep();
-		self.out.push(if list { '[' } else { '{' });
-		self.stack.push(list);
-		self.first = true;
-	}
-}
-
-impl Json {
-	pub(crate) fn ints(&mut self, values: &[u32]) {
-		self.list();
-		for &value in values {
-			self.int(value);
-		}
-		self.end();
-	}
-
-	pub(crate) fn begin(&mut self, ty: &str) {
-		self.open(false);
-		self.out.push_str("\"type\":\"");
-		self.out.push_str(ty);
-		self.out.push('"');
-		self.first = false;
-	}
-
-	pub(crate) fn escaped_begin(&mut self, ty: &str) {
-		self.open(false);
-		self.out.push_str("\"type\":");
-		write_json_string(&mut self.out, ty);
-		self.first = false;
-	}
-
-	pub(crate) fn object(&mut self) {
-		self.open(false);
-	}
-
-	pub(crate) fn list(&mut self) {
-		self.open(true);
-	}
-
-	pub(crate) fn end(&mut self) {
-		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
-		self.first = false;
-	}
-
-	pub(crate) fn key(&mut self, key: &str) {
-		self.sep();
-		self.out.push('"');
-		self.out.push_str(key);
-		self.out.push_str("\":");
-		self.first = true;
-	}
-
-	// escaping every key and type made a JSON answer 13% slower, so only a grammar's are escaped
-	pub(crate) fn escaped_key(&mut self, key: &str) {
-		self.sep();
-		write_json_string(&mut self.out, key);
-		self.out.push(':');
-		self.first = true;
-	}
-
-	pub(crate) fn int(&mut self, value: u32) {
-		self.sep();
-		push_int(&mut self.out, value);
-	}
-
-	pub(crate) fn float(&mut self, value: f64) {
-		self.sep();
-		write_number(&mut self.out, value);
-	}
-
-	pub(crate) fn bool(&mut self, value: bool) {
-		self.sep();
-		self.out.push_str(if value { "true" } else { "false" });
-	}
-
-	pub(crate) fn null(&mut self) {
-		self.sep();
-		self.out.push_str("null");
-	}
-
-	pub(crate) fn text(&mut self, value: &str) {
-		self.sep();
-		write_json_string(&mut self.out, value);
-	}
-
-	/// A string with lone surrogates at `marks`, as the interner keeps them: each written as
-	/// the escape JSON has for it.
-	pub(crate) fn marked(&mut self, value: &str, marks: &[crate::interner::Surrogate]) {
-		if marks.is_empty() {
-			return self.text(value);
-		}
-		self.sep();
-		self.out.push('"');
-		let mut marks = marks.iter();
-		let mut next = marks.next();
-		let mut units = 0u32;
-		let mut from = 0usize;
-		for (i, c) in value.char_indices() {
-			if let Some(mark) = next
-				&& mark.at == units
-			{
-				escape_json(&mut self.out, &value[from..i]);
-				write!(self.out, "\\u{:04x}", mark.unit).unwrap();
-				from = i + c.len_utf8();
-				next = marks.next();
-			}
-			units += c.len_utf16() as u32;
-		}
-		escape_json(&mut self.out, &value[from..]);
-		self.out.push('"');
-	}
-
-	// the two entries every node has, written in one piece: a measurable share of the text
-	fn span(&mut self, start: u32, end: u32) {
-		self.sep();
-		self.out.push_str("\"start\":");
-		push_int(&mut self.out, start);
-		self.out.push_str(",\"end\":");
-		push_int(&mut self.out, end);
-	}
-}
-
-/// The answer's words, read in place by a front end that takes the allocation over.
-pub type Words = crate::handed::Handed<u32>;
-
-/// Serializes an answer as JSON: the roots as `node`, one node or the patterns of a parameter
-/// list, null when the parse failed, then `end` and what the options add.
-pub fn answer(
-	ast: &Ast,
-	entry: Entry,
-	roots: Option<List>,
-	end: u32,
-	source: &str,
-	positions: &Positions,
-	options: Options,
-) -> String {
-	let mut w = Writer::new(ast, source, positions);
-	w.options = options;
-	w.failed = roots.is_none();
-	w.json.object();
-	match roots {
-		None => {
-			w.key("node");
-			w.json.null();
-		}
-		Some(roots) if entry == Entry::Params => w.list("node", roots),
-		Some(roots) => w.field("node", ast.list(roots)[0].unwrap()),
-	}
-	w.key("end");
-	let end = w.positions.offset(&mut w.cursor, end);
-	w.json.int(end);
-	w.trailers();
-	w.json.end();
-	w.json.finish()
+fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: Option<&Grammar>) -> String {
+	let positions = Positions::new(source);
+	engine::read(
+		source,
+		options,
+		entry,
+		offset,
+		"",
+		grammar,
+		|ast, roots, end, options, _| {
+			let names = grammar.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
+			Writer::new(ast, source, &positions, names, options).answer(entry, roots, end)
+		},
+	)
 }
 
 pub struct Writer<'a> {
 	ast: &'a Ast,
 	source: &'a str,
+	names: &'a [&'static str],
 	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
-	pub(crate) options: Options,
-	/// The parse failed: `node` is null and `errors` holds the one error, nothing else is listed.
-	pub(crate) failed: bool,
+	options: Options,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -215,177 +59,47 @@ pub struct Writer<'a> {
 	adopted: Vec<NodeId>,
 }
 
-/// Maps byte offsets to UTF-16 offsets, the positions JavaScript counts, and UTF-16 offsets back
-/// to bytes. Built once per parse.
-pub struct Positions {
-	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
-	gaps: Vec<(u32, u32)>,
-	len: u32,
-}
-
-/// Where the last node's start landed: starts come in source order, and a node's end follows
-/// its start, so each lookup tries a few entries on from its hint before a binary search.
-#[derive(Default)]
-pub(crate) struct Cursor {
-	gap: usize,
-}
-
-impl Positions {
-	pub fn new(source: &str) -> Self {
-		let bytes = source.as_bytes();
-		let mut gaps = Vec::new();
-		let mut gap = 0u32;
-		let mut i = if bytes.is_ascii() { bytes.len() } else { 0 };
-		while i < bytes.len() {
-			i = crate::lexer::scan::find(bytes, i, [], true);
-			let Some(&b) = bytes.get(i) else { break };
-			let len = if b >= 0xf0 {
-				4
-			} else if b >= 0xe0 {
-				3
-			} else {
-				2
-			};
-			i += len;
-			gap += len as u32 - if len == 4 { 2 } else { 1 };
-			gaps.push((i as u32, gap));
-		}
-		Self {
-			gaps,
-			len: source.len() as u32,
-		}
-	}
-
-	/// The byte offset of a UTF-16 offset, or why there is none; a position inside a surrogate
-	/// pair maps to the byte after the character's first, which is not a character boundary.
-	pub fn byte_offset(&self, utf16: f64) -> Result<u32, String> {
-		if !(utf16 >= 0.0 && utf16.fract() == 0.0 && utf16 <= u32::MAX as f64) {
-			return Err(format!("offset {utf16} is not a valid position"));
-		}
-		let target = utf16 as u32;
-		let total_gap = self.gaps.last().map_or(0, |g| g.1);
-		if target > self.len - total_gap {
-			return Err(format!("offset {target} is past the end of the source"));
-		}
-		let i = self.gaps.partition_point(|g| g.0 - g.1 <= target);
-		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
-	}
-
-	/// The UTF-16 offset each line of `source` starts at, the first line's 0: a line ends at
-	/// `\n`, at `\r` not before `\n`, and at U+2028 and U+2029.
-	fn lines<'a>(&'a self, source: &'a str) -> impl Iterator<Item = u32> + 'a {
-		let bytes = source.as_bytes();
-		let mut cursor = Cursor::default();
-		let mut next = Some(0);
-		std::iter::from_fn(move || {
-			let start = next?;
-			let end = start + crate::lexer::scan::line_end(&bytes[start..]);
-			next = bytes.get(end).map(|&b| {
-				end + match b {
-					b'\r' if bytes.get(end + 1) == Some(&b'\n') => 2,
-					b'\n' | b'\r' => 1,
-					_ => 3,
-				}
-			});
-			Some(self.offset(&mut cursor, start as u32))
-		})
-	}
-
-	/// Every node's span as UTF-16 offsets into `spans`, when the source has gaps.
-	pub fn map_nodes(&self, nodes: &[crate::ast::Node], spans: &mut Handed<Span>) {
-		spans.clear();
-		if self.gaps.is_empty() {
-			return;
-		}
-		spans.reserve(nodes.len());
-		let mut cursor = Cursor::default();
-		for node in nodes {
-			let (start, gap) = self.offset_from(cursor.gap, node.start);
-			cursor.gap = gap;
-			let (end, _) = self.offset_from(gap, node.end);
-			spans.push(Span { start, end });
-		}
-	}
-
-	/// Where each error is, as JavaScript counts: `pos`, `end`, and the line and column of `pos`,
-	/// from the lines up to the last of them.
-	pub fn of_errors(&self, source: &str, errors: &[crate::SyntaxError]) -> Vec<[u32; 4]> {
-		let Some(last) = errors.iter().map(|e| e.pos.max(e.end)).max() else {
-			return Vec::new();
-		};
-		let upto = source.ceil_char_boundary(last as usize);
-		let lines: Vec<u32> = self.lines(&source[..upto]).collect();
-		let mut cursor = Cursor::default();
-		errors
-			.iter()
-			.map(|error| {
-				let pos = self.offset(&mut cursor, error.pos);
-				let end = self.offset(&mut cursor, error.end);
-				let line = lines.partition_point(|&start| start <= pos);
-				[pos, end, line as u32, pos - lines[line - 1]]
-			})
-			.collect()
-	}
-
-	/// Each comment's row.
-	pub fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<CommentRow>) {
-		out.clear();
-		let mut cursor = Cursor::default();
-		for comment in comments {
-			let text = comment.text_range();
-			let start = self.offset(&mut cursor, comment.start);
-			let from = self.offset(&mut cursor, text.start as u32);
-			let to = self.offset(&mut cursor, text.end as u32);
-			let end = self.offset(&mut cursor, comment.end);
-			out.push(CommentRow {
-				block: comment.is_block(),
-				text: Span { start: from, end: to },
-				span: Span { start, end },
-			});
-		}
-	}
-
-	pub(crate) fn offset(&self, cursor: &mut Cursor, byte: u32) -> u32 {
-		let (offset, gap) = self.offset_from(cursor.gap, byte);
-		cursor.gap = gap;
-		offset
-	}
-
-	/// The UTF-16 offset of `byte` and the gap entry it lies after, looked up from `hint`.
-	fn offset_from(&self, hint: usize, byte: u32) -> (u32, usize) {
-		let byte = byte.min(self.len);
-		if self.gaps.is_empty() {
-			return (byte, 0);
-		}
-		let gap = locate(&self.gaps, hint, byte, |g| g.0);
-		(byte - if gap == 0 { 0 } else { self.gaps[gap - 1].1 }, gap)
-	}
-}
-
-/// The number of `items` whose key is at most `byte`, trying `hint` and the few after it first.
-fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> usize {
-	for p in hint..=(hint + 3).min(items.len()) {
-		if (p == 0 || key(&items[p - 1]) <= byte) && (p == items.len() || key(&items[p]) > byte) {
-			return p;
-		}
-	}
-	items.partition_point(|item| key(item) <= byte)
-}
-
 impl<'a> Writer<'a> {
-	fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions) -> Self {
+	/// `names` are the grammar's, which the hosts' rows number.
+	pub(crate) fn new(
+		ast: &'a Ast,
+		source: &'a str,
+		positions: &'a Positions,
+		names: &'a [&'static str],
+		options: Options,
+	) -> Self {
 		Self {
 			ast,
 			source,
+			names,
 			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
-			options: Options::default(),
-			failed: false,
+			options,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
 		}
+	}
+
+	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
+	/// when the parse failed, then `end` and what the options add.
+	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32) -> String {
+		self.json.object();
+		match roots {
+			None => {
+				self.key("node");
+				self.json.null();
+			}
+			Some(roots) if entry == Entry::Params => self.list("node", roots),
+			Some(roots) => self.field("node", self.ast.list(roots)[0].unwrap()),
+		}
+		self.key("end");
+		let end = self.positions.offset(&mut self.cursor, end);
+		self.json.int(end);
+		self.trailers(roots.is_none());
+		self.json.end();
+		self.json.finish()
 	}
 
 	/// Records a node erasure had to leave in place.
@@ -414,18 +128,14 @@ impl<'a> Writer<'a> {
 
 	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
-		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
-			self.json.escaped_begin(ty);
-		} else {
-			self.json.begin(ty);
-		}
+		self.json.begin(ty);
 		self.span(node.start, node.end);
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
 			self.bool("parenthesized", true);
 		}
 		if self.options.typescript() {
-			self.ast.typescript.write_extras(self, id);
+			self.extras(id);
 		}
 		if let Some(&attached) = self.ast.attached.get(id) {
 			self.comments("leadingComments", attached.leading);
@@ -488,21 +198,14 @@ impl<'a> Writer<'a> {
 		self.rows("scopes", &scopes.scopes, 0);
 		self.rows("bindings", &scopes.bindings, 1);
 		self.rows("references", &scopes.references, 2);
-		if !self.ast.hosts.is_empty() {
+		if !self.ast.host_rows.is_empty() {
 			self.rows("roots", &scopes.roots, 3);
 		}
 	}
 
-	/// A table, each row spelled by its recipe of `recipe::RECIPES`.
+	/// A table, each row spelled by its recipe of `recipe::ROWS`.
 	fn rows<T>(&mut self, key: &'static str, rows: &[T], table: usize) {
-		static RESOLVED: std::sync::OnceLock<Vec<&'static [Op<Slot>]>> = std::sync::OnceLock::new();
-		let ops = RESOLVED.get_or_init(|| {
-			crate::recipe::RECIPES
-				.iter()
-				.zip(crate::recipe::ROWS)
-				.map(|((name, ops), (_, _, fields))| crate::recipe::resolve_ops(ops, fields, name))
-				.collect()
-		})[table];
+		let ops = ROWS[table].2;
 		self.key(key);
 		self.json.list();
 		for row in rows {
@@ -564,8 +267,9 @@ impl<'a> Writer<'a> {
 
 	/// What the options add after a root: every comment, the errors recovered from, what erasure
 	/// kept, the scopes; a failed parse lists its error alone.
-	fn trailers(&mut self) {
-		if self.failed {
+	/// A failed parse has its one error and nothing else listed.
+	fn trailers(&mut self, failed: bool) {
+		if failed {
 			return self.errors();
 		}
 		if self.options.has(Options::COMMENTS) {
@@ -584,10 +288,11 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		let (start, gap) = self.positions.offset_from(self.cursor.gap, start);
-		self.cursor.gap = gap;
-		let (end, _) = self.positions.offset_from(gap, end);
-		self.json.span(start, end);
+		let span = self.positions.span(&mut self.cursor, start, end);
+		self.json.key("start");
+		self.json.int(span.start);
+		self.json.key("end");
+		self.json.int(span.end);
 	}
 
 	/// The source between two byte offsets, as a string value.
@@ -617,7 +322,7 @@ impl<'a> Writer<'a> {
 		self.name_only = was;
 	}
 
-	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
+	fn kind(&self, id: NodeId) -> NodeKind {
 		self.ast.node(id).kind
 	}
 
@@ -645,7 +350,7 @@ impl<'a> Writer<'a> {
 		self.json.list();
 		let ast = self.ast;
 		for item in ast.list(list) {
-			if self.options.has(Options::ERASE) && item.is_some_and(|id| ast.typescript.erased(ast, id)) {
+			if item.is_some_and(|id| ast.erased.contains(id)) {
 				continue;
 			}
 			match item {
@@ -697,15 +402,9 @@ impl<'a> Writer<'a> {
 		self.slice(node.start, node.end);
 	}
 
-	/// The recipes of the JavaScript kinds, resolved once.
-	fn js_recipes() -> &'static [&'static [Op<Slot>]] {
-		static RESOLVED: std::sync::OnceLock<&'static [&'static [Op<Slot>]]> = std::sync::OnceLock::new();
-		RESOLVED.get_or_init(|| crate::recipe::resolve(crate::recipe::JS, crate::ast::node_layout::VARIANTS))
-	}
-
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
-	pub(crate) fn run(&mut self, id: NodeId, ops: &[Op<Slot>], base: *const u8) -> bool {
+	fn run(&mut self, id: NodeId, ops: &[Op], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
 				Op::Keep(name) => {
@@ -771,6 +470,10 @@ impl<'a> Writer<'a> {
 					}
 					_ => self.opt_key(key, get(base, slot)),
 				},
+				Op::Extra(key, ExtraSlot(slot)) => {
+					let extras = self.ast.extras_of(id);
+					self.run(id, &[Op::Maybe(key, slot)], &extras as *const Extras as *const u8);
+				}
 				Op::List(key, slot) => self.list(key, get(base, slot)),
 				Op::OptListKey(key, slot) => {
 					if let Some(list) = get::<Option<List>>(base, slot) {
@@ -799,7 +502,7 @@ impl<'a> Writer<'a> {
 						}
 					}
 				}
-				Op::BoolNames(key, slot, yes, no) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::BoolNames(key, slot, &[yes, no]) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
 				Op::Float(key, slot) => {
 					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
 					self.key(key);
@@ -838,26 +541,24 @@ impl<'a> Writer<'a> {
 		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		match *kind {
-			// TypeScript closes its own node, since erasing may put another in its place
-			Extension(index) => return self.ast.typescript.write_node(self, id, index),
 			Host(index) => {
-				let host = self.ast.hosts[index as usize];
-				if host.ty.is_empty() {
-					// an object of the host's without a type, positions and all
-					let node = self.ast.node(id);
-					self.json.object();
-					self.span(node.start, node.end);
-				} else if host.span {
-					self.begin(host.ty, id);
-				} else {
-					self.json.escaped_begin(host.ty);
-					self.scope_facts(id);
+				let host = self.ast.host_rows[index as usize];
+				match self.names.get(host.ty as usize).copied() {
+					None => {
+						// an object of the host's without a type, positions and all
+						let node = self.ast.node(id);
+						self.json.object();
+						self.span(node.start, node.end);
+					}
+					Some(ty) if host.spanned() => self.begin(ty, id),
+					Some(ty) => {
+						self.json.begin(ty);
+						self.scope_facts(id);
+					}
 				}
-				let (from, len) = host.fields;
-				for i in from..from + len {
-					let (key, value) = self.ast.host_fields[i as usize];
-					self.json.escaped_key(key);
-					match value {
+				for i in host.fields.indices() {
+					self.json.key(self.names[self.ast.host_keys[i as usize] as usize]);
+					match self.ast.host_vals[i as usize] {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),
 						Value::Str(string) => self.str_of(string),
@@ -876,48 +577,41 @@ impl<'a> Writer<'a> {
 					}
 				}
 			}
+			// erasing may put a child in the node's place, which closes itself
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
-				self.run(id, Self::js_recipes()[tag(base)], base);
+				if !self.run(id, KINDS[tag(base)], base) {
+					return;
+				}
 			}
 		}
 		self.end();
 	}
-}
 
-/// The tag of a `repr(C, u32)` enum at `base`: its first word.
-pub(crate) fn tag(base: *const u8) -> usize {
-	unsafe { base.cast::<u32>().read() as usize }
+	/// Writes the keys TypeScript adds to a node.
+	fn extras(&mut self, id: NodeId) {
+		let extras = self.ast.extras_of(id);
+		let base = &extras as *const Extras as *const u8;
+		if self.options.has(Options::ERASE) {
+			self.run(id, EXTRAS_ERASED, base);
+			return;
+		}
+		let kind = tag(&self.kind(id) as *const NodeKind as *const u8);
+		self.run(id, ADDS[kind], base);
+		// an unlisted extra is a parser bug, which a test build catches and a shipped build answers around
+		if cfg!(debug_assertions) {
+			let own = KINDS[kind].iter().filter(|op| matches!(op, Op::Extra(..)));
+			let read: Vec<Slot> = ADDS[kind].iter().chain(own).filter_map(|op| op.told().2).collect();
+			if let Some(field) = extras.set().find(|field| read.iter().all(|slot| slot.at != field.at)) {
+				panic!("{:?} has {}, which its kind does not list", self.kind(id), field.name);
+			}
+		}
+	}
 }
 
 /// The field at `slot` of the record at `base`, as the type the recipe reads it by.
 fn get<T: Copy>(base: *const u8, slot: Slot) -> T {
 	unsafe { base.add(slot.at).cast::<T>().read_unaligned() }
-}
-
-pub(crate) fn push_int(out: &mut String, mut value: u32) {
-	const DIGITS: &[u8; 200] = b"0001020304050607080910111213141516171819\
-2021222324252627282930313233343536373839\
-4041424344454647484950515253545556575859\
-6061626364656667686970717273747576777879\
-8081828384858687888990919293949596979899";
-	let mut buf = [0u8; 10];
-	let mut i = buf.len();
-	while value >= 100 {
-		let pair = (value % 100) as usize * 2;
-		i -= 2;
-		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
-		value /= 100;
-	}
-	if value >= 10 {
-		let pair = value as usize * 2;
-		i -= 2;
-		buf[i..i + 2].copy_from_slice(&DIGITS[pair..pair + 2]);
-	} else {
-		i -= 1;
-		buf[i] = b'0' + value as u8;
-	}
-	out.push_str(std::str::from_utf8(&buf[i..]).unwrap());
 }
 
 /// The decimal digits of a BigInt literal's text, without the `n`.
@@ -947,188 +641,4 @@ fn bigint_decimal(raw: &str) -> String {
 		write!(out, "{limb:09}").unwrap();
 	}
 	out
-}
-
-pub fn write_number(out: &mut String, value: f64) {
-	if !value.is_finite() {
-		out.push_str("null");
-		return;
-	}
-	if value == 0.0 {
-		out.push('0');
-		return;
-	}
-	let mut formatted = Digits::<32>::new();
-	write!(formatted, "{value:e}").unwrap();
-	let (mantissa, exponent) = formatted.as_str().split_once('e').unwrap();
-	let (sign, mantissa) = mantissa.strip_prefix('-').map_or(("", mantissa), |m| ("-", m));
-	let mut digits = Digits::<32>::new();
-	for byte in mantissa.bytes().filter(|b| *b != b'.') {
-		digits.buf[digits.len] = byte;
-		digits.len += 1;
-	}
-	even_on_tie(value.abs(), &mut digits.buf[..digits.len]);
-	let digits = digits.as_str();
-	let k = digits.len() as i32;
-	let n = exponent.parse::<i32>().unwrap() + 1;
-	out.push_str(sign);
-	if k <= n && n <= 21 {
-		out.push_str(digits);
-		out.extend(std::iter::repeat_n('0', (n - k) as usize));
-	} else if 0 < n && n <= 21 {
-		out.push_str(&digits[..n as usize]);
-		out.push('.');
-		out.push_str(&digits[n as usize..]);
-	} else if -6 < n && n <= 0 {
-		out.push_str("0.");
-		out.extend(std::iter::repeat_n('0', (-n) as usize));
-		out.push_str(digits);
-	} else {
-		out.push_str(&digits[..1]);
-		if k > 1 {
-			out.push('.');
-			out.push_str(&digits[1..]);
-		}
-		out.push('e');
-		out.push(if n > 1 { '+' } else { '-' });
-		push_int(out, (n - 1).unsigned_abs());
-	}
-}
-
-/// The digits of one number, written on the stack.
-struct Digits<const N: usize> {
-	buf: [u8; N],
-	len: usize,
-}
-
-impl<const N: usize> Digits<N> {
-	fn new() -> Self {
-		Digits { buf: [0; N], len: 0 }
-	}
-
-	fn as_str(&self) -> &str {
-		std::str::from_utf8(&self.buf[..self.len]).unwrap()
-	}
-}
-
-impl<const N: usize> std::fmt::Write for Digits<N> {
-	fn write_str(&mut self, s: &str) -> std::fmt::Result {
-		let end = self.len + s.len();
-		if end > N {
-			return Err(std::fmt::Error);
-		}
-		self.buf[self.len..end].copy_from_slice(s.as_bytes());
-		self.len = end;
-		Ok(())
-	}
-}
-
-/// Rust rounds the shortest digits away from zero on an exact tie; JavaScript takes the even ones.
-fn even_on_tie(value: f64, digits: &mut [u8]) {
-	let k = digits.len();
-	// two shortest forms sit at the same distance only at the edge of what a double resolves
-	if k < 16 || digits[k - 1].is_multiple_of(2) {
-		return;
-	}
-	let exact = format!("{value:.*e}", 1100);
-	let all: Vec<u8> = exact
-		.split_once('e')
-		.unwrap()
-		.0
-		.bytes()
-		.filter(|b| *b != b'.')
-		.collect();
-	if all[k] != b'5' || all[k + 1..].iter().any(|&b| b != b'0') {
-		return;
-	}
-	let mut lower = digits.to_vec();
-	lower[k - 1] -= 1;
-	let lower = std::str::from_utf8(&lower).unwrap();
-	let exponent = exact.split_once('e').unwrap().1;
-	if let Ok(back) = format!("{}.{}e{exponent}", &lower[..1], &lower[1..]).parse::<f64>()
-		&& back == value
-	{
-		digits[k - 1] -= 1;
-	}
-}
-
-pub(crate) fn write_json_string(out: &mut String, s: &str) {
-	out.push('"');
-	escape_json(out, s);
-	out.push('"');
-}
-
-fn escape_json(out: &mut String, s: &str) {
-	let mut from = 0;
-	for (i, b) in s.bytes().enumerate() {
-		if b >= 0x20 && b != b'"' && b != b'\\' {
-			continue;
-		}
-		out.push_str(&s[from..i]);
-		match b {
-			b'"' => out.push_str("\\\""),
-			b'\\' => out.push_str("\\\\"),
-			b'\n' => out.push_str("\\n"),
-			b'\r' => out.push_str("\\r"),
-			b'\t' => out.push_str("\\t"),
-			8 => out.push_str("\\b"),
-			12 => out.push_str("\\f"),
-			_ => write!(out, "\\u{b:04x}").unwrap(),
-		}
-		from = i + 1;
-	}
-	out.push_str(&s[from..]);
-}
-
-#[cfg(test)]
-mod tests {
-	#[test]
-	#[expect(clippy::excessive_precision)]
-	fn numbers_as_javascript_writes_them() {
-		for (value, text) in [
-			(1e-14, "1e-14"),
-			(1e-7, "1e-7"),
-			(0.000001, "0.000001"),
-			(0.1, "0.1"),
-			(1.5, "1.5"),
-			(123.456, "123.456"),
-			(100.0, "100"),
-			(1e20, "100000000000000000000"),
-			(1e21, "1e+21"),
-			(1.5e300, "1.5e+300"),
-			(5e-324, "5e-324"),
-			(-0.0, "0"),
-			(-2.5e-8, "-2.5e-8"),
-			(132405809496.45312, "132405809496.45312"),
-			(0.3, "0.3"),
-			(9007199254740993.0, "9007199254740992"),
-			(1658206780088562.25, "1658206780088562.2"),
-			(662936471232937.25, "662936471232937.2"),
-			(f64::INFINITY, "null"),
-		] {
-			let mut out = String::new();
-			super::write_number(&mut out, value);
-			assert_eq!(out, text, "{value:?}");
-		}
-	}
-
-	use super::Positions;
-
-	#[test]
-	fn byte_offsets() {
-		let positions = Positions::new("aé𝒳b");
-		let bytes: Vec<_> = (0..=6).map(|n| positions.byte_offset(n as f64).ok()).collect();
-		assert_eq!(bytes, [Some(0), Some(1), Some(3), Some(4), Some(7), Some(8), None]);
-		assert!(positions.byte_offset(-1.0).is_err());
-		assert!(positions.byte_offset(1.5).is_err());
-		assert_eq!(Positions::new("abc").byte_offset(3.0), Ok(3));
-	}
-
-	#[test]
-	fn lines() {
-		let lines = |text: &str| Positions::new(text).lines(text).collect::<Vec<_>>();
-		assert_eq!(lines("a\nb\r\nc\rd\u{2028}e\u{2029}f𝒳\ng"), [0, 2, 5, 7, 9, 11, 15]);
-		assert_eq!(lines(""), [0]);
-		assert_eq!(lines("\r\n\r"), [0, 2, 3]);
-	}
 }

@@ -92,7 +92,7 @@
 							}
 						}
 					],
-					"body": {
+					"fragment": {
 						"type": "Fragment",
 						"scope": 5,
 						"nodes": [

@@ -38,7 +38,7 @@ function parser() {
 
 function builders() {
 	const markdown = body(grammar).filter(exported).map((statement) => item(grammar, statement)).join('\n\n');
-	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say. A grammar crosses to the engine as \`JSON.stringify({ name, definition })\`, which is also what the Rust crate's \`parse_document\` and the command line's \`--host\` read.\n\n${markdown}` };
+	return { meta: { href: '/reference/grammar', title: '@teasel/parser/grammar', section: 'Reference', path: 'npm/src/grammar.ts' }, markdown: `Every export of the grammar builders, as their declarations say. A grammar crosses to the engine as \`JSON.stringify(definition)\`, which is also what the Rust crate's \`parse_document\` and the command line's \`--host\` read.\n\n${markdown}` };
 }
 
 // the engine's enum: each code's doc comment says what it means, its name is the variant's in snake case

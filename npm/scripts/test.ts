@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import type { Expression, Identifier, Pattern, Program } from 'estree';
-import type { Construct, Directive, Infer, NodeType } from '../src/grammar.ts';
-import type * as api from '../src/index.ts';
+import type { Construct, Directive, Grammar, Infer, NodeType } from '../src/grammar.ts';
 import type { Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
 if (process.argv.includes('interpret')) globalThis.Function = (() => { throw new EvalError('blocked'); }) as unknown as FunctionConstructor;
@@ -203,7 +202,8 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.equal(parentOf(top.node.body[0]), top.node);
 		assert.equal(parentOf(top.node), undefined);
 		const commented = parse('/* a */ x', { comments: true });
-		assert.equal(parentOf(commented.comments[0]), undefined);
+		assert.equal(commented.comments[0], commented.node.body[0].leadingComments[0]);
+		assert.equal(parentOf(commented.comments[0]), commented.node.body[0]);
 		assert.equal(parentOf(program('`x${1}`').body[0].expression.quasis[0].value), undefined);
 		const literal = program('let r = /a/g, t = `x${1}y`;', { scopes: true }).body[0].declarations;
 		assert.equal(Object.getPrototypeOf(literal[0].init.regex), Object.prototype);
@@ -246,6 +246,12 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		const list = at('params', '(a, b)', 0, { scopes: true });
 		assert.equal(referenceOf(list.node[1]).binding.kind, 'param');
 		assert.equal(list.scopes[0].node, null);
+	}
+	{
+		// a namespace declared twice reopens its scope: both read it, and it names the last
+		const [first, second] = read('namespace A { let a; } namespace A { let b; }', { sourceType: 'module', typescript: true, scopes: true }).node.body;
+		assert.equal(scopeOf(first), scopeOf(second));
+		assert.equal(scopeOf(second).node, second);
 	}
 	assert.throws(() => parse('x', { sourceType: 'nonsense' } as Any), TypeError);
 	assert.throws(() => at('expression', '𝒳 + y', 1), RangeError);
@@ -303,7 +309,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 		assert.throws(() => engine.parse('a;', 0, entry, 0, '', undefined), / is no entry/);
 	}
 	assert.throws(() => engine.parse('𝒳', 0, 1, 1, '', undefined), /surrogate pair/);
-	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', undefined), /the source is not UTF-8/);
+	if (name === 'native') assert.throws(() => (load() as Addon).parse(new Uint8Array([0xff]), 0, 0, 0, '', 0), /the source is not UTF-8/);
 	const wide = 'x;'.repeat(200000);
 	assert.equal(program(wide).body.length, 200000);
 	assert.equal(program('y;').body.length, 1);
@@ -374,31 +380,33 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.throws(() => read('<a @x="@"/>', {}, vue), (e: Any) => e instanceof SyntaxError, `${name}`);
 	assert.throws(() => readAt('<a/>', vue, 0), TypeError, `${name}`);
 	const handler = read('<button @click="let x = 1"/>', { errorRecovery: true }, vue);
-	assert.equal(handler.node.children[0].props[0].handler.type, 'Program', name);
+	assert.equal(handler.node.fragment.nodes[0].attributes[0].handler.type, 'Program', name);
 	assert.deepEqual(handler.errors, [], name);
 }
 // the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
 for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
-	const json = JSON.stringify({ name: host, definition: definition.definition });
+	const json = JSON.stringify(definition.definition);
 	if (process.env.UPDATE) writeFileSync(pin, json);
 	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
 }
-// every node's parent is the node it sits in, objects without a type passed through; a list born at its size has no holes
+// every node's parent is the node it sits in, objects without a type passed through, and a listed
+// comment's the node it is attached to; a list born at its size has no holes
 {
 	const wrong: string[] = [];
-	const walk = (holder: Any, value: Any) => {
+	const taken = (c: Any) => ['leadingComments', 'trailingComments', 'innerComments'].some((key) => parentOf(c)?.[key]?.includes(c));
+	const walk = (holder: Any, value: Any, listed = false) => {
 		if (value === null || typeof value !== 'object') return;
 		if (Array.isArray(value)) {
 			for (let i = 0; i < value.length; i++) {
 				if (!Object.hasOwn(value, i)) wrong.push(`hole at ${i}`);
-				walk(holder, value[i]);
+				walk(holder, value[i], listed);
 			}
 			return;
 		}
 		const node = typeof value.type === 'string';
-		if (node && parentOf(value) !== holder) wrong.push(`${value.type} at ${value.start}`);
-		for (const key of Object.keys(value)) walk(node ? value : holder, value[key]);
+		if (node && parentOf(value) !== holder && !(listed && taken(value))) wrong.push(`${value.type} at ${value.start}`);
+		for (const key of Object.keys(value)) walk(node ? value : holder, value[key], key === 'comments');
 	};
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
 	for (const typescript of [true, 'erase'] as const) walk(undefined, read(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).node);
@@ -453,28 +461,36 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	for (const offset of [-1, 4, 1.5, NaN, '1' as Any]) assert.throws(() => answer.locate(offset), RangeError);
 }
 
+// no definition is refused as any other text the engine cannot read is
+assert.throws(() => g.grammar(undefined as Any), /the grammar ends early/);
+// a tag under a prefix the grammar reserves needs a rule of its own; a grammar that reserves none reads it as any other
+assert.throws(() => read('<svelte:foo></svelte:foo>', {}, svelte), (e: Any) => e.code === 'invalid_name' && e.pos === 1);
+assert.equal(read('<svelte:head></svelte:head>', {}, svelte).node.fragment.nodes[0].type, 'SvelteHead');
+assert.equal(read('<vue:foo></vue:foo>', {}, vue).node.fragment.nodes[0].type, 'Element');
+
 // a second host: the same walker, Vue's grammar
 {
 	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
 	const root = read(source, { sourceType: 'module' }, vue).node;
 	assert.equal(root.type, 'Root');
-	const ul = root.children[0];
-	assert.equal(ul.tag, 'ul');
-	assert.deepEqual(ul.props[0], { ...ul.props[0], type: 'Directive', name: 'bind', rawName: ':class', arg: 'class', modifiers: [] });
-	assert.equal(ul.props[0].exp.type, 'ObjectExpression');
-	const li = ul.children[1];
-	const [each, key, click] = li.props;
-	assert.equal(each.name, 'for');
+	const ul = root.fragment.nodes[0];
+	assert.equal(ul.name, 'ul');
+	assert.deepEqual(ul.attributes[0], { ...ul.attributes[0], type: 'Directive', kind: 'bind', rawName: ':class', name: 'class', modifiers: [] });
+	assert.equal(ul.attributes[0].exp.type, 'ObjectExpression');
+	const li = ul.fragment.nodes[1];
+	const [each, key, click] = li.attributes;
+	assert.equal(each.kind, 'for');
 	assert.equal(each.value.name, 'item');
 	assert.equal(each.key.name, 'i');
 	assert.equal(each.source.name, 'items');
 	assert.equal(key.exp.type, 'MemberExpression');
 	assert.deepEqual(click.modifiers, ['stop']);
 	assert.equal(click.handler.type, 'CallExpression');
-	assert.equal(li.children[0].type, 'Interpolation');
-	assert.equal(li.children[0].content.property.name, 'name');
-	assert.equal(li.children[1].content, ' #');
-	assert.equal(parentOf(li.children[2].content), li.children[2]);
+	const [interpolation, text, index] = li.fragment.nodes;
+	assert.equal(interpolation.type, 'Interpolation');
+	assert.equal(interpolation.content.property.name, 'name');
+	assert.deepEqual([text.type, text.data, text.raw], ['Text', ' #', ' #']);
+	assert.equal(parentOf(index.content), index);
 	assert.throws(() => read('<div v-for="x items">', {}, vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
 }
 
@@ -502,7 +518,7 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	assert.deepEqual(read(sheets, { errorRecovery: true }, svelte).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
-// a grammar made before the engine started over parses after it: the fresh instance reads its plan again
+// a grammar made before the engine started over parses after it: the fresh instance reads it again
 if (name !== 'native') {
 	let restarted = false;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
@@ -598,15 +614,15 @@ if (name !== 'native') {
 	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
 	check(js.children, 'ts fixtures');
 	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
-		const plan = { svelte, vue }[host];
+		const language = { svelte, vue }[host];
 		for (const text of files(`hosts/${host}/`, ext)) {
 			try {
-				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, plan).node);
+				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, language).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
 		}
-		check(plan.children, `${host} fixtures`, true);
+		check(language.children, `${host} fixtures`, true);
 	}
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
@@ -618,7 +634,7 @@ if (name !== 'native') {
 	check(css.children, 'css fixtures', true);
 	assert.equal(svelte.children, svelte.children, 'a grammar keeps its table');
 	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
-	assert.ok(!('Host' in js.children) && !('Extension' in js.children));
+	assert.ok(!('Host' in js.children));
 	assert.ok(Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
 	// a grammar is plain data: no getter the engine answers, nothing of what crossed kept on it
 	assert.ok(Object.getOwnPropertyDescriptor(svelte, 'children')!.get === undefined && !('wire' in svelte));
@@ -661,11 +677,8 @@ if (name !== 'native') {
 {
 	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
 	const html = {
-		document: { node: 'Template', form: [{ children: g.content }] },
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
+		document: { node: 'Template' },
 		elements: {
-			fields: { name: g.element.tag, attributes: g.element.attributes, children: g.content },
 			component: { node: 'Component' },
 			other: { node: 'Element' },
 		},
@@ -675,13 +688,13 @@ if (name !== 'native') {
 	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
 	const list = { list: g.js.expression };
 	const key = g.opt('by', { key: g.optional(g.js.expression) });
-	const repeat = (head: Any[], branches: Any[] = []) => ({
+	const repeat = (head: Any[], branches?: Any[]) => ({
 		...html,
 		constructs: {
 			Expression: expression,
 			RepeatBlock: {
-				open: { marker: ['{{', '#repeat'], space: true, form: [...head, '}}', { body: g.content }] },
-				branches,
+				open: { marker: ['{{', '#repeat'], space: true, form: branches ? [...head, '}}', { body: g.content }] : [...head, '}}'] },
+				...(branches && { branches }),
 				close: { marker: ['{{', '/repeat'], form: ['}}'] },
 			},
 		},
@@ -695,10 +708,10 @@ if (name !== 'native') {
 		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
 	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
-	const pair = g.grammar('pair', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
-	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.children[0].children.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
+	const pair = g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
+	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.fragment.nodes[0].fragment.nodes.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
-	assert.throws(() => g.grammar('twice', { ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
+	assert.throws(() => g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
@@ -711,7 +724,7 @@ if (name !== 'native') {
 	};
 	const answers = steps.map((definition) => {
 		try {
-			return { tree: shape(read(template, { scopes: true }, g.grammar('tpl', definition)).node) };
+			return { tree: shape(read(template, { scopes: true }, g.grammar(definition)).node) };
 		} catch (e) {
 			const { code, message, pos, end } = e as Any;
 			return { error: { code, message, pos, end } };
@@ -745,10 +758,36 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<Each['fallback'], Fragment | undefined>>();
 
 	expect<Equal<NodeType<Svelte, 'IfBlock'>['alternate'], Fragment | null>>();
-	expect<Equal<NodeType<Svelte, 'IfBlock'>['elseif'], boolean>>();
+	expect<Equal<NodeType<Svelte, 'IfBlock'>['branches'], NodeType<Svelte, 'ElseIf'>[]>>();
+	expect<Equal<Required<NodeType<Svelte, 'ElseIf'>>, 'type' | 'start' | 'end' | 'test' | 'consequent'>>();
+	expect<Equal<NodeType<Svelte, 'ElseIf'>['consequent'], Fragment>>();
+	// the branches that repeat share one list
+	type Arm<N extends string, I extends readonly unknown[]> = { readonly marker: readonly ['{', ':case']; readonly node: N; readonly form: I };
+	type Switch = Grammar<
+		typeof svelte.definition & {
+			readonly constructs: {
+				readonly Switch: {
+					readonly open: { readonly marker: readonly ['{', '#switch']; readonly form: readonly [{ readonly on: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }] };
+					readonly branches: readonly [
+						Arm<'Case', readonly [{ readonly value: typeof svelte.definition.constructs.IfBlock.open.form[0]['test'] }, '}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+						Arm<'Default', readonly ['}', { readonly body: typeof svelte.definition.constructs.IfBlock.open.form[2]['consequent'] }]>,
+					];
+					readonly close: { readonly marker: readonly ['{', '/switch']; readonly form: readonly ['}'] };
+				};
+			};
+		}
+	>;
+	expect<Equal<NodeType<Switch, 'Switch'>['branches'], (NodeType<Switch, 'Case'> | NodeType<Switch, 'Default'>)[]>>();
+	expect<Equal<NodeType<Switch, 'Default'>['body'], NodeType<Switch, 'Fragment'>>>();
 	expect<Equal<NodeType<Svelte, 'AwaitBlock'>['pending'], Fragment | null>>();
 	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['typeParams'], string | undefined>>();
+	expect<Equal<NodeType<Svelte, 'SnippetBlock'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'KeyBlock'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'RegularElement'>['fragment'], Fragment>>();
+	expect<Equal<NodeType<Svelte, 'Text'>['raw'], string>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['name'], string | Expression | null>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['modifiers'], string[]>>();
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
 	expect<Equal<NodeType<Svelte, 'TransitionDirective'>['intro'], boolean>>();
@@ -760,8 +799,9 @@ function types(text: string, definition: typeof svelte) {
 	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
 	expect<Equal<typeof f.source, Expression | null>>();
 	expect<Equal<typeof f.value, Pattern | undefined>>();
-	expect<Equal<typeof f.arg, string | Expression | null>>();
-	expect<Equal<Infer<Vue>['children'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
+	expect<Equal<typeof f.name, string | Expression | null>>();
+	expect<Equal<typeof f.kind, string>>();
+	expect<Equal<Infer<Vue>['fragment']['nodes'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
 	g.opt({ type: g.js.expression });
@@ -774,56 +814,63 @@ function types(text: string, definition: typeof svelte) {
 	// @ts-expect-error an argument stands in only for a directive's value
 	g.orArg(g.js.expression);
 	const construct = (rule: Construct) => rule;
-	// @ts-expect-error a tag has no body
+	// @ts-expect-error a tag has no child list
 	construct({ open: { marker: ['{'], form: [{ body: g.content }, '}'] } });
 	// @ts-expect-error a tag opens no scope to declare in
 	construct({ open: { marker: ['{'], form: [{ name: g.bind(g.js.identifier) }, '}'] } });
 	// @ts-expect-error a close reads words only
 	construct({ open: { marker: ['{#b'], form: ['}', { body: g.content }] }, close: { marker: ['{/b'], form: [{ e: g.js.expression }, '}'] } });
+	// @ts-expect-error a block's fragment is teasel's
+	construct({ open: { marker: ['{#b'], form: ['}', { fragment: g.content }] }, close: { marker: ['{/b'], form: ['}'] } });
 	const directive = (rule: Directive) => rule;
 	// @ts-expect-error only a block declares around itself
 	directive({ node: 'D', form: [{ name: g.bind.outside(g.js.identifier) }] });
+	// @ts-expect-error a block's `branches` is teasel's
+	construct({ open: { marker: ['{#b'], form: [{ branches: g.js.expression }, '}', { body: g.content }] }, close: { marker: ['{/b'], form: ['}'] } });
 	// @ts-expect-error a directive's flag is true or false
 	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
+	// @ts-expect-error a directive's argument is its `name`, which teasel names
+	directive({ node: 'D', form: [{ name: g.value.expression }] });
+	// @ts-expect-error what a directive's name holds is never left out
+	directive({ node: 'D', form: [{ kind: g.optional(g.directive.kind) }] });
 	// @ts-expect-error `opt` needs items
 	g.opt();
 	// @ts-expect-error `oneOf` needs alternatives
 	g.oneOf();
 	// @ts-expect-error an alternative needs items
 	g.oneOf([]);
-	const base = {
-		text: { node: 'Text', form: [{ data: g.text.data }] },
-		comment: { node: 'Comment', form: [{ data: g.text.data }] },
-	};
-	const fields = { name: g.element.tag, attributes: g.element.attributes, children: g.content };
-	g.grammar('x', {
-		...base,
+	g.grammar({
 		// @ts-expect-error the document's literals are null or a list
-		document: { node: 'Root', form: [{ children: g.content, flag: g.literal(true) }] },
-		elements: { fields },
+		document: { node: 'Root', form: [{ flag: g.literal(true) }] },
 	});
-	g.grammar('x', {
-		...base,
+	g.grammar({
+		// @ts-expect-error the document's content is its fragment, which teasel names
 		document: { node: 'Root', form: [{ children: g.content }] },
-		// @ts-expect-error an element's fields are never left out
-		elements: { fields: { ...fields, attributes: g.optional(g.element.attributes) } },
 	});
-	g.grammar('x', {
-		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
-		elements: { fields },
-		// @ts-expect-error a directive's fields are never left out
-		directives: { fields: { arg: g.optional(g.directive.arg) } },
+	g.grammar({
+		document: { node: 'Root' },
+		// @ts-expect-error an element's tag is its `name`, which teasel names
+		elements: { other: { node: 'E', form: [{ name: g.element.this }] } },
 	});
+	// a block with one list holds it as its fragment; with branches, it names each
+	const lists = g.grammar({
+		document: { node: 'Root' },
+		constructs: {
+			One: { open: { marker: ['{#one'], form: ['}'] }, close: { marker: ['{/one'], form: ['}'] } },
+			Two: { open: { marker: ['{#two'], form: ['}', { first: g.content }] }, branches: [{ marker: ['{:or'], form: ['}', { second: g.content }] }], close: { marker: ['{/two'], form: ['}'] } },
+		},
+	});
+	type Lists = typeof lists;
+	expect<Equal<keyof NodeType<Lists, 'One'>, 'type' | 'start' | 'end' | 'fragment'>>();
+	expect<Equal<keyof NodeType<Lists, 'Two'>, 'type' | 'start' | 'end' | 'first' | 'second'>>();
+	expect<Equal<NodeType<Lists, 'Two'>['second'], NodeType<Lists, 'Fragment'> | null>>();
 	// a rule written apart from the grammar keeps its types
 	const out = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } } as const;
-	const apart = g.grammar('apart', { ...base, document: { node: 'Root', form: [{ children: g.content }] }, elements: { fields }, constructs: { Out: out } });
+	const apart = g.grammar({ document: { node: 'Root' }, constructs: { Out: out } });
 	expect<Equal<NodeType<typeof apart, 'Out'>['value'], Expression>>();
 	// a construct only in values, or only in rcdata, is a node type too; an attribute's value holds text and what stands in values
-	const only = g.grammar('only', {
-		...base,
-		document: { node: 'Root', form: [{ children: g.content }] },
-		elements: { fields },
+	const only = g.grammar({
+		document: { node: 'Root' },
 		constructs: {
 			Interp: { in: ['value'], open: { marker: ['{{'], form: [{ value: g.js.expression }, '}}'] } },
 			Raw: { in: ['rcdata'], open: { marker: ['{%'], form: [{ value: g.js.expression }, '%}'] } },

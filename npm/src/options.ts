@@ -6,7 +6,9 @@ export interface Options {
 	 * declarations and imports go, assertions give way to their expression, and what erasure
 	 * cannot express (enums, namespaces with values, parameter properties, `export =`, `import =`)
 	 * stays in the tree and is listed as `typescript` on the answer, as are the proposals
-	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`).
+	 * JavaScript itself has: decorators and accessor fields (`AccessorProperty`). What goes is what
+	 * TypeScript itself leaves out without `verbatimModuleSyntax`: an import or export left without a
+	 * value name goes with the names; one written empty stays.
 	 */
 	typescript?: boolean | 'erase';
 	/** Attach `leadingComments`, `trailingComments` and `innerComments` to nodes, and list every comment read as `comments` on the answer. */

@@ -14,7 +14,7 @@
 
 	type Part = { id: string; name: string; step: string; href: string; tint: string };
 	const parts: Part[] = [
-		{ id: 'file', name: 'The file and its text', step: 'step 1', href: '#1-start-with-the-html', tint: 'bg-[#dbbc7f]/25 border-[#dbbc7f]' },
+		{ id: 'file', name: 'The file', step: 'step 1', href: '#1-start-with-the-html', tint: 'bg-[#dbbc7f]/25 border-[#dbbc7f]' },
 		{ id: 'elements', name: 'Elements and components', step: 'step 1', href: '#1-start-with-the-html', tint: 'bg-[#7fbbb3]/25 border-[#7fbbb3]' },
 		{ id: 'expressions', name: 'Expressions', step: 'step 2', href: '#2-read-the-expressions', tint: 'bg-[#a7c080]/25 border-[#a7c080]' },
 		{ id: 'repeat', name: 'The repeat block', step: 'steps 3 to 5', href: '#3-describe-the-repeat-block', tint: 'bg-[#e69875]/25 border-[#e69875]' },
@@ -28,7 +28,7 @@
 	const constructs = at('\tconstructs: {');
 	const repeat = at('\t\tRepeatBlock: {');
 	const branch = at('\t\t\tbranches:');
-	mark('file', at('\tdocument:'), at('\tcomment:'));
+	mark('file', at('\tdocument:'), at('\tdocument:'));
 	mark('elements', at('\telements: {'), constructs - 1);
 	mark('expressions', constructs, repeat - 1);
 	mark('repeat', repeat, branch - 1);

@@ -19,6 +19,6 @@ let items = []; // trails it
   // trails the list, over the newline
   as item}{item}{/each}
 
-{#snippet row(/* leads the parameter */ a, /* trails a */ b)}{a}{/snippet}
+{#snippet row(/* leads the parameter */ a, /* leads b */ b)}{a}{/snippet}
 
 {#if ok /* trails ok */}{/if}

@@ -82,6 +82,33 @@ pub(crate) fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; 
 	from
 }
 
+// every hit exact, not only the first
+#[inline]
+fn bytes_exactly(word: u64, byte: u8) -> u64 {
+	let x = word ^ (ONES * byte as u64);
+	!((x & !HIGHS).wrapping_add(!HIGHS) | x) & HIGHS
+}
+
+/// Where `first` stands with one of `seconds` after it, from `from` on, or a `first` among the last
+/// eight bytes, whatever follows it; the length when there is neither.
+#[inline]
+pub(crate) fn find_pair<const N: usize>(bytes: &[u8], mut from: usize, first: u8, seconds: [u8; N]) -> usize {
+	while from + 9 <= bytes.len() {
+		let word = u64::from_le_bytes(bytes[from..from + 8].try_into().unwrap());
+		let next = word >> 8 | (bytes[from + 8] as u64) << 56;
+		let mut hits = 0;
+		for second in seconds {
+			hits |= bytes_exactly(next, second);
+		}
+		hits &= bytes_exactly(word, first);
+		if hits != 0 {
+			return from + (hits.trailing_zeros() / 8) as usize;
+		}
+		from += 8;
+	}
+	find(bytes, from, [first], false)
+}
+
 /// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
 pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])

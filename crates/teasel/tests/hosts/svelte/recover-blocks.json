@@ -34,13 +34,13 @@
 									"root": 0,
 									"name": "a"
 								},
-								"elseif": false,
-								"alternate": null,
 								"consequent": {
 									"type": "Fragment",
 									"scope": 4,
 									"nodes": []
-								}
+								},
+								"branches": [],
+								"alternate": null
 							}
 						]
 					}
@@ -64,8 +64,6 @@
 						"root": 1,
 						"name": "b"
 					},
-					"elseif": false,
-					"alternate": null,
 					"consequent": {
 						"type": "Fragment",
 						"scope": 5,
@@ -97,7 +95,9 @@
 								}
 							}
 						]
-					}
+					},
+					"branches": [],
+					"alternate": null
 				},
 				{
 					"type": "Text",

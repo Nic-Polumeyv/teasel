@@ -1,4 +1,4 @@
-//! Command line front end: one file, or a batch of jobs, answered as JSON.
+//! The command line: one file, or a batch of jobs, answered as JSON.
 //!
 //! `teasel [--module] [--typescript] [--comments] [--scopes] [--expression|--pattern|--params|--statement|--type-parameters]
 //! [--parenthesized] [--erase] [--offset N] FILE` prints
@@ -16,8 +16,7 @@
 
 use std::io::{self, BufRead, Read, Write};
 use std::process::ExitCode;
-use teasel::json::Request;
-use teasel::{Entry, Options, json};
+use teasel::{Entry, Options, estree};
 
 const DOCUMENT: u32 = 7;
 
@@ -52,15 +51,8 @@ fn batch(grammar: Option<String>) -> io::Result<()> {
 		}
 		let source = String::from_utf8_lossy(&bytes);
 		let json = match (Entry::from_index(entry), &grammar) {
-			(Some(entry), _) => json::parse(
-				&source,
-				&Request {
-					entry,
-					offset,
-					..Request::from_flags(flags)
-				},
-			),
-			(None, Some(grammar)) if entry == DOCUMENT => json::parse_document(&source, grammar, Options(flags)),
+			(Some(entry), _) => estree::parse(&source, entry, offset, Options(flags)),
+			(None, Some(grammar)) if entry == DOCUMENT => estree::parse_document(&source, grammar, Options(flags)),
 			(None, _) => {
 				return Err(io::Error::new(
 					io::ErrorKind::InvalidData,
@@ -146,14 +138,9 @@ fn main() -> ExitCode {
 				return ExitCode::FAILURE;
 			}
 		};
-		println!("{}", json::parse_document(&source, &grammar, Options(flags)));
+		println!("{}", estree::parse_document(&source, &grammar, Options(flags)));
 		return ExitCode::SUCCESS;
 	}
-	let request = Request {
-		entry,
-		offset: offset.unwrap_or(0),
-		..Request::from_flags(flags)
-	};
-	println!("{}", json::parse(&source, &request));
+	println!("{}", estree::parse(&source, entry, offset.unwrap_or(0), Options(flags)));
 	ExitCode::SUCCESS
 }

@@ -1,7 +1,7 @@
 //! The type grammar: everything after a `:` or inside `<...>`.
 
 use super::Modifiers;
-use super::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind, TsKind};
+use crate::ast::{Clause, Keyword as TsKeyword, Modifier, SignatureKind};
 use crate::ast::{List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::lexer::token::{Keyword, TokenKind};
@@ -110,18 +110,19 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 	}
 
+	// a fresh list for each, where JavaScript's come from the spares, took 0.2 ms of a 36 ms parse of 726 files
 	pub(super) fn parse_delimited_list(
 		&mut self,
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
-	) -> Result<Vec<NodeId>> {
+	) -> Result<Vec<Option<NodeId>>> {
 		let end = Self::list_end(kind);
-		let mut result = Vec::new();
+		let mut result = self.items();
 		loop {
 			if self.is(end) {
 				break;
 			}
-			result.push(element(self)?);
+			result.push(Some(element(self)?));
 			if self.eat(TokenKind::Comma)? {
 				continue;
 			}
@@ -137,12 +138,12 @@ impl<const TS: bool> Parser<'_, TS> {
 		&mut self,
 		kind: ListKind,
 		mut element: impl FnMut(&mut Self) -> Result<NodeId>,
-	) -> Result<Vec<NodeId>> {
+	) -> Result<Vec<Option<NodeId>>> {
 		let end = Self::list_end(kind);
-		let mut result = Vec::new();
+		let mut result = self.items();
 		while !self.is(end) {
 			let at = self.tok.start;
-			result.push(element(self)?);
+			result.push(Some(element(self)?));
 			self.ensure_progress(at)?;
 		}
 		Ok(result)
@@ -160,7 +161,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			p.parse_type()
 		})?;
-		Ok(self.ts(TsKind::TypeAnnotation { type_annotation }, start))
+		Ok(self.add(NodeKind::TypeAnnotation { type_annotation }, start))
 	}
 
 	pub(super) fn try_parse_type_annotation(&mut self) -> Result<Option<NodeId>> {
@@ -181,7 +182,9 @@ impl<const TS: bool> Parser<'_, TS> {
 			let annotation_start = p.tok.start;
 			p.expect(return_token)?;
 			let start = p.tok.start;
-			let asserts = p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
+			// trying both forms of a predicate after every return type's colon took 0.5 ms of a 36 ms parse of 726 files
+			let asserts =
+				p.is_contextual("asserts") && p.try_parse(|p| p.parse_type_predicate_asserts())?.unwrap_or(false);
 			let predicate = if p.is_keyword(Keyword::This) && (asserts || p.peek_is_contextual("is")?) {
 				let parameter_name = p.parse_this_type_node()?;
 				let type_annotation = if p.eat_contextual("is")? {
@@ -189,8 +192,8 @@ impl<const TS: bool> Parser<'_, TS> {
 				} else {
 					None
 				};
-				p.ts(
-					TsKind::TypePredicate {
+				p.add(
+					NodeKind::TypePredicate {
 						parameter_name,
 						type_annotation,
 						asserts,
@@ -198,7 +201,7 @@ impl<const TS: bool> Parser<'_, TS> {
 					start,
 				)
 			} else {
-				let variable = if p.is_ident() {
+				let variable = if p.is_ident() && matches!(p.next_start(), None | Some('i' | '\\')) {
 					p.try_parse(|p| p.parse_type_predicate_prefix())?
 				} else {
 					None
@@ -208,8 +211,8 @@ impl<const TS: bool> Parser<'_, TS> {
 					None if asserts => (p.parse_ident(false)?, None),
 					None => return p.parse_type_annotation(false, Some(annotation_start)),
 				};
-				p.ts(
-					TsKind::TypePredicate {
+				p.add(
+					NodeKind::TypePredicate {
 						parameter_name,
 						type_annotation,
 						asserts,
@@ -217,16 +220,16 @@ impl<const TS: bool> Parser<'_, TS> {
 					start,
 				)
 			};
-			Ok(p.ts(
-				TsKind::TypeAnnotation {
+			Ok(p.add(
+				NodeKind::TypeAnnotation {
 					type_annotation: predicate,
 				},
 				annotation_start,
 			))
 		})?;
 		if !allow_predicate
-			&& let Some(TsKind::TypeAnnotation { type_annotation }) = self.ts_kind(annotation)
-			&& matches!(self.ts_kind(type_annotation), Some(TsKind::TypePredicate { .. }))
+			&& let Some(NodeKind::TypeAnnotation { type_annotation }) = self.ts_kind(annotation)
+			&& matches!(self.ts_kind(type_annotation), Some(NodeKind::TypePredicate { .. }))
 		{
 			return self.error(self.start_of(type_annotation), Code::PredicatePlacement);
 		}
@@ -266,7 +269,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn parse_this_type_node(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		self.next()?;
-		Ok(self.ts(TsKind::ThisType, start))
+		Ok(self.add(NodeKind::ThisType, start))
 	}
 
 	// Types
@@ -293,8 +296,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::Colon)?;
 		let false_type = self.allow_conditional_types(|p| p.parse_type())?;
 		let start = self.start_of(check_type);
-		Ok(self.ts(
-			TsKind::ConditionalType {
+		Ok(self.add(
+			NodeKind::ConditionalType {
 				check_type,
 				extends_type,
 				true_type,
@@ -379,20 +382,20 @@ impl<const TS: bool> Parser<'_, TS> {
 			self.allow_conditional_types(|p| p.fill_signature(TokenKind::Arrow, !constructor))?;
 		let type_annotation = type_annotation.unwrap();
 		let kind = if constructor {
-			TsKind::ConstructorType {
+			NodeKind::ConstructorType {
 				type_parameters,
 				parameters,
 				type_annotation,
 				is_abstract,
 			}
 		} else {
-			TsKind::FunctionType {
+			NodeKind::FunctionType {
 				type_parameters,
 				parameters,
 				type_annotation,
 			}
 		};
-		Ok(self.ts(kind, start))
+		Ok(self.add(kind, start))
 	}
 
 	/// Type parameters, parameters and the return type after `return_token`, which is required
@@ -430,20 +433,23 @@ impl<const TS: bool> Parser<'_, TS> {
 	) -> Result<NodeId> {
 		let start = self.tok.start;
 		let has_leading_operator = self.eat(operator)?;
-		let mut types = vec![constituent(self)?];
+		let first = constituent(self)?;
+		// a list for every type, most of them one name, took 0.4 ms of a 37 ms parse of 726 files
+		if !has_leading_operator && !self.is(operator) {
+			return Ok(first);
+		}
+		let mut types = self.items();
+		types.push(Some(first));
 		while self.eat(operator)? {
-			types.push(constituent(self)?);
+			types.push(Some(constituent(self)?));
 		}
-		if types.len() == 1 && !has_leading_operator {
-			return Ok(types[0]);
-		}
-		let types = self.list_of(&types);
+		let types = self.list_from(types);
 		let kind = if operator == TokenKind::Pipe {
-			TsKind::UnionType { types }
+			NodeKind::UnionType { types }
 		} else {
-			TsKind::IntersectionType { types }
+			NodeKind::IntersectionType { types }
 		};
-		Ok(self.ts(kind, start))
+		Ok(self.add(kind, start))
 	}
 
 	fn parse_type_operator_or_higher(&mut self) -> Result<NodeId> {
@@ -473,12 +479,12 @@ impl<const TS: bool> Parser<'_, TS> {
 		if self.str(operator) == "readonly"
 			&& !matches!(
 				self.ts_kind(type_annotation),
-				Some(TsKind::TupleType { .. } | TsKind::ArrayType { .. })
+				Some(NodeKind::TupleType { .. } | NodeKind::ArrayType { .. })
 			) {
 			return self.error(start, Code::ReadonlyTypeOperand);
 		}
-		Ok(self.ts(
-			TsKind::TypeOperator {
+		Ok(self.add(
+			NodeKind::TypeOperator {
 				operator,
 				type_annotation,
 			},
@@ -495,8 +501,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		let parameter_start = self.tok.start;
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.try_parse(|p| p.parse_constraint_for_infer_type())?;
-		let type_parameter = self.ts(
-			TsKind::TypeParameter {
+		let type_parameter = self.add(
+			NodeKind::TypeParameter {
 				name,
 				constraint,
 				default: None,
@@ -506,7 +512,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			},
 			parameter_start,
 		);
-		Ok(self.ts(TsKind::InferType { type_parameter }, start))
+		Ok(self.add(NodeKind::InferType { type_parameter }, start))
 	}
 
 	fn parse_constraint_for_infer_type(&mut self) -> Result<Option<NodeId>> {
@@ -525,12 +531,12 @@ impl<const TS: bool> Parser<'_, TS> {
 			let start = self.start_of(ty);
 			if self.is(TokenKind::BracketR) {
 				self.next()?;
-				ty = self.ts(TsKind::ArrayType { element_type: ty }, start);
+				ty = self.add(NodeKind::ArrayType { element_type: ty }, start);
 			} else {
 				let index_type = self.parse_type()?;
 				self.expect(TokenKind::BracketR)?;
-				ty = self.ts(
-					TsKind::IndexedAccessType {
+				ty = self.add(
+					NodeKind::IndexedAccessType {
 						object_type: ty,
 						index_type,
 					},
@@ -550,14 +556,14 @@ impl<const TS: bool> Parser<'_, TS> {
 			| TokenKind::Keyword(Keyword::True)
 			| TokenKind::Keyword(Keyword::False) => {
 				let literal = self.parse_expr_atom(&mut None, ForInit::No, false)?;
-				Ok(self.ts(TsKind::LiteralType { literal }, start))
+				Ok(self.add(NodeKind::LiteralType { literal }, start))
 			}
 			TokenKind::Minus => {
 				if !matches!(self.peek_token()?.kind, TokenKind::Number(_) | TokenKind::BigInt) {
 					return self.unexpected();
 				}
 				let literal = self.parse_maybe_unary(&mut None, false, false, ForInit::No)?;
-				Ok(self.ts(TsKind::LiteralType { literal }, start))
+				Ok(self.add(NodeKind::LiteralType { literal }, start))
 			}
 			TokenKind::Keyword(Keyword::This) => self.parse_this_type_node(),
 			TokenKind::Keyword(Keyword::Typeof) => self.parse_type_query(),
@@ -573,7 +579,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			TokenKind::ParenL => self.parse_parenthesized_type(),
 			TokenKind::Backquote => {
 				let literal = self.parse_template(false)?;
-				Ok(self.ts(TsKind::LiteralType { literal }, start))
+				Ok(self.add(NodeKind::LiteralType { literal }, start))
 			}
 			TokenKind::Ident(name) => {
 				if let Some(keyword) = TsKeyword::from_name(self.str(name))
@@ -583,7 +589,7 @@ impl<const TS: bool> Parser<'_, TS> {
 						return self.error_name(start, Code::EscapeInKeyword, name);
 					}
 					self.next()?;
-					return Ok(self.ts(TsKind::Keyword(keyword), start));
+					return Ok(self.add(NodeKind::Keyword(keyword), start));
 				}
 				self.parse_type_reference(false)
 			}
@@ -595,7 +601,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				};
 				if self.peek_char().0 != Some('.') {
 					self.next()?;
-					return Ok(self.ts(TsKind::Keyword(keyword), start));
+					return Ok(self.add(NodeKind::Keyword(keyword), start));
 				}
 				self.parse_type_reference(false)
 			}
@@ -611,8 +617,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			None
 		};
-		Ok(self.ts(
-			TsKind::TypeReference {
+		Ok(self.add(
+			NodeKind::TypeReference {
 				type_name,
 				type_arguments,
 			},
@@ -625,7 +631,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		while self.eat(TokenKind::Dot)? {
 			let start = self.start_of(entity);
 			let right = self.parse_ident(true)?;
-			entity = self.ts(TsKind::QualifiedName { left: entity, right }, start);
+			entity = self.add(NodeKind::QualifiedName { left: entity, right }, start);
 		}
 		Ok(entity)
 	}
@@ -645,8 +651,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			None
 		};
-		Ok(self.ts(
-			TsKind::TypeQuery {
+		Ok(self.add(
+			NodeKind::TypeQuery {
 				expr_name,
 				type_arguments,
 			},
@@ -673,8 +679,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		} else {
 			None
 		};
-		Ok(self.ts(
-			TsKind::ImportType {
+		Ok(self.add(
+			NodeKind::ImportType {
 				argument,
 				qualifier,
 				type_arguments,
@@ -720,8 +726,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			p.expect_keyword(Keyword::In)?;
 			p.parse_type()
 		})?;
-		let type_parameter = self.ts(
-			TsKind::TypeParameter {
+		let type_parameter = self.add(
+			NodeKind::TypeParameter {
 				name,
 				constraint: Some(constraint),
 				default: None,
@@ -748,8 +754,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		let type_annotation = self.eat_then_parse_type(TokenKind::Colon)?;
 		self.semicolon()?;
 		self.expect(TokenKind::BraceR)?;
-		Ok(self.ts(
-			TsKind::MappedType {
+		Ok(self.add(
+			NodeKind::MappedType {
 				readonly,
 				type_parameter,
 				name_type,
@@ -773,8 +779,8 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn parse_type_literal(&mut self) -> Result<NodeId> {
 		let start = self.tok.start;
 		let members = self.parse_object_type_members()?;
-		let members = self.list_of(&members);
-		Ok(self.ts(TsKind::TypeLiteral { members }, start))
+		let members = self.list_from(members);
+		Ok(self.add(NodeKind::TypeLiteral { members }, start))
 	}
 
 	fn parse_tuple_type(&mut self) -> Result<NodeId> {
@@ -783,19 +789,19 @@ impl<const TS: bool> Parser<'_, TS> {
 		let element_types = self.parse_delimited_list(ListKind::TupleElements, |p| p.parse_tuple_element_type())?;
 		self.expect(TokenKind::BracketR)?;
 		let mut seen_optional = false;
-		for &element in &element_types {
+		for &element in element_types.iter().flatten() {
 			let kind = self.ts_kind(element);
 			let optional = matches!(
 				kind,
-				Some(TsKind::OptionalType { .. } | TsKind::NamedTupleMember { optional: true, .. })
+				Some(NodeKind::OptionalType { .. } | NodeKind::NamedTupleMember { optional: true, .. })
 			);
-			if seen_optional && !optional && !matches!(kind, Some(TsKind::RestType { .. })) {
+			if seen_optional && !optional && !matches!(kind, Some(NodeKind::RestType { .. })) {
 				return self.error(self.start_of(element), Code::RequiredAfterOptional);
 			}
 			seen_optional |= optional;
 		}
-		let element_types = self.list_of(&element_types);
-		Ok(self.ts(TsKind::TupleType { element_types }, start))
+		let element_types = self.list_from(element_types);
+		Ok(self.add(NodeKind::TupleType { element_types }, start))
 	}
 
 	fn parse_tuple_element_type(&mut self) -> Result<NodeId> {
@@ -805,7 +811,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let optional = self.eat(TokenKind::Question)?;
 		if self.eat(TokenKind::Colon)? {
 			let label = match self.ts_kind(ty) {
-				Some(TsKind::TypeReference {
+				Some(NodeKind::TypeReference {
 					type_name,
 					type_arguments: None,
 				}) if matches!(self.kind(type_name), NodeKind::Identifier { .. }) => type_name,
@@ -815,8 +821,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			};
 			let element_type = self.parse_type()?;
 			let label_start = self.start_of(ty);
-			ty = self.ts(
-				TsKind::NamedTupleMember {
+			ty = self.add(
+				NodeKind::NamedTupleMember {
 					label,
 					optional,
 					element_type,
@@ -825,10 +831,10 @@ impl<const TS: bool> Parser<'_, TS> {
 			);
 		} else if optional {
 			let type_start = self.start_of(ty);
-			ty = self.ts(TsKind::OptionalType { type_annotation: ty }, type_start);
+			ty = self.add(NodeKind::OptionalType { type_annotation: ty }, type_start);
 		}
 		if rest {
-			ty = self.ts(TsKind::RestType { type_annotation: ty }, start);
+			ty = self.add(NodeKind::RestType { type_annotation: ty }, start);
 		}
 		Ok(ty)
 	}
@@ -838,7 +844,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.expect(TokenKind::ParenL)?;
 		let type_annotation = self.parse_type()?;
 		self.expect(TokenKind::ParenR)?;
-		Ok(self.ts(TsKind::ParenthesizedType { type_annotation }, start))
+		Ok(self.add(NodeKind::ParenthesizedType { type_annotation }, start))
 	}
 
 	// Type parameters and arguments
@@ -862,8 +868,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		let name = self.parse_type_parameter_name()?;
 		let constraint = self.eat_then_parse_type(TokenKind::Keyword(Keyword::Extends))?;
 		let default = self.eat_then_parse_type(TokenKind::Eq)?;
-		Ok(self.ts(
-			TsKind::TypeParameter {
+		Ok(self.add(
+			NodeKind::TypeParameter {
 				name,
 				constraint,
 				default,
@@ -891,8 +897,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		if params.is_empty() {
 			return self.error(self.tok.start, Code::EmptyTypeParameters);
 		}
-		let params = self.list_of(&params);
-		Ok(self.ts(TsKind::TypeParameterDeclaration { params }, start))
+		let params = self.list_from(params);
+		Ok(self.add(NodeKind::TypeParameterDeclaration { params }, start))
 	}
 
 	pub(super) fn try_parse_type_parameters(&mut self, modifiers: TypeParameterModifiers) -> Result<Option<NodeId>> {
@@ -915,8 +921,8 @@ impl<const TS: bool> Parser<'_, TS> {
 		}
 		self.lexer.depth -= 1;
 		self.expect(TokenKind::Gt)?;
-		let params = self.list_of(&params);
-		Ok(self.ts(TsKind::TypeParameterInstantiation { params }, start))
+		let params = self.list_from(params);
+		Ok(self.add(NodeKind::TypeParameterInstantiation { params }, start))
 	}
 
 	/// Type arguments where the `<` was read as an expression token, so `<<` needs splitting.
@@ -930,7 +936,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.parse_type_arguments().map(Some)
 	}
 
-	pub(super) fn parse_heritage_clause(&mut self, token: &str) -> Result<Vec<NodeId>> {
+	pub(super) fn parse_heritage_clause(&mut self, token: &str) -> Result<Vec<Option<NodeId>>> {
 		let start = self.tok.start;
 		let clause = if token == "implements" {
 			Clause::Implements
@@ -945,8 +951,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			} else {
 				None
 			};
-			Ok(p.ts(
-				TsKind::Heritage {
+			Ok(p.add(
+				NodeKind::Heritage {
 					expression,
 					type_arguments,
 					clause,
@@ -962,7 +968,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	// Type members
 
-	pub(super) fn parse_object_type_members(&mut self) -> Result<Vec<NodeId>> {
+	pub(super) fn parse_object_type_members(&mut self) -> Result<Vec<Option<NodeId>>> {
 		self.expect(TokenKind::BraceL)?;
 		let members = self.parse_list(ListKind::TypeMembers, |p| p.parse_type_member())?;
 		self.expect(TokenKind::BraceR)?;
@@ -1025,19 +1031,19 @@ impl<const TS: bool> Parser<'_, TS> {
 		let (type_parameters, parameters, type_annotation) = self.fill_signature(TokenKind::Colon, !construct)?;
 		self.parse_type_member_semicolon()?;
 		let kind = if construct {
-			TsKind::ConstructSignatureDeclaration {
+			NodeKind::ConstructSignatureDeclaration {
 				type_parameters,
 				parameters,
 				type_annotation,
 			}
 		} else {
-			TsKind::CallSignatureDeclaration {
+			NodeKind::CallSignatureDeclaration {
 				type_parameters,
 				parameters,
 				type_annotation,
 			}
 		};
-		Ok(self.ts(kind, start))
+		Ok(self.add(kind, start))
 	}
 
 	fn parse_property_or_method_signature(
@@ -1077,23 +1083,26 @@ impl<const TS: bool> Parser<'_, TS> {
 				}
 				_ => {}
 			}
-			return Ok(self.ts(
-				TsKind::MethodSignature {
+			let node = self.add(
+				NodeKind::MethodSignature {
 					key,
 					computed,
 					optional,
 					kind: kind.unwrap_or(SignatureKind::Method),
-					type_parameters,
 					parameters,
 					type_annotation,
 				},
 				start,
-			));
+			);
+			if type_parameters.is_some() {
+				self.extras_mut(node).type_parameters = type_parameters;
+			}
+			return Ok(node);
 		}
 		let type_annotation = self.try_parse_type_annotation()?;
 		self.parse_type_member_semicolon()?;
-		Ok(self.ts(
-			TsKind::PropertySignature {
+		Ok(self.add(
+			NodeKind::PropertySignature {
 				key,
 				computed,
 				optional,
@@ -1120,8 +1129,8 @@ impl<const TS: bool> Parser<'_, TS> {
 			return self.error(self.tok.start, Code::IndexSignatureType);
 		}
 		self.parse_type_member_semicolon()?;
-		Ok(Some(self.ts(
-			TsKind::IndexSignature {
+		Ok(Some(self.add(
+			NodeKind::IndexSignature {
 				parameters,
 				type_annotation,
 			},

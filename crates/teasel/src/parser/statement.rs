@@ -99,6 +99,9 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 			self.ensure_progress(at)?;
 		}
+		if self.typescript() && self.options.has(Options::ERASE) {
+			self.mark_type_exports(&body);
+		}
 		if module && !self.options.has(Options::ALLOW_UNDECLARED_EXPORTS) {
 			let undeclared = std::mem::take(&mut self.undeclared_exports);
 			let mut last = FastMap::default();
@@ -543,7 +546,10 @@ impl<const TS: bool> Parser<'_, TS> {
 			if starts_with_let && is_for_of {
 				return self.error(self.start_of(init), Code::ForOfLet);
 			}
-			let init = self.make_pattern(init, false, &mut errors)?;
+			if errors.is_some_and(|e| e.owner != Some(init)) {
+				self.check_expression_errors(&errors, true)?;
+			}
+			let init = self.make_pattern(init, &mut errors)?;
 			self.check_lval_pattern(init, Binding::None, &mut None)?;
 			return self.parse_for_in(start, init, is_await);
 		}
@@ -991,12 +997,11 @@ impl<const TS: bool> Parser<'_, TS> {
 				NodeKind::Property { value, .. } => stack.push(Some(value)),
 				NodeKind::RestElement { argument } => stack.push(Some(argument)),
 				NodeKind::AssignmentPattern { left, .. } => stack.push(Some(left)),
-				NodeKind::Extension(_) => {
+				_ => {
 					if let Some(inner) = self.unwrap(id, Unwrap::InnerPattern) {
 						stack.push(Some(inner));
 					}
 				}
-				_ => {}
 			}
 		}
 		self.recycle(stack);
@@ -1492,7 +1497,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				NodeKind::MethodDefinition {
 					key, is_static, value, ..
 				} if matches!(self.kind(key), NodeKind::PrivateIdentifier { .. })
-					&& !matches!(self.kind(value), NodeKind::Extension(_)) =>
+					&& !matches!(self.kind(value), NodeKind::DeclareMethod { .. }) =>
 				{
 					self.declare_private_element(element, key, is_static)?;
 				}

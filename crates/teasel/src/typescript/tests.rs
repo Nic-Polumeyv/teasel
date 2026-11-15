@@ -1,4 +1,4 @@
-use super::ast::Extras;
+use crate::ast::Extras;
 use crate::ast::{Ast, List, NodeId, NodeKind};
 use crate::layout::Ty;
 use crate::parser::tests::{Failed, dump as dump_with, expand, one, typescript};
@@ -8,15 +8,9 @@ fn at(entry: Entry, src: &str, offset: u32, options: Options, stop: &str) -> Res
 	one(crate::parse_at(src, offset, entry, typescript(options), stop))
 }
 
-fn typescript_node(ast: &Ast, id: NodeId, index: u32) -> String {
-	let mut out = expand(ast, &format!("{:?}", ast.typescript.kind(index)), &typescript_node);
-	out.push_str(&extras(ast, id));
-	out
-}
-
 /// The keys TypeScript added to a node, after its own rendering.
 fn extras(ast: &Ast, id: NodeId) -> String {
-	let Some(e) = ast.typescript.extras(id) else {
+	let Some(e) = ast.extras.get(id) else {
 		return String::new();
 	};
 	let base = e as *const Extras as *const u8;
@@ -33,7 +27,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 				Ty::OptList => at
 					.cast::<Option<List>>()
 					.read()
-					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &typescript_node))),
+					.map(|list| format!("{name}: {}", expand(ast, &format!("{list:?}"), &extras))),
 				Ty::OptEnum(names) => names
 					.get(usize::from(at.read()))
 					.map(|value| format!("{name}: {value}")),
@@ -48,11 +42,7 @@ fn extras(ast: &Ast, id: NodeId) -> String {
 }
 
 fn dump(ast: &Ast, id: NodeId) -> String {
-	let mut out = dump_with(ast, id, &typescript_node);
-	if !matches!(ast.node(id).kind, NodeKind::Extension(_)) {
-		out.push_str(&extras(ast, id));
-	}
-	out
+	dump_with(ast, id, &extras)
 }
 
 fn expr(src: &str) -> String {
@@ -67,7 +57,7 @@ fn expr(src: &str) -> String {
 fn expression_entry_point() {
 	assert_eq!(
 		expr(r#"(a: number, b?: string) => a"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }, Identifier { name: "b" }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "a" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(Number) }}, Identifier { name: "b" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(String) }, optional}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"a as B<C>"#),
@@ -79,23 +69,23 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"<T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: false } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"async <T>(x: T) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "x" }, expression: true, is_async: true } +{type_parameters: TypeParameterDeclaration { params: [TypeParameter { name: "T", constraint: None, default: None, is_in: false, is_out: false, is_const: false }] }}"#
 	);
 	assert_eq!(
 		expr(r#"(x?: number) => x"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "x" }], body: Identifier { name: "x" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "x" } +{type_annotation: TypeAnnotation { type_annotation: Keyword(Number) }, optional}], body: Identifier { name: "x" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"({ a, b }: T) => a"#),
-		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [ObjectPattern { properties: [Property { key: Identifier { name: "a" }, value: Identifier { name: "a" }, kind: Init, computed: false, method: false, shorthand: true }, Property { key: Identifier { name: "b" }, value: Identifier { name: "b" }, kind: Init, computed: false, method: false, shorthand: true }] } +{type_annotation: TypeAnnotation { type_annotation: TypeReference { type_name: Identifier { name: "T" }, type_arguments: None } }}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"(...args: number[]) => args"#),
-		r#"ArrowFunctionExpression { params: [RestElement { argument: Identifier { name: "args" } }], body: Identifier { name: "args" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [RestElement { argument: Identifier { name: "args" } } +{type_annotation: TypeAnnotation { type_annotation: ArrayType { element_type: Keyword(Number) } }}], body: Identifier { name: "args" }, expression: true, is_async: false }"#
 	);
 	assert_eq!(
 		expr(r#"f<T>(x)"#),
@@ -115,7 +105,7 @@ fn expression_entry_point() {
 	);
 	assert_eq!(
 		expr(r#"(a?) => a"#),
-		r#"ArrowFunctionExpression { params: [Identifier { name: "a" }], body: Identifier { name: "a" }, expression: true, is_async: false }"#
+		r#"ArrowFunctionExpression { params: [Identifier { name: "a" } +{optional}], body: Identifier { name: "a" }, expression: true, is_async: false }"#
 	);
 }
 
@@ -152,8 +142,8 @@ fn optional_marker_needs_an_arrow() {
 		let error = at(Entry::Expression, src, 0, options, "").unwrap_err();
 		(error.code, error.pos)
 	};
-	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 5));
-	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedToken, 2));
+	assert_eq!(error("(a, b?)"), (crate::error::Code::UnexpectedToken, 6));
+	assert_eq!(error("(a?)"), (crate::error::Code::UnexpectedEof, 4));
 	assert_eq!(error("f(a?)"), (crate::error::Code::UnexpectedToken, 4));
 	assert!(at(Entry::Expression, "(a, b?) => a", 0, options, "").is_ok());
 	assert!(at(Entry::Expression, "f((a?) => a)", 0, options, "").is_ok());
@@ -201,8 +191,8 @@ fn program_at_an_offset_of_a_cut_text() {
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
 	let options = Options(Options::MODULE | Options::TYPESCRIPT);
-	crate::json::in_place(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
-	assert_eq!(crate::json::words(|words| words[0]), 26);
+	crate::engine::parse(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
+	assert_eq!(crate::engine::words(|words| words[0]), 26);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.
@@ -233,14 +223,10 @@ fn failed_attempts_leave_nothing() {
 	let list = (0..300).map(|i| format!("a{i} < b{i}")).collect::<Vec<_>>().join(", ");
 	let (ast, _, _) = at(Entry::Expression, &format!("[{list}]"), 0, options, "").unwrap();
 	assert!(ast.nodes.len() < 4 * 300 + 8, "{} nodes", ast.nodes.len());
-	assert!(ast.typescript.nodes.is_empty());
-	assert!(ast.typescript.extras.is_empty());
+	assert!(ast.extras.is_empty());
 	// a generic arrow is tried first: the parens it saw go with it
 	let (ast, root, _) = at(Entry::Expression, "<T>(a)", 0, options, "").unwrap();
-	let NodeKind::Extension(index) = ast.node(root).kind else {
-		panic!()
-	};
-	let super::ast::TsKind::TypeAssertion { expression, .. } = ast.typescript.kind(index) else {
+	let NodeKind::TypeAssertion { expression, .. } = ast.node(root).kind else {
 		panic!()
 	};
 	assert!(ast.is_parenthesized(expression));
@@ -267,6 +253,21 @@ fn failed_attempt_leaves_no_scope() {
 		redeclared,
 		[src.rfind("a;").unwrap() as u32, src.rfind("b;").unwrap() as u32]
 	);
+}
+
+#[test]
+fn a_predicate_recovers_past_a_bad_character() {
+	let options = Options(Options::MODULE | Options::ERROR_RECOVERY);
+	for src in ["function f(x): x ¬ is X {}", "function f(x): asserts x ¬ is X {}"] {
+		let (ast, _, _) = one(crate::parse_at(src, 0, Entry::Program, typescript(options), "")).unwrap();
+		assert!(
+			ast.nodes
+				.iter()
+				.any(|node| matches!(node.kind, NodeKind::TypePredicate { .. })),
+			"{src}"
+		);
+		assert_eq!(ast.errors.len(), 1, "{src}");
+	}
 }
 
 #[test]
@@ -335,8 +336,8 @@ fn a_list_item_fails_where_it_stands() {
 		(error.code, error.pos)
 	};
 	use crate::error::Code;
-	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedTypeAnnotation, 5));
-	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedTypeAnnotation, 8));
+	assert_eq!(error("[eval: T = (b: U)];"), (Code::UnexpectedToken, 5));
+	assert_eq!(error("f(a as T: U = 1);"), (Code::UnexpectedToken, 8));
 	assert_eq!(error("({a = 1} += 2);"), (Code::InvalidAssignmentTarget, 1));
 	assert_eq!(error("const g = ({ a }?) => a;"), (Code::OptionalPatternParameter, 11));
 }
@@ -345,8 +346,8 @@ fn a_list_item_fails_where_it_stands() {
 fn an_asserted_cast_is_no_parameter() {
 	let options = Options(Options::MODULE);
 	let error = |src: &str| at(Entry::Program, src, 0, options, "").unwrap_err().pos;
-	assert_eq!(error("(a as T: U = 1) => 1;"), 1);
-	assert_eq!(error("(a!: T = 1) => 1;"), 1);
+	assert_eq!(error("(a as T: U = 1) => 1;"), 7);
+	assert_eq!(error("(a!: T = 1) => 1;"), 3);
 	assert_eq!(error("(...a: T += 1) => 1;"), 9);
 }
 
@@ -361,9 +362,27 @@ fn an_async_rest_ends_after_its_annotation() {
 	assert_eq!((ast.node(rest).start, ast.node(rest).end), (24, 41));
 }
 
+#[test]
+fn a_generic_head_checks_its_defaults() {
+	let options = Options(Options::MODULE);
+	let error = |src: &str| {
+		let error = at(Entry::Program, src, 0, options, "").unwrap_err();
+		(error.code, error.pos)
+	};
+	use crate::error::Code;
+	assert_eq!(
+		error("function* g() { <T>(a = yield) => 1 }"),
+		(Code::YieldInDefaultValue, 24)
+	);
+	assert_eq!(
+		error("async function f() { <T>(a = await 1) => 1 }"),
+		(Code::AwaitInDefaultValue, 29)
+	);
+}
+
 fn erase(src: &str) -> (String, String) {
-	let request = crate::json::Request::from_flags(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
-	let json = crate::json::parse(src, &request);
+	let options = Options(Options::MODULE | Options::TYPESCRIPT | Options::ERASE);
+	let json = crate::estree::parse(src, Entry::Program, 0, options);
 	let (tree, kept) = json.split_once(",\"typescript\":").unwrap_or_else(|| panic!("{json}"));
 	let types: Vec<&str> = tree
 		.split("\"type\":\"")
@@ -417,9 +436,17 @@ fn a_namespace_erases_unless_it_instantiates() {
 }
 
 #[test]
-fn a_type_only_import_keeps_its_module() {
+fn an_import_of_only_types_erases() {
 	assert_eq!(
 		erase("import { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("import {} from 'x';"),
 		("Program ImportDeclaration Literal".to_owned(), "[]".to_owned())
 	);
 	assert_eq!(
@@ -443,5 +470,67 @@ fn a_type_only_import_keeps_its_module() {
 	assert_eq!(
 		erase("type A = 1; export { type A };"),
 		("Program ExportNamedDeclaration".to_owned(), "[]".to_owned())
+	);
+}
+
+#[test]
+fn an_export_of_only_a_type_erases() {
+	let export_nothing = || ("Program ExportNamedDeclaration".to_owned(), "[]".to_owned());
+	assert_eq!(erase("interface I {} export { I };"), export_nothing());
+	assert_eq!(erase("type T = 1; export { T as U };"), export_nothing());
+	assert_eq!(erase("import type { A } from 'x'; export { A };"), export_nothing());
+	assert_eq!(erase("import { type A } from 'x'; export { A };"), export_nothing());
+	assert_eq!(erase("export { I }; interface I {}"), export_nothing());
+	assert_eq!(
+		erase("interface I {} export default I;"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("interface A {} const A = 1; export { A };"),
+		(
+			"Program VariableDeclaration VariableDeclarator Identifier Literal ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("declare const x: number; export { x };"),
+		(
+			"Program ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("import A from 'a'; import type { B } from 'a'; export { A, B };"),
+		(
+			"Program ImportDeclaration ImportDefaultSpecifier Identifier Literal ExportNamedDeclaration ExportSpecifier Identifier Identifier".to_owned(),
+			"[]".to_owned()
+		)
+	);
+}
+
+#[test]
+fn a_re_export_of_only_types_erases() {
+	assert_eq!(
+		erase("export { type A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, type B } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export { type A, B } from 'x';"),
+		(
+			"Program ExportNamedDeclaration ExportSpecifier Identifier Identifier Literal".to_owned(),
+			"[]".to_owned()
+		)
+	);
+	assert_eq!(
+		erase("export {} from 'x';"),
+		("Program ExportNamedDeclaration Literal".to_owned(), "[]".to_owned())
+	);
+	assert_eq!(
+		erase("export type { A } from 'x';"),
+		("Program".to_owned(), "[]".to_owned())
 	);
 }

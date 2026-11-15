@@ -313,6 +313,12 @@ impl<const TS: bool> Parser<'_, TS> {
 		self.scopes[0].has(name, VAR | LEXICAL | FUNCTION | TYPE | EXPORT_ONLY)
 	}
 
+	/// Whether the module declares `name` as a type or an import of one and never as a value.
+	pub(crate) fn declares_only_types(&self, name: StrId) -> bool {
+		let top = &self.scopes[0];
+		top.has(name, TYPE | EXPORT_ONLY) && !top.has(name, VAR | LEXICAL | FUNCTION)
+	}
+
 	pub(crate) fn check_local_export(&mut self, name: StrId, pos: u32) {
 		if !self.declares_export(name) {
 			self.undeclared_exports.push((name, pos));

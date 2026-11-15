@@ -41,7 +41,7 @@ import { parseAt, js, scopeOf } from '@teasel/parser';
 const options = { sourceType: 'module', scopes: true };
 ```
 ```notes
-options :: Every parse on this page reads `text`, the whole file, with these options, so every position in every answer is an offset into the file.
+options :: Every parse on this page reads the file's text with these options, so every position in every answer is an offset into the file.
 sourceType: 'module' :: Lets the script use `import` and `export`. Every option is in the [reference](/reference/parser#options).
 scopes: true :: Makes each answer list the names it declares, `bindings`, and the names it uses, `references`. [Scopes](/scopes) explains both.
 ```

@@ -196,7 +196,7 @@ impl Element {
 
 pub trait Raw {
 	fn element(&self) -> Element;
-	/// The length in the elements a front end reads, a record being its words.
+	/// The length in the elements the decoder reads, a record being its words.
 	fn elements(&self) -> usize {
 		self.len_bytes() / self.element().size()
 	}
@@ -241,19 +241,5 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		}
 		self.viewed = true;
 		Some(self.token.expect("a view needs an allocation hook"))
-	}
-}
-
-/// Visits the buffers of a tree a front end reads in place, by name; None for a table the parse
-/// did not fill.
-pub struct Views<'f>(pub &'f mut dyn FnMut(&'static str, Option<&mut dyn Raw>));
-
-impl Views<'_> {
-	pub fn push(&mut self, name: &'static str, buffer: &mut dyn Raw) {
-		(self.0)(name, Some(buffer));
-	}
-
-	pub fn none(&mut self, name: &'static str) {
-		(self.0)(name, None);
 	}
 }

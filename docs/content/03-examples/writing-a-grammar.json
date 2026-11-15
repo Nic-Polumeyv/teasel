@@ -46,188 +46,214 @@
 				"type": "Template",
 				"start": 0,
 				"end": 144,
-				"children": [
-					{
-						"type": "Element",
-						"start": 0,
-						"end": 143,
-						"name": "ul",
-						"attributes": [],
-						"children": [
-							{
-								"type": "Text",
-								"start": 4,
-								"end": 6,
-								"data": "\n\t"
-							},
-							{
-								"type": "RepeatBlock",
-								"start": 6,
-								"end": 137,
-								"item": {
-									"type": "Identifier",
-									"start": 16,
-									"end": 20,
-									"name": "item"
-								},
-								"index": {
-									"type": "Identifier",
-									"start": 22,
-									"end": 23,
-									"name": "i"
-								},
-								"list": {
-									"type": "Identifier",
-									"start": 27,
-									"end": 32,
-									"name": "items"
-								},
-								"key": {
-									"type": "MemberExpression",
-									"start": 36,
-									"end": 43,
-									"object": {
-										"type": "Identifier",
-										"start": 36,
-										"end": 40,
-										"name": "item",
-										"refers": [
-											16,
-											20
-										]
-									},
-									"property": {
-										"type": "Identifier",
-										"start": 41,
-										"end": 43,
-										"name": "id"
-									},
-									"computed": false,
-									"optional": false
-								},
-								"body": [
+				"fragment": {
+					"type": "Fragment",
+					"nodes": [
+						{
+							"type": "Element",
+							"start": 0,
+							"end": 143,
+							"name": "ul",
+							"attributes": [],
+							"fragment": {
+								"type": "Fragment",
+								"nodes": [
 									{
 										"type": "Text",
-										"start": 45,
-										"end": 48,
-										"data": "\n\t\t"
+										"start": 4,
+										"end": 6,
+										"raw": "\n\t",
+										"data": "\n\t"
 									},
 									{
-										"type": "Component",
-										"start": 48,
-										"end": 92,
-										"name": "Card",
-										"attributes": [
-											{
-												"type": "Attribute",
-												"start": 54,
-												"end": 75,
-												"name": "title",
-												"value": {
-													"type": "Expression",
-													"start": 60,
-													"end": 75,
-													"expression": {
-														"type": "MemberExpression",
-														"start": 63,
-														"end": 72,
-														"object": {
-															"type": "Identifier",
-															"start": 63,
-															"end": 67,
-															"name": "item",
-															"refers": [
-																16,
-																20
-															]
-														},
-														"property": {
-															"type": "Identifier",
-															"start": 68,
-															"end": 72,
-															"name": "name"
-														},
-														"computed": false,
-														"optional": false
-													}
-												}
+										"type": "RepeatBlock",
+										"start": 6,
+										"end": 137,
+										"item": {
+											"type": "Identifier",
+											"start": 16,
+											"end": 20,
+											"name": "item"
+										},
+										"index": {
+											"type": "Identifier",
+											"start": 22,
+											"end": 23,
+											"name": "i"
+										},
+										"list": {
+											"type": "Identifier",
+											"start": 27,
+											"end": 32,
+											"name": "items"
+										},
+										"key": {
+											"type": "MemberExpression",
+											"start": 36,
+											"end": 43,
+											"object": {
+												"type": "Identifier",
+												"start": 36,
+												"end": 40,
+												"name": "item",
+												"refers": [
+													16,
+													20
+												]
 											},
-											{
-												"type": "Attribute",
-												"start": 76,
-												"end": 89,
-												"name": "index",
-												"value": {
-													"type": "Expression",
-													"start": 82,
-													"end": 89,
-													"expression": {
-														"type": "Identifier",
-														"start": 85,
-														"end": 86,
-														"name": "i",
-														"refers": [
-															22,
-															23
+											"property": {
+												"type": "Identifier",
+												"start": 41,
+												"end": 43,
+												"name": "id"
+											},
+											"computed": false,
+											"optional": false
+										},
+										"body": {
+											"type": "Fragment",
+											"nodes": [
+												{
+													"type": "Text",
+													"start": 45,
+													"end": 48,
+													"raw": "\n\t\t",
+													"data": "\n\t\t"
+												},
+												{
+													"type": "Component",
+													"start": 48,
+													"end": 92,
+													"name": "Card",
+													"attributes": [
+														{
+															"type": "Attribute",
+															"start": 54,
+															"end": 75,
+															"name": "title",
+															"value": {
+																"type": "Expression",
+																"start": 60,
+																"end": 75,
+																"expression": {
+																	"type": "MemberExpression",
+																	"start": 63,
+																	"end": 72,
+																	"object": {
+																		"type": "Identifier",
+																		"start": 63,
+																		"end": 67,
+																		"name": "item",
+																		"refers": [
+																			16,
+																			20
+																		]
+																	},
+																	"property": {
+																		"type": "Identifier",
+																		"start": 68,
+																		"end": 72,
+																		"name": "name"
+																	},
+																	"computed": false,
+																	"optional": false
+																}
+															}
+														},
+														{
+															"type": "Attribute",
+															"start": 76,
+															"end": 89,
+															"name": "index",
+															"value": {
+																"type": "Expression",
+																"start": 82,
+																"end": 89,
+																"expression": {
+																	"type": "Identifier",
+																	"start": 85,
+																	"end": 86,
+																	"name": "i",
+																	"refers": [
+																		22,
+																		23
+																	]
+																}
+															}
+														}
+													],
+													"fragment": {
+														"type": "Fragment",
+														"nodes": []
+													}
+												},
+												{
+													"type": "Text",
+													"start": 92,
+													"end": 94,
+													"raw": "\n\t",
+													"data": "\n\t"
+												}
+											]
+										},
+										"fallback": {
+											"type": "Fragment",
+											"nodes": [
+												{
+													"type": "Text",
+													"start": 104,
+													"end": 107,
+													"raw": "\n\t\t",
+													"data": "\n\t\t"
+												},
+												{
+													"type": "Element",
+													"start": 107,
+													"end": 124,
+													"name": "li",
+													"attributes": [],
+													"fragment": {
+														"type": "Fragment",
+														"nodes": [
+															{
+																"type": "Text",
+																"start": 111,
+																"end": 119,
+																"raw": "No items",
+																"data": "No items"
+															}
 														]
 													}
+												},
+												{
+													"type": "Text",
+													"start": 124,
+													"end": 126,
+													"raw": "\n\t",
+													"data": "\n\t"
 												}
-											}
-										],
-										"children": []
+											]
+										}
 									},
 									{
 										"type": "Text",
-										"start": 92,
-										"end": 94,
-										"data": "\n\t"
-									}
-								],
-								"fallback": [
-									{
-										"type": "Text",
-										"start": 104,
-										"end": 107,
-										"data": "\n\t\t"
-									},
-									{
-										"type": "Element",
-										"start": 107,
-										"end": 124,
-										"name": "li",
-										"attributes": [],
-										"children": [
-											{
-												"type": "Text",
-												"start": 111,
-												"end": 119,
-												"data": "No items"
-											}
-										]
-									},
-									{
-										"type": "Text",
-										"start": 124,
-										"end": 126,
-										"data": "\n\t"
+										"start": 137,
+										"end": 138,
+										"raw": "\n",
+										"data": "\n"
 									}
 								]
-							},
-							{
-								"type": "Text",
-								"start": 137,
-								"end": 138,
-								"data": "\n"
 							}
-						]
-					},
-					{
-						"type": "Text",
-						"start": 143,
-						"end": 144,
-						"data": "\n"
-					}
-				]
+						},
+						{
+							"type": "Text",
+							"start": 143,
+							"end": 144,
+							"raw": "\n",
+							"data": "\n"
+						}
+					]
+				}
 			}
 		}
 	]

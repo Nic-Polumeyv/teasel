@@ -84,18 +84,16 @@ fn whole(src: &str, options: Options) -> (Ast, List) {
 	(ast, roots)
 }
 
-/// Renders a node as its Debug form with ids, strings and lists expanded inline; `typescript`
-/// renders TypeScript's nodes.
-pub(crate) fn dump(ast: &Ast, id: NodeId, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
-	let node = ast.node(id);
-	match node.kind {
-		NodeKind::Extension(index) => typescript(ast, id, index),
-		kind => expand(ast, &format!("{kind:?}"), typescript),
-	}
+/// Renders a node as its Debug form with ids, strings and lists expanded inline, then what
+/// `extras` renders of the node.
+pub(crate) fn dump(ast: &Ast, id: NodeId, extras: &dyn Fn(&Ast, NodeId) -> String) -> String {
+	let mut out = expand(ast, &format!("{:?}", ast.node(id).kind), extras);
+	out.push_str(&extras(ast, id));
+	out
 }
 
 /// Expands the ids inside a Debug rendering.
-pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u32) -> String) -> String {
+pub(crate) fn expand(ast: &Ast, text: &str, extras: &dyn Fn(&Ast, NodeId) -> String) -> String {
 	let mut out = String::new();
 	let mut rest = text;
 	while let Some(i) = rest.find(['N', 'S', 'L']) {
@@ -104,7 +102,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 		if let Some(r) = tail.strip_prefix("NodeId(") {
 			let end = r.find(')').unwrap();
 			let child = NodeId::at(r[..end].parse().unwrap());
-			out.push_str(&dump(ast, child, typescript));
+			out.push_str(&dump(ast, child, extras));
 			rest = &r[end + 1..];
 		} else if let Some(r) = tail.strip_prefix("NumberLiteral { value: ") {
 			let end = r.find(" }").unwrap();
@@ -126,7 +124,7 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 			let items: Vec<String> = ast
 				.list(list)
 				.iter()
-				.map(|c| c.map(|c| dump(ast, c, typescript)).unwrap_or_else(|| "hole".into()))
+				.map(|c| c.map(|c| dump(ast, c, extras)).unwrap_or_else(|| "hole".into()))
 				.collect();
 			out.push('[');
 			out.push_str(&items.join(", "));
@@ -141,8 +139,8 @@ pub(crate) fn expand(ast: &Ast, text: &str, typescript: &dyn Fn(&Ast, NodeId, u3
 	out
 }
 
-fn plain(_: &Ast, _: NodeId, _: u32) -> String {
-	unreachable!("a JavaScript tree holds no TypeScript nodes")
+fn plain(_: &Ast, _: NodeId) -> String {
+	String::new()
 }
 
 fn expr(src: &str) -> String {
@@ -154,6 +152,57 @@ fn module_error(src: &str) -> String {
 	match program(src, Options(Options::MODULE)) {
 		Ok(_) => panic!("no error for {src:?}"),
 		Err(e) => e.to_string(),
+	}
+}
+
+/// A literal's facts are its own: used as an operand it keeps them, and no sibling clears them.
+#[test]
+fn a_literal_keeps_its_facts() {
+	assert_eq!(module_error("({a = 1}.b = 2);"), "shorthand_assignment (4)");
+	assert_eq!(module_error("f({a = 1}.b = 2);"), "shorthand_assignment (5)");
+	assert_eq!(module_error("for ({a = 1}.b of c);"), "shorthand_assignment (8)");
+	assert_eq!(
+		module_error("({__proto__: a, __proto__: b}.c = 1);"),
+		"duplicate_proto (16)"
+	);
+	assert_eq!(module_error("[...r, a = 1] = b;"), "comma_after_rest (5)");
+	// the first of the pending errors is the one reported, whichever element it came from
+	assert_eq!(module_error("[...r, {a = 1}.b] = c;"), "comma_after_rest (5)");
+	assert_eq!(module_error("x = [{c = 1}, {a = 1}.b];"), "shorthand_assignment (8)");
+	assert_eq!(
+		module_error("x = [{__proto__: 1, __proto__: 2, a = 1}];"),
+		"duplicate_proto (20)"
+	);
+	assert_eq!(module_error("[(a = 1), b = 2] = c;"), "invalid_assignment_target (1)");
+	assert_eq!(module_error("async (...r, a = 1) => 1;"), "comma_after_rest (11)");
+	program(
+		"({a = 1} = b); [{a = 1}] = b; for ({a = 1} of b);",
+		Options(Options::MODULE),
+	)
+	.unwrap();
+}
+
+/// A list the closer reader decides is read right, and where it is unsure the parser tries.
+#[test]
+fn a_decided_list_is_read_right() {
+	let module = Options(Options::MODULE);
+	for src in [
+		"f((a = b.default / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"x = (a = b?.delete / 2, c = \"/\") => c; y = \")\" + \"\";",
+		"f((a = b.class / 2, c) => c,\n  d);",
+		"f((a = void /[)]/.b, c) => c, \")\");",
+	] {
+		program(src, module).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		JS.recovered(src, 0, Entry::Program, module, "");
+	}
+	for src in [
+		"f((a = b as void / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = [1] as const / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b as A<B<C>> / 2, c = \"/\") => 1, \"x)\" + \"\");",
+		"f((a = b.default! / 2, c = \"/\") => 1, \"x)\" + \"\");",
+	] {
+		program(src, typescript(module)).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+		TS.recovered(src, 0, Entry::Program, module, "");
 	}
 }
 
@@ -189,10 +238,10 @@ fn the_crate_entry_reads_a_stylesheet() {
 
 #[test]
 fn an_entry_is_one_of_its_numbers() {
-	assert_eq!(crate::json::entry(6.0), Ok(Entry::StyleSheet));
+	assert_eq!(crate::engine::entry(6.0), Ok(Entry::StyleSheet));
 	for index in [7.0, -1.0, 6.5, f64::NAN] {
 		assert!(
-			crate::json::entry(index).unwrap_err().contains(" is no entry"),
+			crate::engine::entry(index).unwrap_err().contains(" is no entry"),
 			"{index}"
 		);
 	}
@@ -201,21 +250,21 @@ fn an_entry_is_one_of_its_numbers() {
 #[test]
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
-	use crate::json::in_place;
+	use crate::engine::parse;
 	let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
-	let words = || crate::json::words(|words| words.to_vec());
+	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	in_place("a +", options, Entry::Expression, 0.0, "", None).unwrap();
+	parse("a +", options, Entry::Expression, 0.0, "", None).unwrap();
 	let failed = words();
 	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let first = words();
-	let _ = in_place("a + b", options, Entry::Expression, 0.0, "", None);
-	let _ = in_place("a +", options, Entry::Expression, 0.0, "", None);
-	in_place(source, options, Entry::Program, 0.0, "", None).unwrap();
+	let _ = parse("a + b", options, Entry::Expression, 0.0, "", None);
+	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
+	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
 	let again = words();
-	// but for the first saying its buffers are new to the front end
+	// but for the first saying its buffers are new to the decoder
 	let what = 2 + first[1] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(
@@ -226,9 +275,10 @@ fn the_session_writes_the_same_words_again() {
 
 #[test]
 fn nesting_limits() {
-	std::thread::Builder::new()
+	let (done, finished) = std::sync::mpsc::channel();
+	let limits = std::thread::Builder::new()
 		.stack_size(64 << 20)
-		.spawn(|| {
+		.spawn(move || {
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
 			assert_eq!(module_error(&deep).as_str(), "nesting_depth (499)");
 			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
@@ -236,10 +286,32 @@ fn nesting_limits() {
 			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
 			assert_eq!(module_error(&chain).as_str(), "nesting_depth (40006)");
+			// an arrow's parameters hold the depth an expression list's items do
+			let arrows = format!("x = {}x{};", "(a = ".repeat(450), ") => a".repeat(450));
+			assert_eq!(module_error(&arrows).as_str(), "nesting_depth (1665)");
+			let typed = format!("x = {}x{};", "(a = ".repeat(450), "): T => a".repeat(450));
+			let error = program(&typed, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 1665));
+			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
+			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
+			// a list the closer reader leaves undecided is tried once: without its outcome kept, every
+			// enclosing failure tried it again, 2x per level, and 24 levels took 15 s
+			let nest = format!(
+				"x = {}1{};",
+				"(a = function () {} / 1, b = ".repeat(28),
+				") + 1".repeat(28)
+			);
+			assert!(program(&nest, Options::default()).is_ok());
+			assert!(program(&nest, typescript(Options::default())).is_ok());
+			done.send(()).unwrap();
 		})
-		.unwrap()
-		.join()
 		.unwrap();
+	// the spine above ran past ten minutes when a limit met in the type read ahead of a list was
+	// taken for an arrow: each level read the levels under it again
+	let waited = finished.recv_timeout(std::time::Duration::from_secs(20));
+	assert_ne!(waited, Err(std::sync::mpsc::RecvTimeoutError::Timeout));
+	limits.join().unwrap();
 }
 
 #[test]
@@ -271,19 +343,13 @@ fn entry_points() {
 		params("{#snippet row(a, a)}", 13, options, "").unwrap_err().text,
 		"duplicate_parameter"
 	);
-	// Parameters are read as expressions first, so the errors are an arrow's.
+	// Parameters are read as bindings, as an arrow's are.
 	let params_error = |src: &str| {
 		let e = params(src, 13, options, "").unwrap_err();
 		(e.text, e.pos)
 	};
-	assert_eq!(
-		params_error("{#snippet row(a.b)}"),
-		("invalid_assignment_target".into(), 14)
-	);
-	assert_eq!(
-		params_error("{#snippet row((a))}"),
-		("parenthesized_pattern".into(), 14)
-	);
+	assert_eq!(params_error("{#snippet row(a.b)}"), ("unexpected_token".into(), 15));
+	assert_eq!(params_error("{#snippet row((a))}"), ("unexpected_token".into(), 14));
 	assert_eq!(
 		params_error("{#snippet row(a = await x)}"),
 		("await_in_default_value".into(), 18)
@@ -296,7 +362,7 @@ fn entry_points() {
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
 			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
-			let news = format!("({}a)", "new ".repeat(20_000));
+			let news = format!("(a = {}a)", "new ".repeat(20_000));
 			assert_eq!(params(&news, 0, options, "").unwrap_err().code, Code::NestingDepth);
 		})
 		.unwrap()
@@ -468,6 +534,10 @@ fn recovery() {
 	let (ast, _, _) = JS.recovered("/* c", 0, Entry::Program, module, "");
 	assert_eq!(codes(&ast), ["unterminated_comment@0"]);
 	assert_eq!(ast.comments.len(), 1);
+	// a character no token starts, inside an arrow's parameters: the arrow is read around it
+	let (ast, _, _) = JS.recovered("f((a, b = #) => a);", 0, Entry::Program, module, "");
+	assert_eq!(codes(&ast), ["unexpected_token@11", "unexpected_character@11"]);
+	assert!(script_body(&ast)[0].contains("ArrowFunctionExpression"));
 
 	// a missing semicolon is recorded and the statement kept; a statement that fails is skipped
 	// to `;`, the closing brace or a keyword on a new line
@@ -631,9 +701,10 @@ fn undeclared_exports_can_be_allowed() {
 #[ignore]
 fn phases() {
 	use crate::Options;
-	use crate::estree::{Positions, answer};
+	use crate::estree::Writer;
 	use crate::lexer::Lexer;
 	use crate::lexer::token::TokenKind;
+	use crate::positions::Positions;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
@@ -716,18 +787,19 @@ fn phases() {
 	let end = source.len() as u32;
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
-		best("whole request: positions, parse, comments, encode, finish", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+		best("whole parse: positions, parse, comments, encode, finish", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
-		best("whole request with scopes", &mut || {
-			crate::json::in_place(&source, options, Entry::Program, 0.0, "", None).unwrap();
+		best("whole parse with scopes", &mut || {
+			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -740,18 +812,15 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::json::in_place(&document, Options(flags), Entry::Program, 0.0, "", Some(&grammar)).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
 	best("Json write", &mut || {
-		let _ = answer(
-			&ast,
+		let names = crate::host::grammar::own::NAMES;
+		let _ = Writer::new(&ast, &source, &positions, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,
-			&source,
-			&positions,
-			options.with(Options::COMMENTS),
 		);
 	});
 	eprintln!(
@@ -768,77 +837,269 @@ fn phases() {
 	);
 }
 
-// TEASEL_BENCH=file cargo test --release profile -- --ignored --nocapture; writes target/parse.svg
-#[cfg(target_os = "linux")]
+// TEASEL_BENCH=file RUSTFLAGS="-C force-frame-pointers=yes" cargo test --profile profiling profile -- --ignored --nocapture
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 #[ignore]
 fn profile() {
+	use std::collections::{HashMap, HashSet};
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
 	let source = std::fs::read_to_string(path).unwrap();
 	let options = crate::Options(crate::Options::MODULE);
-	let guard = pprof::ProfilerGuardBuilder::default()
-		.frequency(4000)
-		.blocklist(&["libc", "libgcc", "pthread", "vdso"])
-		.build()
-		.unwrap();
 	let mut sink = 0usize;
-	for _ in 0..3000 {
+	let (stacks, cut) = sample(|| {
 		let (ast, _) = whole(&source, options);
 		sink = sink.wrapping_add(ast.nodes.len());
+	});
+	if stacks.is_empty() {
+		return eprintln!("no frame pointers: RUSTFLAGS=\"-C force-frame-pointers=yes\"");
 	}
 
-	let report = guard.report().build().unwrap();
-	let file = std::fs::File::create("target/parse.svg").unwrap();
-	report.flamegraph(file).unwrap();
-	let mut by_frame: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
-	let mut total = 0usize;
-	for (frames, count) in &report.data {
-		total += *count as usize;
-		let names: Vec<String> = frames
-			.frames
-			.iter()
-			.flat_map(|f| {
-				f.iter().map(|s| {
-					s.name
-						.as_deref()
-						.map(|n| rustc_demangle::demangle(&String::from_utf8_lossy(n)).to_string())
-						.unwrap_or_default()
-				})
-			})
-			.collect();
-		if let Some(top) = names.first() {
-			by_frame.entry(top.clone()).or_default().0 += *count as usize;
-		}
-		let mut seen = std::collections::HashSet::new();
-		for name in &names {
-			if seen.insert(name.clone()) {
-				by_frame.entry(name.clone()).or_default().1 += *count as usize;
-			}
+	let exe = std::env::current_exe().unwrap();
+	let maps = std::fs::read_to_string("/proc/self/maps").unwrap();
+	let mapped: Vec<(std::ops::Range<usize>, &str)> = maps
+		.lines()
+		.map(|line| {
+			let mut fields = line.split_whitespace();
+			let (start, end) = fields.next().unwrap().split_once('-').unwrap();
+			let address = |hex| usize::from_str_radix(hex, 16).unwrap();
+			(address(start)..address(end), fields.nth(4).unwrap_or(""))
+		})
+		.collect();
+	let own = |(_, file): &&(std::ops::Range<usize>, &str)| *file == exe.to_str().unwrap();
+	let own = mapped.iter().find(own).unwrap().0.start..mapped.iter().rfind(own).unwrap().0.end;
+	let inside: HashSet<usize> = stacks
+		.iter()
+		.flatten()
+		.copied()
+		.filter(|address| own.contains(address))
+		.collect();
+	let named = std::process::Command::new("addr2line")
+		.args(["-a", "-f", "-i", "-C", "-e"])
+		.arg(&exe)
+		.args(inside.iter().map(|address| format!("{:#x}", address - own.start)))
+		.output()
+		.unwrap();
+	// per address, the functions inlined there with the line each stands on, innermost first; the last is the compiled one
+	let mut chains: HashMap<usize, Vec<(String, String)>> = HashMap::new();
+	let (mut address, mut function) = (0, None::<&str>);
+	let named = String::from_utf8_lossy(&named.stdout);
+	for line in named.lines() {
+		if let Some(hex) = line.strip_prefix("0x") {
+			address = usize::from_str_radix(hex, 16).unwrap() + own.start;
+		} else if let Some(function) = function.take() {
+			let line = line.split(" (discriminator").next().unwrap();
+			chains
+				.entry(address)
+				.or_default()
+				.push((function.to_string(), line.to_string()));
+		} else {
+			function = Some(line);
 		}
 	}
-	let mut rows: Vec<_> = by_frame.into_iter().collect();
-	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	if chains.values().flatten().all(|(function, _)| function == "??") {
+		return eprintln!("no symbols: --profile profiling");
+	}
+
+	let compiled = |address: usize| match chains.get(&address) {
+		Some(chain) => chain.last().unwrap().0.clone(),
+		None => {
+			let file = mapped
+				.iter()
+				.find(|(range, _)| range.contains(&address))
+				.map_or("", |(_, file)| file);
+			format!("[{}]", file.rsplit('/').next().unwrap())
+		}
+	};
+	let mut functions: HashMap<String, (usize, usize)> = HashMap::new();
+	let mut lines: HashMap<String, usize> = HashMap::new();
+	for stack in &stacks {
+		let function = compiled(stack[0]);
+		let line = chains.get(&stack[0]).and_then(|chain| {
+			chain.iter().find_map(|(function, line)| {
+				let line = line.strip_prefix(concat!(env!("CARGO_MANIFEST_DIR"), "/src/"))?;
+				(!line.ends_with(":?")).then(|| format!("{line}  {function}"))
+			})
+		});
+		*lines.entry(line.unwrap_or_else(|| function.clone())).or_default() += 1;
+		functions.entry(function.clone()).or_default().0 += 1;
+		let mut seen = HashSet::from([function]);
+		for address in &stack[1..] {
+			if own.contains(address) {
+				seen.insert(compiled(*address));
+			}
+		}
+		for function in seen {
+			functions.entry(function).or_default().1 += 1;
+		}
+	}
 	eprintln!(
-		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
+		"samples {}, {cut} of them without their callers, sink {sink}, token {} bytes, result {} bytes",
+		stacks.len(),
 		std::mem::size_of::<crate::lexer::token::Token>(),
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
 	);
-	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
+	let share = |count: usize| count as f64 * 100.0 / stacks.len() as f64;
+	let short = |name: &str| {
+		name.replace("teasel::", "")
+			.replace("core::", "")
+			.replace("alloc::", "")
+	};
+	let mut rows: Vec<_> = functions.into_iter().collect();
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	eprintln!("{:>6} {:>6}  function", "self%", "incl%");
 	for (name, (own, incl)) in rows.iter().take(40) {
-		eprintln!(
-			"{:6.1} {:6.1}  {}",
-			*own as f64 * 100.0 / total as f64,
-			*incl as f64 * 100.0 / total as f64,
-			name.replace("teasel::", "")
-				.replace("core::", "")
-				.replace("alloc::", "")
-				.chars()
-				.take(400)
-				.collect::<String>()
-		);
+		eprintln!("{:6.1} {:6.1}  {}", share(*own), share(*incl), short(name));
 	}
+	let mut rows: Vec<_> = lines.into_iter().collect();
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1));
+	eprintln!("{:>6}  line", "self%");
+	for (name, own) in rows.iter().take(40) {
+		eprintln!("{:6.1}  {}", share(*own), short(name));
+	}
+}
+
+/// Samples the stack while `work` runs over and over: per sample the address that was running, then one
+/// inside each caller, innermost first. Beside them, how many samples the walk could not follow up to here.
+/// Nothing in a build without frame pointers.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn sample(mut work: impl FnMut()) -> (Vec<Vec<usize>>, usize) {
+	use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering::Relaxed};
+	const SAMPLES: usize = 20_000;
+	const DEPTH: usize = 512;
+	static LOG: AtomicPtr<usize> = AtomicPtr::new(std::ptr::null_mut());
+	static USED: AtomicUsize = AtomicUsize::new(0);
+	static TAKEN: AtomicUsize = AtomicUsize::new(0);
+	static TOP: AtomicUsize = AtomicUsize::new(0);
+	static CUT: AtomicUsize = AtomicUsize::new(0);
+
+	#[repr(C)]
+	struct Action {
+		handler: usize,
+		mask: [u64; 16],
+		flags: i32,
+		restorer: usize,
+	}
+	#[repr(C)]
+	struct Event {
+		value: usize,
+		signal: i32,
+		notify: i32,
+		thread: i32,
+		rest: [i32; 11],
+	}
+	unsafe extern "C" {
+		fn sigaction(signal: i32, action: *const Action, old: *mut Action) -> i32;
+		fn timer_create(clock: i32, event: *mut Event, timer: *mut usize) -> i32;
+		fn timer_settime(timer: usize, flags: i32, new: *const i64, old: *mut i64) -> i32;
+		fn timer_delete(timer: usize) -> i32;
+		fn gettid() -> i32;
+	}
+	// a parse that panics frees the log, and a tick after that would write into it
+	struct Stop(usize);
+	impl Drop for Stop {
+		fn drop(&mut self) {
+			unsafe { timer_delete(self.0) };
+		}
+	}
+
+	extern "C" fn tick(_: i32, _: usize, context: *const usize) {
+		let taken = TAKEN.load(Relaxed);
+		if taken == SAMPLES {
+			return;
+		}
+		// glibc's ucontext_t: the registers start at byte 40, and REG_RBP is 10, REG_RSP 15, REG_RIP 16
+		let (mut frame, mut low, running) = unsafe { (*context.add(15), *context.add(20), *context.add(21)) };
+		let (top, used) = (TOP.load(Relaxed), USED.load(Relaxed));
+		let mut depth = 1;
+		unsafe {
+			let row = LOG.load(Relaxed).add(used);
+			*row.add(1) = running;
+			// on `push rbp`, on the `mov rbp, rsp` after it and on `ret`, RBP is the caller's frame: the walk
+			// would start at the caller's caller, and the caller is only on the stack
+			let code = running as *const u8;
+			let caller = match *code {
+				0xc3 => low,
+				0x55 if *(code.add(1) as *const [u8; 3]) == [0x48, 0x89, 0xe5] => low,
+				0x48 if *code.sub(1) == 0x55 && *(code.add(1) as *const [u8; 2]) == [0x89, 0xe5] => low + 8,
+				_ => 0,
+			};
+			if caller != 0 {
+				depth += 1;
+				*row.add(depth) = (*(caller as *const usize)).wrapping_sub(1);
+			}
+			while depth < DEPTH && frame >= low && frame <= top - 16 && frame % 8 == 0 {
+				depth += 1;
+				*row.add(depth) = (*((frame + 8) as *const usize)).wrapping_sub(1);
+				low = frame + 16;
+				frame = *(frame as *const usize);
+			}
+			*row = depth;
+		}
+		if frame != top {
+			CUT.store(CUT.load(Relaxed) + 1, Relaxed);
+		}
+		USED.store(used + depth + 1, Relaxed);
+		TAKEN.store(taken + 1, Relaxed);
+	}
+
+	#[inline(never)]
+	fn callee() -> usize {
+		let frame: usize;
+		unsafe { std::arch::asm!("mov {}, rbp", out(reg) frame) };
+		frame
+	}
+	let frame: usize;
+	unsafe { std::arch::asm!("mov {}, rbp", out(reg) frame) };
+	// without frame pointers a callee leaves RBP as it found it
+	if callee() >= frame {
+		return (Vec::new(), 0);
+	}
+	let mut log = vec![0usize; SAMPLES * (DEPTH + 1)];
+	LOG.store(log.as_mut_ptr(), Relaxed);
+	TOP.store(frame, Relaxed);
+	// SIGPROF with SA_SIGINFO | SA_RESTART, sent to this thread (SIGEV_THREAD_ID)
+	let action = Action {
+		handler: tick as *const () as usize,
+		mask: [0; 16],
+		flags: 0x1000_0004,
+		restorer: 0,
+	};
+	let mut event = Event {
+		value: 0,
+		signal: 27,
+		notify: 4,
+		thread: unsafe { gettid() },
+		rest: [0; 11],
+	};
+	let mut timer = 0;
+	// CLOCK_MONOTONIC: a timer on a CPU-time clock, as ITIMER_PROF is, fires only on the kernel's tick, 250 a second here
+	// an itimerspec, the interval then the first expiry, each in seconds and nanoseconds: 4,000 a second
+	let every = [0i64, 250_000, 0, 250_000];
+	unsafe {
+		assert_eq!(sigaction(27, &action, std::ptr::null_mut()), 0);
+		assert_eq!(timer_create(1, &mut event, &mut timer), 0);
+	}
+	let stop = Stop(timer);
+	assert_eq!(
+		unsafe { timer_settime(timer, 0, every.as_ptr(), std::ptr::null_mut()) },
+		0
+	);
+	while TAKEN.load(Relaxed) < SAMPLES {
+		work();
+	}
+	drop(stop);
+	let mut stacks = Vec::with_capacity(SAMPLES);
+	let mut at = 0;
+	for _ in 0..SAMPLES {
+		let depth = log[at];
+		assert!(depth < DEPTH, "a stack deeper than {DEPTH} frames was cut off");
+		stacks.push(log[at + 1..at + 1 + depth].to_vec());
+		at += depth + 1;
+	}
+	(stacks, CUT.load(Relaxed))
 }
 
 #[test]
@@ -902,19 +1163,20 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::json::grammar(
+	let grammar = crate::engine::grammar(
 		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
 	)
 	.unwrap();
+	let grammar = crate::engine::grammar_at(grammar);
 	let count = |src: &str| {
 		let parse = || {
-			crate::json::in_place(
+			crate::engine::parse(
 				src,
 				crate::Options(crate::Options::MODULE),
 				Entry::Program,
 				0.0,
 				"",
-				Some(&grammar),
+				grammar,
 			)
 			.unwrap()
 		};
@@ -968,22 +1230,28 @@ fn layout_sizes() {
 		size_of::<crate::lexer::token::TokenKind>()
 	);
 	eprintln!(
-		"Scope {} Binding {} Reference {} Comment {} Host {} Attached {} TokenSnapshot {}",
+		"Scope {} Binding {} Reference {} Comment {} HostRow {} Attached {} TokenSnapshot {}",
 		size_of::<crate::scopes::Scope>(),
 		size_of::<crate::scopes::Binding>(),
 		size_of::<crate::scopes::Reference>(),
 		size_of::<crate::ast::Comment>(),
-		size_of::<crate::ast::Host>(),
+		size_of::<crate::ast::HostRow>(),
 		size_of::<crate::ast::Attached>(),
 		size_of::<super::TokenSnapshot>()
 	);
 }
 
 #[test]
+#[should_panic(expected = "is not a character boundary")]
+fn an_offset_inside_a_character_is_refused() {
+	crate::estree::parse("é", Entry::Program, 1, crate::Options(crate::Options::MODULE));
+}
+
+#[test]
 fn parenthesized_bits() {
-	let request = crate::json::Request::from_flags(crate::Options::MODULE | crate::Options::PARENTHESIZED);
-	let json = crate::json::parse("(a).b; (x, y); c; ((d));", &request);
+	let options = crate::Options(crate::Options::MODULE | crate::Options::PARENTHESIZED);
+	let json = crate::estree::parse("(a).b; (x, y); c; ((d));", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 3, "{json}");
-	let json = crate::json::parse("(a, b) => a; (c);", &request);
+	let json = crate::estree::parse("(a, b) => a; (c);", Entry::Program, 0, options);
 	assert_eq!(json.matches("\"parenthesized\":true").count(), 1, "{json}");
 }

@@ -24,19 +24,6 @@
 						"root": 0,
 						"name": "p"
 					},
-					"pending": {
-						"type": "Fragment",
-						"scope": 3,
-						"nodes": [
-							{
-								"type": "Text",
-								"start": 10,
-								"end": 20,
-								"raw": "\n\twaiting\n",
-								"data": "\n\twaiting\n"
-							}
-						]
-					},
 					"value": {
 						"type": "Identifier",
 						"start": 27,
@@ -47,7 +34,7 @@
 					},
 					"then": {
 						"type": "Fragment",
-						"scope": 4,
+						"scope": 3,
 						"nodes": [
 							{
 								"type": "Text",
@@ -88,7 +75,7 @@
 					},
 					"catch": {
 						"type": "Fragment",
-						"scope": 5,
+						"scope": 4,
 						"nodes": [
 							{
 								"type": "Text",
@@ -131,6 +118,19 @@
 								"data": "\n"
 							}
 						]
+					},
+					"pending": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 10,
+								"end": 20,
+								"raw": "\n\twaiting\n",
+								"data": "\n\twaiting\n"
+							}
+						]
 					}
 				},
 				{
@@ -152,9 +152,6 @@
 						"root": 5,
 						"name": "p"
 					},
-					"error": null,
-					"catch": null,
-					"pending": null,
 					"value": {
 						"type": "Identifier",
 						"start": 99,
@@ -181,7 +178,10 @@
 								}
 							}
 						]
-					}
+					},
+					"error": null,
+					"catch": null,
+					"pending": null
 				},
 				{
 					"type": "Text",
@@ -204,7 +204,6 @@
 					},
 					"value": null,
 					"then": null,
-					"pending": null,
 					"error": {
 						"type": "Identifier",
 						"start": 129,
@@ -231,7 +230,8 @@
 								}
 							}
 						]
-					}
+					},
+					"pending": null
 				}
 			]
 		}
@@ -284,13 +284,13 @@
 		{
 			"name": "value",
 			"kind": "pattern",
-			"scope": 4,
+			"scope": 3,
 			"write": true
 		},
 		{
 			"name": "error",
 			"kind": "pattern",
-			"scope": 5,
+			"scope": 4,
 			"write": true
 		},
 		{
@@ -316,7 +316,7 @@
 			"declares": false
 		},
 		{
-			"scope": 4,
+			"scope": 3,
 			"binding": 0,
 			"write": false,
 			"read": true,
@@ -324,7 +324,7 @@
 			"declares": false
 		},
 		{
-			"scope": 5,
+			"scope": 4,
 			"binding": 1,
 			"write": false,
 			"read": true,
@@ -381,10 +381,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 3,
 			"scopes": [
-				5,
-				5
+				4,
+				4
 			],
 			"bindings": [
 				0,
@@ -396,10 +396,10 @@
 			]
 		},
 		{
-			"scope": 4,
+			"scope": 3,
 			"scopes": [
-				5,
-				5
+				4,
+				4
 			],
 			"bindings": [
 				1,
@@ -411,10 +411,10 @@
 			]
 		},
 		{
-			"scope": 5,
+			"scope": 4,
 			"scopes": [
-				6,
-				6
+				5,
+				5
 			],
 			"bindings": [
 				1,
@@ -426,10 +426,10 @@
 			]
 		},
 		{
-			"scope": 5,
+			"scope": 4,
 			"scopes": [
-				6,
-				6
+				5,
+				5
 			],
 			"bindings": [
 				2,
