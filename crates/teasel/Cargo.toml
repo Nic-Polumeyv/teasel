@@ -11,6 +11,3 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-
-[target.'cfg(all(target_os = "linux", teasel_profile))'.dev-dependencies]
-pprof = { version = "0.15.0", features = ["flamegraph"] }
