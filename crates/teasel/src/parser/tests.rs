@@ -852,10 +852,13 @@ fn profile() {
 	let source = std::fs::read_to_string(path).unwrap();
 	let options = crate::Options(crate::Options::MODULE);
 	let mut sink = 0usize;
-	let stacks = sample(|| {
+	let (stacks, cut) = sample(|| {
 		let (ast, _) = whole(&source, options);
 		sink = sink.wrapping_add(ast.nodes.len());
 	});
+	if stacks.is_empty() {
+		return eprintln!("no frame pointers: RUSTFLAGS=\"-C force-frame-pointers=yes\"");
+	}
 
 	let exe = std::env::current_exe().unwrap();
 	let maps = std::fs::read_to_string("/proc/self/maps").unwrap();
@@ -899,10 +902,9 @@ fn profile() {
 			function = Some(line);
 		}
 	}
-	assert!(
-		chains.values().flatten().any(|(function, _)| function != "??"),
-		"no symbols: --profile profiling"
-	);
+	if chains.values().flatten().all(|(function, _)| function == "??") {
+		return eprintln!("no symbols: --profile profiling");
+	}
 
 	let compiled = |address: usize| match chains.get(&address) {
 		Some(chain) => chain.last().unwrap().0.clone(),
@@ -921,7 +923,7 @@ fn profile() {
 		let line = chains.get(&stack[0]).and_then(|chain| {
 			chain.iter().find_map(|(function, line)| {
 				let line = line.strip_prefix(concat!(env!("CARGO_MANIFEST_DIR"), "/src/"))?;
-				Some(format!("{line}  {function}"))
+				(!line.ends_with(":?")).then(|| format!("{line}  {function}"))
 			})
 		});
 		*lines.entry(line.unwrap_or_else(|| function.clone())).or_default() += 1;
@@ -937,7 +939,7 @@ fn profile() {
 		}
 	}
 	eprintln!(
-		"samples {}, sink {sink}, token {} bytes, result {} bytes",
+		"samples {}, {cut} of them without their callers, sink {sink}, token {} bytes, result {} bytes",
 		stacks.len(),
 		std::mem::size_of::<crate::lexer::token::Token>(),
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
@@ -962,11 +964,11 @@ fn profile() {
 	}
 }
 
-/// Runs `work` until 20,000 samples of its stack are taken, 4,000 a second: per sample the address that
-/// was running, then one inside each caller, innermost first.
+/// Samples the stack while `work` runs over and over: per sample the address that was running, then one
+/// inside each caller, innermost first. Beside them, how many samples the walk could not follow up to here.
+/// Nothing in a build without frame pointers.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-#[inline(never)]
-fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
+fn sample(mut work: impl FnMut()) -> (Vec<Vec<usize>>, usize) {
 	use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering::Relaxed};
 	const SAMPLES: usize = 20_000;
 	const DEPTH: usize = 512;
@@ -974,6 +976,7 @@ fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
 	static USED: AtomicUsize = AtomicUsize::new(0);
 	static TAKEN: AtomicUsize = AtomicUsize::new(0);
 	static TOP: AtomicUsize = AtomicUsize::new(0);
+	static CUT: AtomicUsize = AtomicUsize::new(0);
 
 	#[repr(C)]
 	struct Action {
@@ -997,26 +1000,49 @@ fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
 		fn timer_delete(timer: usize) -> i32;
 		fn gettid() -> i32;
 	}
+	// a parse that panics frees the log, and a tick after that would write into it
+	struct Stop(usize);
+	impl Drop for Stop {
+		fn drop(&mut self) {
+			unsafe { timer_delete(self.0) };
+		}
+	}
 
 	extern "C" fn tick(_: i32, _: usize, context: *const usize) {
 		let taken = TAKEN.load(Relaxed);
 		if taken == SAMPLES {
 			return;
 		}
-		// glibc's ucontext_t: the registers start at byte 40, RBP the 10th, RSP the 15th, RIP the 16th
+		// glibc's ucontext_t: the registers start at byte 40, and REG_RBP is 10, REG_RSP 15, REG_RIP 16
 		let (mut frame, mut low, running) = unsafe { (*context.add(15), *context.add(20), *context.add(21)) };
 		let (top, used) = (TOP.load(Relaxed), USED.load(Relaxed));
 		let mut depth = 1;
 		unsafe {
 			let row = LOG.load(Relaxed).add(used);
 			*row.add(1) = running;
-			while depth < DEPTH && frame >= low && frame + 16 <= top && frame % 8 == 0 {
+			// on `push rbp`, on the `mov rbp, rsp` after it and on `ret`, RBP is the caller's frame: the walk
+			// would start at the caller's caller, and the caller is only on the stack
+			let code = running as *const u8;
+			let caller = match *code {
+				0xc3 => low,
+				0x55 if *(code.add(1) as *const [u8; 3]) == [0x48, 0x89, 0xe5] => low,
+				0x48 if *code.sub(1) == 0x55 && *(code.add(1) as *const [u8; 2]) == [0x89, 0xe5] => low + 8,
+				_ => 0,
+			};
+			if caller != 0 {
 				depth += 1;
-				*row.add(depth) = *((frame + 8) as *const usize) - 1;
+				*row.add(depth) = (*(caller as *const usize)).wrapping_sub(1);
+			}
+			while depth < DEPTH && frame >= low && frame <= top - 16 && frame % 8 == 0 {
+				depth += 1;
+				*row.add(depth) = (*((frame + 8) as *const usize)).wrapping_sub(1);
 				low = frame + 16;
 				frame = *(frame as *const usize);
 			}
 			*row = depth;
+		}
+		if frame != top {
+			CUT.store(CUT.load(Relaxed) + 1, Relaxed);
 		}
 		USED.store(used + depth + 1, Relaxed);
 		TAKEN.store(taken + 1, Relaxed);
@@ -1031,10 +1057,9 @@ fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
 	let frame: usize;
 	unsafe { std::arch::asm!("mov {}, rbp", out(reg) frame) };
 	// without frame pointers a callee leaves RBP as it found it
-	assert!(
-		callee() < frame,
-		"no frame pointers: RUSTFLAGS=\"-C force-frame-pointers=yes\""
-	);
+	if callee() >= frame {
+		return (Vec::new(), 0);
+	}
 	let mut log = vec![0usize; SAMPLES * (DEPTH + 1)];
 	LOG.store(log.as_mut_ptr(), Relaxed);
 	TOP.store(frame, Relaxed);
@@ -1054,16 +1079,21 @@ fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
 	};
 	let mut timer = 0;
 	// CLOCK_MONOTONIC: a timer on a CPU-time clock, as ITIMER_PROF is, fires only on the kernel's tick, 250 a second here
+	// an itimerspec, the interval then the first expiry, each in seconds and nanoseconds: 4,000 a second
 	let every = [0i64, 250_000, 0, 250_000];
 	unsafe {
 		assert_eq!(sigaction(27, &action, std::ptr::null_mut()), 0);
 		assert_eq!(timer_create(1, &mut event, &mut timer), 0);
-		assert_eq!(timer_settime(timer, 0, every.as_ptr(), std::ptr::null_mut()), 0);
 	}
+	let stop = Stop(timer);
+	assert_eq!(
+		unsafe { timer_settime(timer, 0, every.as_ptr(), std::ptr::null_mut()) },
+		0
+	);
 	while TAKEN.load(Relaxed) < SAMPLES {
 		work();
 	}
-	unsafe { timer_delete(timer) };
+	drop(stop);
 	let mut stacks = Vec::with_capacity(SAMPLES);
 	let mut at = 0;
 	for _ in 0..SAMPLES {
@@ -1072,7 +1102,7 @@ fn sample(mut work: impl FnMut()) -> Vec<Vec<usize>> {
 		stacks.push(log[at + 1..at + 1 + depth].to_vec());
 		at += depth + 1;
 	}
-	stacks
+	(stacks, CUT.load(Relaxed))
 }
 
 #[test]
