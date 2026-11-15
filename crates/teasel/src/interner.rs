@@ -195,6 +195,24 @@ fn hash(s: &str) -> u32 {
 	(h ^ (h >> 32)) as u32
 }
 
+/// Whether `a` and `b` hold the same bytes. Up to sixteen, their two ends are compared as integers, the
+/// way `hash` reads a tail: `==` is a call to memcmp, which costs more than a word is long.
+#[inline]
+fn same(a: &[u8], b: &[u8]) -> bool {
+	fn ends<const N: usize>(a: &[u8], b: &[u8]) -> Option<bool> {
+		Some(a.first_chunk::<N>()? == b.first_chunk::<N>()? && a.last_chunk::<N>() == b.last_chunk::<N>())
+	}
+	a.len() == b.len()
+		&& if a.len() > 16 {
+			a == b
+		} else {
+			ends::<8>(a, b)
+				.or_else(|| ends::<4>(a, b))
+				.or_else(|| ends::<2>(a, b))
+				.unwrap_or(a.first() == b.first())
+		}
+}
+
 impl Interner {
 	/// Room for the strings of `bytes` of source, so the table grows rarely.
 	pub(crate) fn sized(bytes: usize) -> Self {
@@ -264,7 +282,8 @@ impl Interner {
 	}
 
 	fn probe(&self, s: &str, hash: u32) -> Result<u32, usize> {
-		self.slots.probe(hash, |id| self.get(StrId::at(id)) == s)
+		self.slots
+			.probe(hash, |id| same(self.get(StrId::at(id)).as_bytes(), s.as_bytes()))
 	}
 
 	pub fn get(&self, id: StrId) -> &str {
@@ -296,6 +315,21 @@ impl Interner {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn same_is_equality() {
+		let text: Vec<u8> = (0..40).collect();
+		for len in 0..text.len() {
+			let a = &text[..len];
+			assert!(same(a, a));
+			assert!(!same(a, &text[..len + 1]));
+			for at in 0..len {
+				let mut b = a.to_vec();
+				b[at] ^= 1;
+				assert!(!same(a, &b), "{len} bytes, differing at {at}");
+			}
+		}
+	}
 
 	#[test]
 	fn interns_once_and_finds() {
