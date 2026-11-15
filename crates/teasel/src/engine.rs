@@ -233,7 +233,8 @@ pub fn parse(
 	stop: &str,
 	grammar: Option<&Grammar>,
 ) -> Result<(), String> {
-	let positions = Positions::of(source, options);
+	let mut positions = SESSION.with(|session| std::mem::take(&mut session.borrow_mut().positions));
+	positions.read(source, options);
 	let offset = positions.byte_offset(start)?;
 	if !source.is_char_boundary(offset as usize) {
 		return Err(format!("offset {start} is inside a surrogate pair"));
@@ -268,12 +269,15 @@ pub fn parse(
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		},
 	);
+	SESSION.with(|session| session.borrow_mut().positions = positions);
 	Ok(())
 }
 
-/// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
+/// What every parse on a thread reuses: the trees, emptied, the answer's buffers and the room
+/// the positions' tables took.
 #[derive(Default)]
 struct Session {
+	positions: Positions,
 	/// The JavaScript tree, then the TypeScript one: the decoder keeps the views of the two apart.
 	trees: [Option<Box<Ast>>; 2],
 	words: Words,

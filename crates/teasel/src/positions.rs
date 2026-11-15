@@ -3,6 +3,7 @@ use crate::handed::Handed;
 
 /// Maps byte offsets to UTF-16 offsets and line/column pairs, the positions JavaScript counts,
 /// and UTF-16 offsets back to bytes.
+#[derive(Default)]
 pub(crate) struct Positions {
 	/// After each non-ASCII character: its end byte offset and the bytes-minus-code-units gap so far.
 	gaps: Vec<(u32, u32)>,
@@ -25,17 +26,30 @@ pub(crate) struct Cursor {
 impl Positions {
 	/// As `options` asks: the line table when anything is located, and whether host nodes are.
 	pub(crate) fn of(source: &str, options: crate::Options) -> Self {
-		Positions {
-			hosts: !options.has(crate::Options::LOCATIONS_JS),
-			..Self::new(source, options.locations())
-		}
+		let mut positions = Self::default();
+		positions.read(source, options);
+		positions
+	}
+
+	/// `of`, in the room the last source's tables took.
+	pub(crate) fn read(&mut self, source: &str, options: crate::Options) {
+		self.fill(source, options.locations());
+		self.hosts = !options.has(crate::Options::LOCATIONS_JS);
 	}
 
 	/// `lines` builds the line table, which only `loc` needs.
 	pub(crate) fn new(source: &str, lines: bool) -> Self {
+		let mut positions = Self::default();
+		positions.fill(source, lines);
+		positions
+	}
+
+	fn fill(&mut self, source: &str, lines: bool) {
 		let bytes = source.as_bytes();
-		let mut gaps = Vec::new();
-		let mut line_starts = vec![(0, 0)];
+		let (gaps, line_starts) = (&mut self.gaps, &mut self.line_starts);
+		gaps.clear();
+		line_starts.clear();
+		line_starts.push((0, 0));
 		let mut gap = 0u32;
 		let mut i = 0;
 		if !lines && bytes.is_ascii() {
@@ -70,13 +84,9 @@ impl Positions {
 				}
 			}
 		}
-		Self {
-			gaps,
-			line_starts,
-			len: source.len() as u32,
-			lines,
-			hosts: true,
-		}
+		self.len = source.len() as u32;
+		self.lines = lines;
+		self.hosts = true;
 	}
 
 	/// The byte offset of a UTF-16 offset, or why there is none; a position inside a surrogate
