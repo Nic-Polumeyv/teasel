@@ -174,13 +174,15 @@ pub(crate) mod word {
 	pub(crate) const EVAL: u8 = 64;
 
 	pub(crate) fn flags(word: &str) -> u8 {
-		let mut flags = match word {
-			"yield" => YIELD | STRICT,
-			"await" => AWAIT,
-			"arguments" => ARGUMENTS,
-			"eval" => EVAL,
-			"enum" => ENUM,
-			"implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" => STRICT,
+		let mut flags = match word.as_bytes() {
+			b"yield" => YIELD | STRICT,
+			b"await" => AWAIT,
+			b"arguments" => ARGUMENTS,
+			b"eval" => EVAL,
+			b"enum" => ENUM,
+			b"implements" | b"interface" | b"let" | b"package" | b"private" | b"protected" | b"public" | b"static" => {
+				STRICT
+			}
 			_ => 0,
 		};
 		if super::Keyword::from_word(word).is_some() {

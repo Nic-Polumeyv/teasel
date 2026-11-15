@@ -387,7 +387,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			let mut next = lexer.next_token()?;
 			if kind == VariableKind::AwaitUsing {
 				if next.newline_before
-					|| next.escaped || !matches!(next.kind, TokenKind::Ident(id) if lexer.strings.get(id) == "using")
+					|| next.escaped || !matches!(next.kind, TokenKind::Ident(id) if lexer.strings.is(id, "using"))
 				{
 					return Ok(false);
 				}
@@ -399,7 +399,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			if is_for
 				&& kind == VariableKind::Using
 				&& !next.escaped
-				&& matches!(next.kind, TokenKind::Ident(id) if lexer.strings.get(id) == "of")
+				&& matches!(next.kind, TokenKind::Ident(id) if lexer.strings.is(id, "of"))
 			{
 				let after = lexer.next_token()?;
 				return Ok(matches!(
@@ -1709,7 +1709,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	fn parse_class_element_name(&mut self) -> Result<(NodeId, bool)> {
 		if let TokenKind::PrivateName(name) = self.tok.kind {
-			if self.str(name) == "constructor" {
+			if self.lexer.strings.is(name, "constructor") {
 				return self.error(self.tok.start, Code::PrivateConstructor);
 			}
 			return Ok((self.parse_private_ident()?, false));

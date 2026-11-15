@@ -1004,7 +1004,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	/// The current token is the unescaped identifier `name`.
 	pub(crate) fn is_contextual(&self, name: &str) -> bool {
 		match self.tok.kind {
-			TokenKind::Ident(id) if !self.tok.escaped => self.str(id) == name,
+			TokenKind::Ident(id) if !self.tok.escaped => self.lexer.strings.is(id, name),
 			_ => false,
 		}
 	}

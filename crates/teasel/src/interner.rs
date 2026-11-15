@@ -286,6 +286,12 @@ impl Interner {
 			.probe(hash, |id| same(self.get(StrId::at(id)).as_bytes(), s.as_bytes()))
 	}
 
+	/// Whether the string `id` is `word`.
+	#[inline]
+	pub fn is(&self, id: StrId, word: &str) -> bool {
+		same(self.get(id).as_bytes(), word.as_bytes())
+	}
+
 	pub fn get(&self, id: StrId) -> &str {
 		let i = id.index() as usize;
 		// every start is where a whole string was appended, so a character boundary

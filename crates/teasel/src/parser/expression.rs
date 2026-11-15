@@ -470,7 +470,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn parse_subscripts(&mut self, mut base: NodeId, start: u32, no_calls: bool, for_init: ForInit) -> Result<NodeId> {
 		let maybe_async_arrow = match self.kind(base) {
 			NodeKind::Identifier { name } => {
-				self.str(name) == "async"
+				self.lexer.strings.is(name, "async")
 					&& self.prev_end == self.end_of(base)
 					&& !self.can_insert_semicolon()
 					&& self.end_of(base) - self.start_of(base) == 5
@@ -610,7 +610,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			TokenKind::Ident(name) => {
 				let escaped = self.tok.escaped;
 				let id = self.parse_ident(false)?;
-				let is_async = !escaped && self.str(name) == "async";
+				let is_async = !escaped && self.lexer.strings.is(name, "async");
 				if is_async && !self.can_insert_semicolon() && self.eat_keyword(Keyword::Function)? {
 					return self.parse_function(start, 0, true, for_init);
 				}
@@ -1542,7 +1542,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let id = self.add(NodeKind::Identifier { name }, start);
 		if !liberal {
 			self.check_unreserved(id)?;
-			if self.str(name) == "await" && self.await_ident_pos == 0 {
+			if self.lexer.strings.is(name, "await") && self.await_ident_pos == 0 {
 				self.await_ident_pos = start;
 			}
 		}
@@ -1606,7 +1606,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let start = self.start_of(id);
 		match self.kind(id) {
 			NodeKind::Identifier { name } => {
-				if self.in_async() && self.str(name) == "await" {
+				if self.in_async() && self.lexer.strings.is(name, "await") {
 					return self.error(start, Code::AwaitAsIdentifier);
 				}
 			}
