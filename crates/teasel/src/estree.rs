@@ -28,7 +28,7 @@ pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
 }
 
 fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: Option<&Grammar>) -> String {
-	let positions = Positions::of(source, options);
+	let positions = Positions::new(source);
 	engine::read(
 		source,
 		options,
@@ -129,11 +129,7 @@ impl<'a> Writer<'a> {
 	pub(crate) fn begin(&mut self, ty: &'static str, id: NodeId) {
 		let node = self.ast.node(id);
 		self.json.begin(ty);
-		if matches!(self.ast.nodes[id.index() as usize].kind, NodeKind::Host(_)) {
-			self.host_span(node.start, node.end);
-		} else {
-			self.span(node.start, node.end);
-		}
+		self.span(node.start, node.end);
 		self.scope_facts(id);
 		if self.ast.is_parenthesized(id) {
 			self.bool("parenthesized", true);
@@ -292,33 +288,11 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn span(&mut self, start: u32, end: u32) {
-		self.located(start, end, false);
-	}
-
-	fn host_span(&mut self, start: u32, end: u32) {
-		self.located(start, end, true);
-	}
-
-	fn located(&mut self, start: u32, end: u32, host: bool) {
-		let (span, loc) = self.positions.span(&mut self.cursor, start, end, host);
+		let span = self.positions.span(&mut self.cursor, start, end);
 		self.json.key("start");
 		self.json.int(span.start);
 		self.json.key("end");
 		self.json.int(span.end);
-		if let Some(loc) = loc {
-			self.json.key("loc");
-			self.json.object();
-			for (key, at) in [("start", loc.start), ("end", loc.end)] {
-				self.json.key(key);
-				self.json.object();
-				self.json.key("line");
-				self.json.int(at.line);
-				self.json.key("column");
-				self.json.int(at.column);
-				self.json.end();
-			}
-			self.json.end();
-		}
 	}
 
 	/// The source between two byte offsets, as a string value.
@@ -574,7 +548,7 @@ impl<'a> Writer<'a> {
 						// an object of the host's without a type, positions and all
 						let node = self.ast.node(id);
 						self.json.object();
-						self.host_span(node.start, node.end);
+						self.span(node.start, node.end);
 					}
 					Some(ty) if host.spanned() => self.begin(ty, id),
 					Some(ty) => {

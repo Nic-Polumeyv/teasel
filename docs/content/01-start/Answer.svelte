@@ -15,9 +15,8 @@
 	<Box rect={node} tint="sky" />
 	<text x="124" y="80" text-anchor="middle">node</text>
 	<g text-anchor="middle" font-size="12" class="text-muted-foreground">
-		<text x="124" y="104">an ESTree tree</text>
-		<text x="124" y="124">start, end on every node</text>
-		<text x="124" y="144">loc with locations</text>
+		<text x="124" y="112">an ESTree tree</text>
+		<text x="124" y="132">start, end on every node</text>
 	</g>
 	<Box rect={end} tint="amber">end</Box>
 	{#each ['comments', 'errors', 'typescript'] as table, row (table)}

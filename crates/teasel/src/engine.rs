@@ -3,7 +3,7 @@
 use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
-use crate::handed::{Raw, Views};
+use crate::handed::Raw;
 use crate::host::{self, Grammar};
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
@@ -233,7 +233,7 @@ pub fn parse(
 	stop: &str,
 	grammar: Option<&Grammar>,
 ) -> Result<(), String> {
-	let positions = Positions::of(source, options);
+	let positions = Positions::new(source);
 	let offset = positions.byte_offset(start)?;
 	if !source.is_char_boundary(offset as usize) {
 		return Err(format!("offset {start} is inside a surrogate pair"));
@@ -264,7 +264,7 @@ pub fn parse(
 						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 				}
 			};
-			ast.views(options.typescript(), &mut Views(&mut note));
+			ast.views(options.typescript(), &mut note);
 			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
 		},
 	);
@@ -298,13 +298,13 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
 /// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
+pub fn tree(mut f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
 		session.trees[typescript as usize]
 			.as_deref_mut()?
-			.views(typescript, &mut Views(f));
+			.views(typescript, &mut f);
 		Some(typescript)
 	})
 }
@@ -312,7 +312,7 @@ pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<boo
 /// The names of a tree's views in order.
 fn view_names(typescript: bool) -> Vec<&'static str> {
 	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut Views(&mut |name, _| names.push(name)));
+	Ast::default().views(typescript, &mut |name, _| names.push(name));
 	names
 }
 
@@ -414,9 +414,9 @@ pub(crate) fn read<R>(
 	})
 }
 
-/// What the decoder reading the tree in place needs beside it: every node's span and location
-/// as JavaScript counts them, the nodes erasure leaves out, the comments, the errors and the
-/// strings' UTF-16 starts; a failed parse prepares its error row alone.
+/// What the decoder reading the tree in place needs beside it: every node's span as JavaScript
+/// counts it, the nodes erasure leaves out, the comments, the errors and the strings' UTF-16
+/// starts; a failed parse prepares its error row alone.
 fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
 	if !failed {
 		prepare_tree(ast, positions, options);
@@ -456,7 +456,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 }
 
 fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
-	positions.map_nodes(&ast.nodes, &mut ast.spans, &mut ast.locs);
+	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
 	late.reset(ast.nodes.len());

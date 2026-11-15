@@ -251,7 +251,7 @@ fn an_entry_is_one_of_its_numbers() {
 fn the_session_writes_the_same_words_again() {
 	use crate::Options;
 	use crate::engine::parse;
-	let options = Options(Options::MODULE | Options::COMMENTS | Options::LOCATIONS | Options::SCOPES);
+	let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
@@ -778,23 +778,20 @@ fn phases() {
 			s.of_identifier.iter().count()
 		);
 	}
-	best("Positions::new, no lines", &mut || {
-		let _ = Positions::new(&source, false);
-	});
-	best("Positions::new, lines", &mut || {
-		let _ = Positions::new(&source, true);
+	let positions = Positions::new(&source);
+	best("Positions::new", &mut || {
+		let _ = Positions::new(&source);
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
 	let end = source.len() as u32;
-	let lines = Positions::new(&source, true);
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole parse: positions, parse, comments, encode, finish", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
-		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::LOCATIONS);
-		best("whole parse with scopes and loc", &mut || {
+		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
+		best("whole parse with scopes", &mut || {
 			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
 		});
 	}
@@ -810,17 +807,17 @@ fn phases() {
 	for (flags, label) in [
 		(Options::MODULE, "module"),
 		(
-			Options::MODULE | Options::SCOPES | Options::COMMENTS | Options::LOCATIONS,
-			"module scopes comments locations",
+			Options::MODULE | Options::SCOPES | Options::COMMENTS,
+			"module scopes comments",
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
 			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
 		});
 	}
-	best("Json write, loc", &mut || {
+	best("Json write", &mut || {
 		let names = crate::host::grammar::own::NAMES;
-		let _ = Writer::new(&ast, &source, &lines, names, options.with(Options::COMMENTS)).answer(
+		let _ = Writer::new(&ast, &source, &positions, names, options.with(Options::COMMENTS)).answer(
 			Entry::Program,
 			Some(roots),
 			end,
@@ -840,77 +837,269 @@ fn phases() {
 	);
 }
 
-// TEASEL_BENCH=file cargo test --release profile -- --ignored --nocapture; writes target/parse.svg
-#[cfg(target_os = "linux")]
+// TEASEL_BENCH=file RUSTFLAGS="-C force-frame-pointers=yes" cargo test --profile profiling profile -- --ignored --nocapture
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 #[ignore]
 fn profile() {
+	use std::collections::{HashMap, HashSet};
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
 	};
 	let source = std::fs::read_to_string(path).unwrap();
 	let options = crate::Options(crate::Options::MODULE);
-	let guard = pprof::ProfilerGuardBuilder::default()
-		.frequency(4000)
-		.blocklist(&["libc", "libgcc", "pthread", "vdso"])
-		.build()
-		.unwrap();
 	let mut sink = 0usize;
-	for _ in 0..3000 {
+	let (stacks, cut) = sample(|| {
 		let (ast, _) = whole(&source, options);
 		sink = sink.wrapping_add(ast.nodes.len());
+	});
+	if stacks.is_empty() {
+		return eprintln!("no frame pointers: RUSTFLAGS=\"-C force-frame-pointers=yes\"");
 	}
 
-	let report = guard.report().build().unwrap();
-	let file = std::fs::File::create("target/parse.svg").unwrap();
-	report.flamegraph(file).unwrap();
-	let mut by_frame: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
-	let mut total = 0usize;
-	for (frames, count) in &report.data {
-		total += *count as usize;
-		let names: Vec<String> = frames
-			.frames
-			.iter()
-			.flat_map(|f| {
-				f.iter().map(|s| {
-					s.name
-						.as_deref()
-						.map(|n| rustc_demangle::demangle(&String::from_utf8_lossy(n)).to_string())
-						.unwrap_or_default()
-				})
-			})
-			.collect();
-		if let Some(top) = names.first() {
-			by_frame.entry(top.clone()).or_default().0 += *count as usize;
-		}
-		let mut seen = std::collections::HashSet::new();
-		for name in &names {
-			if seen.insert(name.clone()) {
-				by_frame.entry(name.clone()).or_default().1 += *count as usize;
-			}
+	let exe = std::env::current_exe().unwrap();
+	let maps = std::fs::read_to_string("/proc/self/maps").unwrap();
+	let mapped: Vec<(std::ops::Range<usize>, &str)> = maps
+		.lines()
+		.map(|line| {
+			let mut fields = line.split_whitespace();
+			let (start, end) = fields.next().unwrap().split_once('-').unwrap();
+			let address = |hex| usize::from_str_radix(hex, 16).unwrap();
+			(address(start)..address(end), fields.nth(4).unwrap_or(""))
+		})
+		.collect();
+	let own = |(_, file): &&(std::ops::Range<usize>, &str)| *file == exe.to_str().unwrap();
+	let own = mapped.iter().find(own).unwrap().0.start..mapped.iter().rfind(own).unwrap().0.end;
+	let inside: HashSet<usize> = stacks
+		.iter()
+		.flatten()
+		.copied()
+		.filter(|address| own.contains(address))
+		.collect();
+	let named = std::process::Command::new("addr2line")
+		.args(["-a", "-f", "-i", "-C", "-e"])
+		.arg(&exe)
+		.args(inside.iter().map(|address| format!("{:#x}", address - own.start)))
+		.output()
+		.unwrap();
+	// per address, the functions inlined there with the line each stands on, innermost first; the last is the compiled one
+	let mut chains: HashMap<usize, Vec<(String, String)>> = HashMap::new();
+	let (mut address, mut function) = (0, None::<&str>);
+	let named = String::from_utf8_lossy(&named.stdout);
+	for line in named.lines() {
+		if let Some(hex) = line.strip_prefix("0x") {
+			address = usize::from_str_radix(hex, 16).unwrap() + own.start;
+		} else if let Some(function) = function.take() {
+			let line = line.split(" (discriminator").next().unwrap();
+			chains
+				.entry(address)
+				.or_default()
+				.push((function.to_string(), line.to_string()));
+		} else {
+			function = Some(line);
 		}
 	}
-	let mut rows: Vec<_> = by_frame.into_iter().collect();
-	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	if chains.values().flatten().all(|(function, _)| function == "??") {
+		return eprintln!("no symbols: --profile profiling");
+	}
+
+	let compiled = |address: usize| match chains.get(&address) {
+		Some(chain) => chain.last().unwrap().0.clone(),
+		None => {
+			let file = mapped
+				.iter()
+				.find(|(range, _)| range.contains(&address))
+				.map_or("", |(_, file)| file);
+			format!("[{}]", file.rsplit('/').next().unwrap())
+		}
+	};
+	let mut functions: HashMap<String, (usize, usize)> = HashMap::new();
+	let mut lines: HashMap<String, usize> = HashMap::new();
+	for stack in &stacks {
+		let function = compiled(stack[0]);
+		let line = chains.get(&stack[0]).and_then(|chain| {
+			chain.iter().find_map(|(function, line)| {
+				let line = line.strip_prefix(concat!(env!("CARGO_MANIFEST_DIR"), "/src/"))?;
+				(!line.ends_with(":?")).then(|| format!("{line}  {function}"))
+			})
+		});
+		*lines.entry(line.unwrap_or_else(|| function.clone())).or_default() += 1;
+		functions.entry(function.clone()).or_default().0 += 1;
+		let mut seen = HashSet::from([function]);
+		for address in &stack[1..] {
+			if own.contains(address) {
+				seen.insert(compiled(*address));
+			}
+		}
+		for function in seen {
+			functions.entry(function).or_default().1 += 1;
+		}
+	}
 	eprintln!(
-		"samples {total}, sink {sink}, token {} bytes, result {} bytes",
+		"samples {}, {cut} of them without their callers, sink {sink}, token {} bytes, result {} bytes",
+		stacks.len(),
 		std::mem::size_of::<crate::lexer::token::Token>(),
 		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
 	);
-	eprintln!("{:>6} {:>6}  frame", "self%", "incl%");
+	let share = |count: usize| count as f64 * 100.0 / stacks.len() as f64;
+	let short = |name: &str| {
+		name.replace("teasel::", "")
+			.replace("core::", "")
+			.replace("alloc::", "")
+	};
+	let mut rows: Vec<_> = functions.into_iter().collect();
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1.0));
+	eprintln!("{:>6} {:>6}  function", "self%", "incl%");
 	for (name, (own, incl)) in rows.iter().take(40) {
-		eprintln!(
-			"{:6.1} {:6.1}  {}",
-			*own as f64 * 100.0 / total as f64,
-			*incl as f64 * 100.0 / total as f64,
-			name.replace("teasel::", "")
-				.replace("core::", "")
-				.replace("alloc::", "")
-				.chars()
-				.take(400)
-				.collect::<String>()
-		);
+		eprintln!("{:6.1} {:6.1}  {}", share(*own), share(*incl), short(name));
 	}
+	let mut rows: Vec<_> = lines.into_iter().collect();
+	rows.sort_by_key(|row| std::cmp::Reverse(row.1));
+	eprintln!("{:>6}  line", "self%");
+	for (name, own) in rows.iter().take(40) {
+		eprintln!("{:6.1}  {}", share(*own), short(name));
+	}
+}
+
+/// Samples the stack while `work` runs over and over: per sample the address that was running, then one
+/// inside each caller, innermost first. Beside them, how many samples the walk could not follow up to here.
+/// Nothing in a build without frame pointers.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn sample(mut work: impl FnMut()) -> (Vec<Vec<usize>>, usize) {
+	use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering::Relaxed};
+	const SAMPLES: usize = 20_000;
+	const DEPTH: usize = 512;
+	static LOG: AtomicPtr<usize> = AtomicPtr::new(std::ptr::null_mut());
+	static USED: AtomicUsize = AtomicUsize::new(0);
+	static TAKEN: AtomicUsize = AtomicUsize::new(0);
+	static TOP: AtomicUsize = AtomicUsize::new(0);
+	static CUT: AtomicUsize = AtomicUsize::new(0);
+
+	#[repr(C)]
+	struct Action {
+		handler: usize,
+		mask: [u64; 16],
+		flags: i32,
+		restorer: usize,
+	}
+	#[repr(C)]
+	struct Event {
+		value: usize,
+		signal: i32,
+		notify: i32,
+		thread: i32,
+		rest: [i32; 11],
+	}
+	unsafe extern "C" {
+		fn sigaction(signal: i32, action: *const Action, old: *mut Action) -> i32;
+		fn timer_create(clock: i32, event: *mut Event, timer: *mut usize) -> i32;
+		fn timer_settime(timer: usize, flags: i32, new: *const i64, old: *mut i64) -> i32;
+		fn timer_delete(timer: usize) -> i32;
+		fn gettid() -> i32;
+	}
+	// a parse that panics frees the log, and a tick after that would write into it
+	struct Stop(usize);
+	impl Drop for Stop {
+		fn drop(&mut self) {
+			unsafe { timer_delete(self.0) };
+		}
+	}
+
+	extern "C" fn tick(_: i32, _: usize, context: *const usize) {
+		let taken = TAKEN.load(Relaxed);
+		if taken == SAMPLES {
+			return;
+		}
+		// glibc's ucontext_t: the registers start at byte 40, and REG_RBP is 10, REG_RSP 15, REG_RIP 16
+		let (mut frame, mut low, running) = unsafe { (*context.add(15), *context.add(20), *context.add(21)) };
+		let (top, used) = (TOP.load(Relaxed), USED.load(Relaxed));
+		let mut depth = 1;
+		unsafe {
+			let row = LOG.load(Relaxed).add(used);
+			*row.add(1) = running;
+			// on `push rbp`, on the `mov rbp, rsp` after it and on `ret`, RBP is the caller's frame: the walk
+			// would start at the caller's caller, and the caller is only on the stack
+			let code = running as *const u8;
+			let caller = match *code {
+				0xc3 => low,
+				0x55 if *(code.add(1) as *const [u8; 3]) == [0x48, 0x89, 0xe5] => low,
+				0x48 if *code.sub(1) == 0x55 && *(code.add(1) as *const [u8; 2]) == [0x89, 0xe5] => low + 8,
+				_ => 0,
+			};
+			if caller != 0 {
+				depth += 1;
+				*row.add(depth) = (*(caller as *const usize)).wrapping_sub(1);
+			}
+			while depth < DEPTH && frame >= low && frame <= top - 16 && frame % 8 == 0 {
+				depth += 1;
+				*row.add(depth) = (*((frame + 8) as *const usize)).wrapping_sub(1);
+				low = frame + 16;
+				frame = *(frame as *const usize);
+			}
+			*row = depth;
+		}
+		if frame != top {
+			CUT.store(CUT.load(Relaxed) + 1, Relaxed);
+		}
+		USED.store(used + depth + 1, Relaxed);
+		TAKEN.store(taken + 1, Relaxed);
+	}
+
+	#[inline(never)]
+	fn callee() -> usize {
+		let frame: usize;
+		unsafe { std::arch::asm!("mov {}, rbp", out(reg) frame) };
+		frame
+	}
+	let frame: usize;
+	unsafe { std::arch::asm!("mov {}, rbp", out(reg) frame) };
+	// without frame pointers a callee leaves RBP as it found it
+	if callee() >= frame {
+		return (Vec::new(), 0);
+	}
+	let mut log = vec![0usize; SAMPLES * (DEPTH + 1)];
+	LOG.store(log.as_mut_ptr(), Relaxed);
+	TOP.store(frame, Relaxed);
+	// SIGPROF with SA_SIGINFO | SA_RESTART, sent to this thread (SIGEV_THREAD_ID)
+	let action = Action {
+		handler: tick as *const () as usize,
+		mask: [0; 16],
+		flags: 0x1000_0004,
+		restorer: 0,
+	};
+	let mut event = Event {
+		value: 0,
+		signal: 27,
+		notify: 4,
+		thread: unsafe { gettid() },
+		rest: [0; 11],
+	};
+	let mut timer = 0;
+	// CLOCK_MONOTONIC: a timer on a CPU-time clock, as ITIMER_PROF is, fires only on the kernel's tick, 250 a second here
+	// an itimerspec, the interval then the first expiry, each in seconds and nanoseconds: 4,000 a second
+	let every = [0i64, 250_000, 0, 250_000];
+	unsafe {
+		assert_eq!(sigaction(27, &action, std::ptr::null_mut()), 0);
+		assert_eq!(timer_create(1, &mut event, &mut timer), 0);
+	}
+	let stop = Stop(timer);
+	assert_eq!(
+		unsafe { timer_settime(timer, 0, every.as_ptr(), std::ptr::null_mut()) },
+		0
+	);
+	while TAKEN.load(Relaxed) < SAMPLES {
+		work();
+	}
+	drop(stop);
+	let mut stacks = Vec::with_capacity(SAMPLES);
+	let mut at = 0;
+	for _ in 0..SAMPLES {
+		let depth = log[at];
+		assert!(depth < DEPTH, "a stack deeper than {DEPTH} frames was cut off");
+		stacks.push(log[at + 1..at + 1 + depth].to_vec());
+		at += depth + 1;
+	}
+	(stacks, CUT.load(Relaxed))
 }
 
 #[test]

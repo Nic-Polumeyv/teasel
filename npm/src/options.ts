@@ -19,12 +19,6 @@ export interface Options {
 	 * carries no facts. TypeScript type positions bind nothing.
 	 */
 	scopes?: boolean;
-	/**
-	 * Add `loc` with line and column to every node. `'js'` adds it to the JavaScript nodes and
-	 * comments only: a host's own nodes, a stylesheet's included, keep `start` and `end`.
-	 * @default false
-	 */
-	locations?: boolean | 'js';
 	/** Mark a node the source wraps in parens with `parenthesized: true`, absent otherwise. */
 	parenthesized?: boolean;
 	allowReturnOutsideFunction?: boolean;
@@ -47,7 +41,6 @@ const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } =
 	typescript: [false, true, 'erase'],
 	comments: [false, true],
 	scopes: [false, true],
-	locations: [false, true, 'js'],
 	parenthesized: [false, true],
 	allowReturnOutsideFunction: [false, true],
 	allowAwaitOutsideFunction: [false, true],
