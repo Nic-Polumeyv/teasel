@@ -243,17 +243,3 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		Some(self.token.expect("a view needs an allocation hook"))
 	}
 }
-
-/// What visits the buffers of a tree the decoder reads in place, by name; None for a table the
-/// parse did not fill.
-pub trait Views: FnMut(&'static str, Option<&mut dyn Raw>) {
-	fn push(&mut self, name: &'static str, buffer: &mut dyn Raw) {
-		self(name, Some(buffer));
-	}
-
-	fn none(&mut self, name: &'static str) {
-		self(name, None);
-	}
-}
-
-impl<F: FnMut(&'static str, Option<&mut dyn Raw>)> Views for F {}

@@ -1,4 +1,4 @@
-use crate::handed::{Handed, Views};
+use crate::handed::{Handed, Raw};
 use crate::interner::{Interner, StrId, Surrogate};
 use crate::layout::{Field, Ty, tag};
 
@@ -164,9 +164,14 @@ impl<T: Copy + 'static> Slots<T> {
 		self.owners.truncate(len);
 	}
 
-	pub fn views(&mut self, name: &'static str, records: &'static str, out: &mut impl Views) {
-		out.push(name, &mut self.slots);
-		out.push(records, &mut self.list);
+	pub fn views(
+		&mut self,
+		name: &'static str,
+		records: &'static str,
+		out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>),
+	) {
+		out(name, Some(&mut self.slots));
+		out(records, Some(&mut self.list));
 	}
 }
 
@@ -502,28 +507,28 @@ impl Ast {
 
 	/// The tree's buffers the decoder reads in place, by the names `engine::layout_json` lists; a
 	/// TypeScript tree's tables last.
-	pub fn views(&mut self, typescript: bool, out: &mut impl Views) {
-		out.push("nodes", &mut self.nodes);
-		out.push("lists", &mut self.lists);
-		out.push("numbers", &mut self.numbers);
+	pub fn views(&mut self, typescript: bool, out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
+		out("nodes", Some(&mut self.nodes));
+		out("lists", Some(&mut self.lists));
+		out("numbers", Some(&mut self.numbers));
 		let (text, starts, marks) = self.strings.buffers();
-		out.push("text", text);
-		out.push("starts", starts);
-		out.push("marks", marks);
-		out.push("units", &mut self.units);
-		out.push("spans", &mut self.spans);
-		out.push("locs", &mut self.locs);
-		out.push("parenthesized", self.parenthesized.words());
-		out.push("erased", self.erased.words());
-		out.push("rare", self.rare.words());
-		out.push("late", self.late.words());
-		out.push("comments", &mut self.comment_rows);
+		out("text", Some(text));
+		out("starts", Some(starts));
+		out("marks", Some(marks));
+		out("units", Some(&mut self.units));
+		out("spans", Some(&mut self.spans));
+		out("locs", Some(&mut self.locs));
+		out("parenthesized", Some(self.parenthesized.words()));
+		out("erased", Some(self.erased.words()));
+		out("rare", Some(self.rare.words()));
+		out("late", Some(self.late.words()));
+		out("comments", Some(&mut self.comment_rows));
 		self.attached.views("attached_slots", "attached", out);
-		out.push("errors", &mut self.error_rows);
-		out.push("hosts", &mut self.host_rows);
-		out.push("host_keys", &mut self.host_keys);
-		out.push("host_vals", &mut self.host_vals);
-		out.push("host_strings", &mut self.host_strings);
+		out("errors", Some(&mut self.error_rows));
+		out("hosts", Some(&mut self.host_rows));
+		out("host_keys", Some(&mut self.host_keys));
+		out("host_vals", Some(&mut self.host_vals));
+		out("host_strings", Some(&mut self.host_strings));
 		match &mut self.scopes {
 			Some(scopes) => scopes.views(out),
 			None => crate::scopes::Scopes::no_views(out),

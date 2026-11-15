@@ -4,7 +4,7 @@
 
 use crate::ast::{Ast, Kind, List, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
-use crate::handed::{Handed, Views};
+use crate::handed::{Handed, Raw};
 use crate::interner::{FastMap, StrId};
 use crate::parser::Entry;
 
@@ -368,18 +368,18 @@ impl Scopes {
 	}
 
 	/// The per-node tables the decoder reads in place.
-	pub fn views(&mut self, out: &mut impl Views) {
-		out.push("scopes", &mut self.scopes);
-		out.push("bindings", &mut self.bindings);
-		out.push("references", &mut self.references);
-		out.push("roots", &mut self.roots);
-		out.push("of_node", &mut self.of_node.0);
-		out.push("of_identifier", &mut self.of_identifier.0);
-		out.push("root_of", &mut self.root_of.0);
-		out.push("declared_by", &mut self.declared_by.ids);
-		out.push("declared_by_at", &mut self.declared_by.starts.0);
-		out.push("writes_of", &mut self.writes_of.ids);
-		out.push("writes_of_at", &mut self.writes_of.starts.0);
+	pub fn views(&mut self, out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
+		out("scopes", Some(&mut self.scopes));
+		out("bindings", Some(&mut self.bindings));
+		out("references", Some(&mut self.references));
+		out("roots", Some(&mut self.roots));
+		out("of_node", Some(&mut self.of_node.0));
+		out("of_identifier", Some(&mut self.of_identifier.0));
+		out("root_of", Some(&mut self.root_of.0));
+		out("declared_by", Some(&mut self.declared_by.ids));
+		out("declared_by_at", Some(&mut self.declared_by.starts.0));
+		out("writes_of", Some(&mut self.writes_of.ids));
+		out("writes_of_at", Some(&mut self.writes_of.starts.0));
 	}
 
 	/// Marks the nodes with what the decoder links once a node is whole, in `late`, and those with
@@ -404,7 +404,7 @@ impl Scopes {
 	}
 
 	/// The same names over nothing, for a tree without analysis.
-	pub fn no_views(out: &mut impl Views) {
+	pub fn no_views(out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
 		for name in [
 			"scopes",
 			"bindings",
@@ -418,7 +418,7 @@ impl Scopes {
 			"writes_of",
 			"writes_of_at",
 		] {
-			out.none(name);
+			out(name, None);
 		}
 	}
 
