@@ -13,7 +13,7 @@ use teasel::Options;
 use teasel::estree::parse_document;
 use teasel::host::grammar::definition::{self, Bind, Definition, Node, Source};
 use teasel::host::grammar::{
-	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Match, Place, Record, RootField, Unique,
+	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Place, Record, RootField, Unique,
 };
 
 /// A list of a definition, kept for the process.
@@ -1471,29 +1471,31 @@ fn reads_the_svelte_grammar() {
 	))
 	.unwrap();
 	let text = |name| grammar.text(name);
-	assert_eq!(grammar.reserved, ["svelte:"]);
+	assert_eq!(grammar.elements.reserved, ["svelte:"]);
 	assert_eq!(text(grammar.document.ty), "Root");
 	assert!(
 		matches!(&grammar.document.fields[5], DocField::Scope(inner) if matches!(inner[0], DocField::Field { field, holds: RootField::Script { module: false }, omit: true } if text(field) == "instance")
 			&& matches!(&inner[1], DocField::Scope(last) if matches!(last[..], [DocField::Field { field, holds: RootField::Fragment, omit: false }] if text(field) == "fragment")))
 	);
-	assert_eq!(grammar.directive("let").unwrap().declares, Some(vec![]));
+	let directives = grammar.directives.as_ref().unwrap();
+	assert_eq!(directives.rule("let").unwrap().declares, Some(vec![]));
 	assert!(grammar.shorthand == Some(("{", "}")) && grammar.autoclose && grammar.trim);
 	assert_eq!(construct(&grammar, "HtmlTag").open.marker, ["{", "@html"]);
 	assert!(
 		construct(&grammar, "AttachTag").stands(Place::Attributes)
 			&& !construct(&grammar, "HtmlTag").stands(Place::Attributes)
 	);
-	assert!(grammar.is_void("br") && grammar.is_void("!DOCTYPE") && !grammar.is_void("div"));
-	assert_eq!(grammar.elements.len(), 15);
-	assert!(grammar.tag("textarea").0.unwrap().rcdata);
-	assert_eq!(grammar.directives.len(), 10);
-	let syntax = grammar.directive_syntax.as_ref().unwrap();
-	assert_eq!((syntax.arg, syntax.modifier), (":", "|"));
-	assert_eq!(grammar.directive("bind").unwrap().kind, None);
-	assert_eq!(grammar.directive("bind").unwrap().unique, Unique::Attribute);
-	let flags: Vec<_> = grammar
-		.directive("in")
+	let elements = &grammar.elements;
+	assert!(elements.is_void("br") && elements.is_void("!DOCTYPE") && !elements.is_void("div"));
+	assert_eq!(elements.rules.len(), 15);
+	assert!(elements.tag("textarea").0.unwrap().rcdata);
+	assert_eq!(directives.rules.len(), 10);
+	assert!(directives.other.is_none() && directives.rule("anything").is_none());
+	assert_eq!((directives.arg, directives.modifier), (":", "|"));
+	assert_eq!(directives.rule("bind").unwrap().kind, None);
+	assert_eq!(directives.rule("bind").unwrap().unique, Unique::Attribute);
+	let flags: Vec<_> = directives
+		.rule("in")
 		.unwrap()
 		.flags
 		.iter()
@@ -1526,10 +1528,10 @@ fn reads_the_svelte_grammar() {
 		["test", "consequent", "branches", "alternate"]
 	);
 	assert_eq!(grammar.script.as_ref().unwrap().typescript, [("lang", Some("ts"))]);
-	assert_eq!(text(grammar.component.as_ref().unwrap().ty), "Component");
-	assert_eq!(text(grammar.other.as_ref().unwrap().ty), "RegularElement");
-	assert_eq!(text(grammar.tag("svelte:head").0.unwrap().ty), "SvelteHead");
-	assert!(grammar.tag("div").0.is_none());
+	assert_eq!(text(elements.component.as_ref().unwrap().ty), "Component");
+	assert_eq!(text(elements.other.as_ref().unwrap().ty), "RegularElement");
+	assert_eq!(text(elements.tag("svelte:head").0.unwrap().ty), "SvelteHead");
+	assert!(elements.tag("div").0.is_none());
 }
 
 #[test]
@@ -1541,19 +1543,22 @@ fn reads_the_vue_grammar() {
 	.unwrap();
 	assert_eq!(construct(&grammar, "Interpolation").open.marker, ["{{"]);
 	assert!(!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose);
-	let syntax = grammar.directive_syntax.as_ref().unwrap();
+	let directives = grammar.directives.as_ref().unwrap();
 	assert_eq!(
-		(syntax.prefix, syntax.modifier, syntax.dynamic),
+		(directives.prefix, directives.modifier, directives.dynamic),
 		(Some("v-"), ".", Some(("[", "]")))
 	);
-	assert_eq!(grammar.shorthands.len(), 4);
-	assert_eq!(grammar.shorthands[3].modifiers, ["prop"]);
-	let for_ = grammar.directive("for").unwrap();
+	assert_eq!(directives.shorthands.len(), 4);
+	assert_eq!(directives.shorthands[3].modifiers, ["prop"]);
+	let for_ = directives.rule("for").unwrap();
 	let DirectiveValue::Form(form) = &for_.value else {
 		panic!()
 	};
 	assert!(matches!(form.items[1], Item::Group { required: true, .. }));
-	assert_eq!(grammar.directive("anything").unwrap().name, Match::Any);
+	assert!(std::ptr::eq(
+		directives.rule("anything").unwrap(),
+		directives.other.as_ref().unwrap()
+	));
 	let text = |name| grammar.text(name);
 	assert_eq!(
 		(for_.kind.map(text), for_.raw.map(text)),

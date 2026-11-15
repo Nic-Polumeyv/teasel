@@ -997,10 +997,40 @@ pub struct Form {
 	pub shape: Vec<Slot>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Match {
-	Exact(&'static str),
-	Any,
+/// A grammar's elements: the rules of their names, and what else it says of a tag.
+#[derive(Clone, Debug, Default)]
+pub struct Elements {
+	/// What the host's own tags start with: a tag that starts with one and has no rule of its
+	/// own is an error.
+	pub reserved: Vec<&'static str>,
+	/// The rule of each name that has its own.
+	pub rules: Vec<ElementRule>,
+	/// The rule of a capitalized or dotted name, and the one of any other.
+	pub component: Option<ElementRule>,
+	pub other: Option<ElementRule>,
+	/// By a tag's name, where its own rule is among the rules and whether the element is void.
+	tags: FastMap<&'static str, (Option<u32>, bool)>,
+	/// Every attribute a rule's `outside` names.
+	pub outside: Vec<&'static str>,
+}
+
+impl Elements {
+	/// The rule of a tag's own name, and whether the element is void.
+	// with the rules tried in order and the void names searched for every tag, a pass over Svelte's tests took 2% longer
+	pub fn tag(&self, name: &str) -> (Option<&ElementRule>, bool) {
+		let (rule, void) = self.tags.get(name).copied().unwrap_or_default();
+		let rule = rule.map(|at| &self.rules[at as usize]);
+		(rule, void || name.starts_with('!'))
+	}
+
+	pub fn is_void(&self, name: &str) -> bool {
+		self.tag(name).1
+	}
+
+	/// Every rule: those of a name, the component's, the one of any other element.
+	pub fn all(&self) -> impl Iterator<Item = &ElementRule> {
+		self.rules.iter().chain(&self.component).chain(&self.other)
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -1029,10 +1059,10 @@ pub struct ScriptRule {
 	pub typescript: Vec<(&'static str, Option<&'static str>)>,
 }
 
-/// How a directive's attribute name is spelled: `prefix name arg modifiers`, the name being the
-/// directive's own when there is no prefix.
+/// A grammar's directives: the rules of their names, and how a directive's attribute name is
+/// spelled, `prefix name arg modifiers`, the name being the directive's own when there is no prefix.
 #[derive(Clone, Debug)]
-pub struct DirectiveSyntax {
+pub struct Directives {
 	pub prefix: Option<&'static str>,
 	/// What separates the argument, `:`.
 	pub arg: &'static str,
@@ -1042,6 +1072,27 @@ pub struct DirectiveSyntax {
 	pub dynamic: Option<(&'static str, &'static str)>,
 	/// Every directive is unique by its whole attribute name.
 	pub unique: bool,
+	pub shorthands: Vec<Shorthand>,
+	/// The rule of each name that has its own, and the one of any other.
+	pub rules: Vec<DirectiveRule>,
+	pub other: Option<DirectiveRule>,
+	/// By a directive's name, where its rule is among the rules.
+	names: FastMap<&'static str, u32>,
+}
+
+impl Directives {
+	/// The rule of a directive by its name: its own, or the one of any other.
+	pub fn rule(&self, name: &str) -> Option<&DirectiveRule> {
+		match self.names.get(name) {
+			Some(&at) => Some(&self.rules[at as usize]),
+			None => self.other.as_ref(),
+		}
+	}
+
+	/// Every rule: those of a name, then the one of any other directive.
+	pub fn all(&self) -> impl Iterator<Item = &DirectiveRule> {
+		self.rules.iter().chain(&self.other)
+	}
 }
 
 /// A character standing for a directive's prefix and name, `:` for `v-bind`.
@@ -1077,7 +1128,6 @@ pub enum Unique {
 
 #[derive(Clone, Debug)]
 pub struct DirectiveRule {
-	pub name: Match,
 	pub ty: Name,
 	pub kind: Option<Name>,
 	pub raw: Option<Name>,
@@ -1224,21 +1274,10 @@ pub struct Grammar {
 	pub trim: bool,
 	/// The attribute that makes an element's subtree verbatim: text and plain attributes only.
 	pub verbatim: Option<&'static str>,
-	/// What the host's own tags start with: a tag that starts with one and has no rule of its
-	/// own is an error.
-	pub reserved: Vec<&'static str>,
-	/// The rule of each name that has its own.
-	pub elements: Vec<ElementRule>,
-	/// The rule of a capitalized or dotted name, and the one of any other.
-	pub component: Option<ElementRule>,
-	pub other: Option<ElementRule>,
-	/// By a tag's name, where its own rule is among the elements and whether the element is void.
-	tags: FastMap<&'static str, (Option<u32>, bool)>,
+	pub elements: Elements,
 	pub script: Option<ScriptRule>,
 	pub style: Option<&'static str>,
-	pub directive_syntax: Option<DirectiveSyntax>,
-	pub shorthands: Vec<Shorthand>,
-	pub directives: Vec<DirectiveRule>,
+	pub directives: Option<Directives>,
 	pub constructs: Vec<Construct>,
 	/// The first bytes of every marker, where a construct may start.
 	pub starts: [bool; 256],
@@ -1797,7 +1836,7 @@ fn element(rule: &definition::Element, n: &mut Naming) -> Result<ElementRule, St
 	})
 }
 
-fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Result<DirectiveRule, String> {
+fn directive(rule: &definition::Directive, n: &mut Naming) -> Result<DirectiveRule, String> {
 	let items = rule.form.unwrap_or_default();
 	let ty = rule.node;
 	let grouped = items.iter().any(|item| match item {
@@ -1879,7 +1918,6 @@ fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Resul
 				},
 			};
 			return Ok(DirectiveRule {
-				name,
 				ty: n.name(ty),
 				kind,
 				raw,
@@ -1894,7 +1932,6 @@ fn directive(name: Match, rule: &definition::Directive, n: &mut Naming) -> Resul
 	let items: Vec<definition::Item> = rest.into_iter().cloned().collect();
 	let value = DirectiveValue::Form(form(ty, &items, At::Directive, &mut bound, n)?);
 	Ok(DirectiveRule {
-		name,
 		ty: n.name(ty),
 		kind,
 		raw,
@@ -2061,37 +2098,50 @@ fn construct(ty: &'static str, rule: &definition::Construct, n: &mut Naming) -> 
 
 fn lower(d: Definition) -> Result<Grammar, String> {
 	let n = &mut Naming::new();
-	let mut elements = Vec::new();
-	let mut tags: FastMap<&'static str, (Option<u32>, bool)> = FastMap::default();
 	let e = d.elements.as_ref();
-	let reserved = e.and_then(|e| e.reserved).unwrap_or_default().to_vec();
-	for prefix in &reserved {
+	let mut elements = Elements {
+		reserved: e.and_then(|e| e.reserved).unwrap_or_default().to_vec(),
+		..Default::default()
+	};
+	for prefix in &elements.reserved {
 		token("a reserved prefix", prefix)?;
 	}
 	for (name, rule) in e.and_then(|e| e.rules).iter().flat_map(|r| r.0) {
-		tags.entry(*name).or_default().0.get_or_insert(elements.len() as u32);
-		elements.push(element(rule, n)?);
+		elements
+			.tags
+			.entry(*name)
+			.or_default()
+			.0
+			.get_or_insert(elements.rules.len() as u32);
+		elements.rules.push(element(rule, n)?);
 	}
-	let component = e
+	elements.component = e
 		.and_then(|e| e.component.as_ref())
 		.map(|rule| element(rule, n))
 		.transpose()?;
-	let other = e
+	elements.other = e
 		.and_then(|e| e.other.as_ref())
 		.map(|rule| element(rule, n))
 		.transpose()?;
-	for rule in elements.iter().chain(&component).chain(&other) {
+	let mut outside = Vec::new();
+	for rule in elements.all() {
 		if let Some(inside) = rule.inside
-			&& !tags.get(inside).is_some_and(|(rule, _)| rule.is_some())
+			&& elements.tag(inside).0.is_none()
 		{
 			return Err(format!(
 				"{}: inside names {inside}, which no element rule is",
 				n.text(rule.ty)
 			));
 		}
+		if let Some(mark) = rule.outside
+			&& !outside.contains(&mark)
+		{
+			outside.push(mark);
+		}
 	}
+	elements.outside = outside;
 	for name in d.void.unwrap_or_default() {
-		tags.entry(*name).or_default().1 = true;
+		elements.tags.entry(*name).or_default().1 = true;
 	}
 	let x = d.directives.as_ref();
 	if let Some(x) = x {
@@ -2107,31 +2157,33 @@ fn lower(d: Definition) -> Result<Grammar, String> {
 			token("the dynamic argument's close", close)?;
 		}
 	}
-	let directive_syntax = x.map(|x| DirectiveSyntax {
-		prefix: x.prefix,
-		arg: x.arg.unwrap_or(":"),
-		modifier: x.modifier.unwrap_or("|"),
-		dynamic: x.dynamic,
-		unique: x.unique.is_some(),
-	});
-	let shorthands = x
-		.and_then(|x| x.shorthands)
-		.map(|s| s.0)
-		.unwrap_or_default()
-		.iter()
-		.map(|(token, list)| Shorthand {
-			token,
-			name: list.first().copied().unwrap_or(""),
-			modifiers: list.get(1..).unwrap_or_default().to_vec(),
-		})
-		.collect();
-	let mut directives = Vec::new();
-	for (name, rule) in x.and_then(|x| x.rules).iter().flat_map(|r| r.0) {
-		directives.push(directive(Match::Exact(name), rule, n)?);
-	}
-	if let Some(other) = x.and_then(|x| x.other.as_ref()) {
-		directives.push(directive(Match::Any, other, n)?);
-	}
+	let directives = match x {
+		None => None,
+		Some(x) => {
+			let shorthands = x.shorthands.map(|s| s.0).unwrap_or_default().iter();
+			let shorthands = shorthands.map(|(token, list)| Shorthand {
+				token,
+				name: list.first().copied().unwrap_or(""),
+				modifiers: list.get(1..).unwrap_or_default().to_vec(),
+			});
+			let (mut rules, mut names) = (Vec::new(), FastMap::default());
+			for (name, rule) in x.rules.iter().flat_map(|r| r.0) {
+				names.entry(*name).or_insert(rules.len() as u32);
+				rules.push(directive(rule, n)?);
+			}
+			Some(Directives {
+				prefix: x.prefix,
+				arg: x.arg.unwrap_or(":"),
+				modifier: x.modifier.unwrap_or("|"),
+				dynamic: x.dynamic,
+				unique: x.unique.is_some(),
+				shorthands: shorthands.collect(),
+				rules,
+				other: x.other.as_ref().map(|rule| directive(rule, n)).transpose()?,
+				names,
+			})
+		}
+	};
 	let mut constructs = Vec::new();
 	for (name, rule) in d.constructs.iter().flat_map(|r| r.0) {
 		constructs.push(construct(name, rule, n)?);
@@ -2154,20 +2206,14 @@ fn lower(d: Definition) -> Result<Grammar, String> {
 		shorthand,
 		autoclose: d.autoclose == Some(true),
 		trim: d.trim == Some(true),
-		reserved,
 		verbatim: d.verbatim,
 		elements,
-		component,
-		other,
-		tags,
 		script: d.script.as_ref().map(|s| ScriptRule {
 			name: s.element,
 			module: s.module.unwrap_or_default().to_vec(),
 			typescript: s.typescript.unwrap_or_default().to_vec(),
 		}),
 		style: d.style,
-		directive_syntax,
-		shorthands,
 		directives,
 		constructs,
 		starts: [false; 256],
@@ -2294,17 +2340,11 @@ impl Grammar {
 			shorthand: None,
 			autoclose: false,
 			trim: false,
-			reserved: Vec::new(),
 			verbatim: None,
-			elements: Vec::new(),
-			component: None,
-			other: None,
-			tags: FastMap::default(),
+			elements: Elements::default(),
 			script: None,
 			style: None,
-			directive_syntax: None,
-			shorthands: Vec::new(),
-			directives: Vec::new(),
+			directives: None,
 			constructs: Vec::new(),
 			starts: [false; 256],
 			firsts: Vec::new(),
@@ -2324,9 +2364,11 @@ impl Grammar {
 			return Err("the attribute shorthand needs a tag in value that reads one expression".into());
 		}
 		let names = &self.names;
-		for rule in &mut self.directives {
-			if let DirectiveValue::Form(form) = &mut rule.value {
-				form.finish(names)?;
+		if let Some(directives) = &mut self.directives {
+			for rule in directives.rules.iter_mut().chain(&mut directives.other) {
+				if let DirectiveValue::Form(form) = &mut rule.value {
+					form.finish(names)?;
+				}
 			}
 		}
 		let mut starts = [false; 256];
@@ -2425,8 +2467,8 @@ impl Grammar {
 		}
 		self.firsts = firsts;
 		let named = std::iter::once(self.document.ty)
-			.chain(self.rules().map(|rule| rule.ty))
-			.chain(self.directives.iter().map(|rule| rule.ty))
+			.chain(self.elements.all().map(|rule| rule.ty))
+			.chain(self.directives.iter().flat_map(Directives::all).map(|rule| rule.ty))
 			.chain(self.constructs.iter().map(|rule| rule.ty))
 			.chain(
 				self.constructs
@@ -2449,36 +2491,11 @@ impl Grammar {
 		Ok(())
 	}
 
-	/// The rule of a tag's own name, and whether the element is void.
-	// with the rules tried in order and the void names searched for every tag, a pass over Svelte's tests took 2% longer
-	pub fn tag(&self, name: &str) -> (Option<&ElementRule>, bool) {
-		let (rule, void) = self.tags.get(name).copied().unwrap_or_default();
-		let rule = rule.map(|at| &self.elements[at as usize]);
-		(rule, void || name.starts_with('!'))
-	}
-
-	/// Every element rule: those of a name, the component's, the one of any other element.
-	pub fn rules(&self) -> impl Iterator<Item = &ElementRule> {
-		self.elements.iter().chain(&self.component).chain(&self.other)
-	}
-
-	/// The rule of a directive by its name; `*` when the grammar takes any.
-	pub fn directive(&self, name: &str) -> Option<&DirectiveRule> {
-		self.directives.iter().find(|rule| match rule.name {
-			Match::Exact(exact) => exact == name,
-			_ => true,
-		})
-	}
-
 	/// The construct that reads values written as one expression: an attribute's chunk, a shorthand's value.
 	pub fn value_expression(&self) -> Option<&Construct> {
 		self.constructs
 			.iter()
 			.find(|c| c.stands(Place::Value) && matches!(c.single(), Some((_, Entry::Expression))))
-	}
-
-	pub fn is_void(&self, name: &str) -> bool {
-		self.tag(name).1
 	}
 
 	pub fn text(&self, name: Name) -> &'static str {
@@ -2537,7 +2554,7 @@ impl Grammar {
 		add(own::Fragment, &[own::nodes]);
 		add(own::Text, &[]);
 		add(own::Comment, &[]);
-		for rule in self.rules() {
+		for rule in self.elements.all() {
 			fields.clear();
 			fields.extend([own::attributes, own::fragment]);
 			fields.extend(rule.this.map(|(field, _)| field));
@@ -2549,10 +2566,10 @@ impl Grammar {
 		}
 		// a dynamic argument, `:[expression]`, is a node in the argument's field
 		let dynamic = self
-			.directive_syntax
+			.directives
 			.as_ref()
-			.and_then(|syntax| syntax.dynamic.and(Some(own::name)));
-		for rule in &self.directives {
+			.and_then(|directives| directives.dynamic.and(Some(own::name)));
+		for rule in self.directives.iter().flat_map(Directives::all) {
 			fields.clear();
 			fields.extend(dynamic);
 			match &rule.value {
