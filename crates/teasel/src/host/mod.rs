@@ -18,8 +18,8 @@ use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 pub use grammar::Grammar;
 use grammar::{
-	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Match, Name, Piece,
-	Place, RootField, Shapes, Slot, Unique, Which, component_name, own,
+	Alternative, Body, Construct, DirectiveRule, DirectiveValue, DocField, Entry, Form, Item, Name, Piece, Place,
+	RootField, Shapes, Slot, Unique, Which, component_name, own,
 };
 
 /// A whole marker at the cursor: its construct, which piece, and where its last part's word starts.
@@ -969,8 +969,8 @@ impl<'a> Walker<'a> {
 
 	/// Whether the nearest element around the cursor, past blocks and meta elements, is `name`.
 	fn nearest_element_is(&self, name: &str) -> bool {
-		let plain = self.grammar.element("*").map(|any| any.ty);
-		let component = self.grammar.component().map(|rule| rule.ty);
+		let plain = self.grammar.elements.other.as_ref().map(|any| any.ty);
+		let component = self.grammar.elements.component.as_ref().map(|rule| rule.ty);
 		for frame in self.frames.iter().rev() {
 			if let Frame::Element { name: span, ty, .. } = frame {
 				if &self.src[span.0 as usize..span.1 as usize] == name {
@@ -1006,7 +1006,12 @@ impl<'a> Walker<'a> {
 			let name = self.tag_name(false)?;
 			self.space();
 			self.expect(">")?;
-			if self.grammar.is_void(name) {
+			// a void element is never open; asked of every closing tag, a pass over Svelte's tests took 0.1 ms longer
+			let open = match self.frames.last() {
+				Some(Frame::Element { name: span, .. }) => &self.src[span.0 as usize..span.1 as usize] == name,
+				_ => false,
+			};
+			if !open && self.grammar.elements.is_void(name) {
 				return self.report_at(
 					start,
 					start + 1,
@@ -1018,14 +1023,16 @@ impl<'a> Walker<'a> {
 		}
 		let name = self.tag_name(false)?;
 		let name_span = (start + 1, self.at);
-		let rule = self.grammar.element(name);
-		let own = rule.is_some_and(|rule| matches!(rule.name, Match::Exact(_)));
-		if !own && self.grammar.reserved.iter().any(|prefix| name.starts_with(prefix)) {
+		let elements = &self.grammar.elements;
+		let (own, void) = elements.tag(name);
+		if own.is_none() && elements.reserved.iter().any(|prefix| name.starts_with(prefix)) {
 			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		}
-		let rule = rule.filter(|rule| rule.name != Match::Any || valid_name(name));
+		let rule = own
+			.or_else(|| elements.component.as_ref().filter(|_| component_name(name)))
+			.or_else(|| elements.other.as_ref().filter(|_| valid_name(name)));
 		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
-		let Some(rule) = rule.or_else(|| typing.then(|| self.grammar.component()).flatten()) else {
+		let Some(rule) = rule.or(elements.component.as_ref().filter(|_| typing)) else {
 			return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name));
 		};
 		if rule.root && self.frames.len() > 1 {
@@ -1038,7 +1045,7 @@ impl<'a> Walker<'a> {
 				self.once.push(rule.ty);
 			}
 		}
-		let plain = self.grammar.element("*").map_or(rule.ty, |any| any.ty);
+		let plain = elements.other.as_ref().map_or(rule.ty, |any| any.ty);
 		let mut ty = rule.ty;
 		if let Some(inside) = rule.inside
 			&& !self.nearest_element_is(inside)
@@ -1099,11 +1106,7 @@ impl<'a> Walker<'a> {
 					continue;
 				}
 				if kind == own::Attribute
-					&& ty == plain && let Some(mark) = self
-					.grammar
-					.elements
-					.iter()
-					.find_map(|r| r.outside.filter(|o| *o == text))
+					&& ty == plain && let Some(&mark) = elements.outside.iter().find(|mark| **mark == text)
 				{
 					outside.push(mark);
 				}
@@ -1243,7 +1246,7 @@ impl<'a> Walker<'a> {
 			}
 			return self.report_at(start, start + 1, Code::Duplicate, Some(name));
 		}
-		let self_closing = self.eat("/") || self.grammar.is_void(name);
+		let self_closing = self.eat("/") || void;
 		let unclosed = !self.eat(">");
 		if unclosed {
 			self.report_at(self.at, self.at, Code::Expected, Some(">"))?;
@@ -1364,7 +1367,7 @@ impl<'a> Walker<'a> {
 	}
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
-		let plain = self.grammar.element("*").map(|any| any.ty);
+		let plain = self.grammar.elements.other.as_ref().map(|any| any.ty);
 		if let Some((_, _, depth)) = self.autoclosed
 			&& self.frames.len() < depth
 		{
@@ -1483,35 +1486,36 @@ impl<'a> Walker<'a> {
 
 	/// The attribute name at `start` read as a directive, when the grammar's syntax says it is one.
 	fn directive_of(&mut self, name: &'a str, start: u32) -> Result<Option<Directive<'a>>> {
-		let Some(syntax) = &self.grammar.directive_syntax else {
+		let Some(directives) = &self.grammar.directives else {
 			return Ok(None);
 		};
 		let mut base_modifiers: &[&'static str] = &[];
-		let (directive, rest, rest_at): (&'a str, &'a str, usize) = if let Some(shorthand) = self
-			.grammar
+		let mut rule = None;
+		let (directive, rest, rest_at): (&'a str, &'a str, usize) = if let Some(shorthand) = directives
 			.shorthands
 			.iter()
-			.find(|s| name.starts_with(s.token) && syntax.prefix.is_none_or(|p| !name.starts_with(p)))
+			.find(|s| name.starts_with(s.token) && directives.prefix.is_none_or(|p| !name.starts_with(p)))
 		{
 			base_modifiers = &shorthand.modifiers;
 			(shorthand.name, &name[shorthand.token.len()..], shorthand.token.len())
-		} else if let Some(prefix) = syntax.prefix {
+		} else if let Some(prefix) = directives.prefix {
 			let Some(after) = name.strip_prefix(prefix) else {
 				return Ok(None);
 			};
 			let len = after
-				.find(|c: char| syntax.arg.starts_with(c) || syntax.modifier.starts_with(c))
+				.find(|c: char| directives.arg.starts_with(c) || directives.modifier.starts_with(c))
 				.unwrap_or(after.len());
-			let rest = after[len..].strip_prefix(syntax.arg).unwrap_or(&after[len..]);
+			let rest = after[len..].strip_prefix(directives.arg).unwrap_or(&after[len..]);
 			(&after[..len], rest, name.len() - rest.len())
 		} else {
-			let Some((head, tail)) = name.split_once(syntax.arg) else {
+			let Some((head, tail)) = name.split_once(directives.arg) else {
 				return Ok(None);
 			};
-			if self.grammar.directive(head).is_none() {
+			rule = directives.rule(head);
+			if rule.is_none() {
 				return Ok(None);
 			}
-			(head, tail, head.len() + syntax.arg.len())
+			(head, tail, head.len() + directives.arg.len())
 		};
 		if directive.is_empty() {
 			return self.fail(
@@ -1521,13 +1525,13 @@ impl<'a> Walker<'a> {
 				Some("a directive name"),
 			);
 		}
-		let Some(rule) = self.grammar.directive(directive) else {
+		let Some(rule) = rule.or_else(|| directives.rule(directive)) else {
 			return Ok(None);
 		};
 		// the argument, in brackets when it is an expression, then the modifiers
 		let mut modifiers = Vec::new();
 		let mut arg = None;
-		let after = if let Some((open, close)) = syntax.dynamic
+		let after = if let Some((open, close)) = directives.dynamic
 			&& let Some(inner) = rest.strip_prefix(open)
 		{
 			let Some(len) = inner.find(close) else {
@@ -1537,10 +1541,10 @@ impl<'a> Walker<'a> {
 			arg = Some((&inner[..len], inner_at, inner_at + len, true));
 			&inner[len + close.len()..]
 		} else {
-			let len = rest.find(syntax.modifier).unwrap_or(rest.len());
+			let len = rest.find(directives.modifier).unwrap_or(rest.len());
 			if len > 0 {
 				arg = Some((&rest[..len], rest_at, rest_at + len, false));
-			} else if syntax.prefix.is_none() {
+			} else if directives.prefix.is_none() {
 				return self.fail(
 					start,
 					start + name.len() as u32,
@@ -1550,7 +1554,7 @@ impl<'a> Walker<'a> {
 			}
 			&rest[len..]
 		};
-		for modifier in after.split(syntax.modifier) {
+		for modifier in after.split(directives.modifier) {
 			if !modifier.is_empty() {
 				modifiers.push(modifier);
 			}
@@ -1620,7 +1624,7 @@ impl<'a> Walker<'a> {
 			);
 			return Ok(Some((node, Some((own::Attribute, name_id)))));
 		};
-		let syntax = self.grammar.directive_syntax.as_ref().unwrap();
+		let directives = self.grammar.directives.as_ref().unwrap();
 		let rule = directive.rule;
 		let mut fields = self.fields.take();
 		if let Some(field) = rule.kind {
@@ -1776,7 +1780,7 @@ impl<'a> Walker<'a> {
 		}
 		let node = self.host(rule.ty, start, end, &fields);
 		self.fields.give(fields);
-		let key = if syntax.unique {
+		let key = if directives.unique {
 			Some((own::Attribute, self.intern(name)))
 		} else {
 			match (rule.unique, directive.arg) {
