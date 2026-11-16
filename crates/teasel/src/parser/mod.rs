@@ -963,12 +963,17 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.tok = Token::eof(self.tok.start);
 	}
 
+	/// Whether the current token is of `kind`: a keyword by its word, any other by its kind alone.
+	// by the derived `==`, which also compares what a kind carries, a parse is 2% slower
 	pub(crate) fn is(&self, kind: TokenKind) -> bool {
-		self.tok.kind == kind
+		match kind {
+			TokenKind::Keyword(keyword) => self.is_keyword(keyword),
+			_ => std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind),
+		}
 	}
 
 	pub(crate) fn is_keyword(&self, keyword: Keyword) -> bool {
-		self.tok.kind == TokenKind::Keyword(keyword)
+		matches!(self.tok.kind, TokenKind::Keyword(k) if k == keyword)
 	}
 
 	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {
@@ -982,7 +987,13 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	pub(crate) fn eat_keyword(&mut self, keyword: Keyword) -> Result<bool> {
-		self.eat(TokenKind::Keyword(keyword))
+		self.within_limit()?;
+		if self.is_keyword(keyword) {
+			self.next()?;
+			Ok(true)
+		} else {
+			Ok(false)
+		}
 	}
 
 	pub(crate) fn expect(&mut self, kind: TokenKind) -> Result<()> {
@@ -990,7 +1001,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	pub(crate) fn expect_keyword(&mut self, keyword: Keyword) -> Result<()> {
-		self.expect(TokenKind::Keyword(keyword))
+		if self.eat_keyword(keyword)? {
+			Ok(())
+		} else {
+			self.unexpected()
+		}
 	}
 
 	/// The current token is the unescaped identifier `name`.
