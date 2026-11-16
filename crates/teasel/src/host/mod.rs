@@ -1172,13 +1172,13 @@ impl<'a> Walker<'a> {
 		if let Some(script) = script {
 			self.expect(">")?;
 			let content_start = self.at;
-			let close = match self.find_closing(name) {
-				Some(close) => close,
-				None => {
-					self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?;
-					self.len()
-				}
-			};
+			let close = self.closing(|rest| {
+				let after = rest[2..].strip_prefix(name);
+				after.is_some_and(|after| after.trim_start_matches(is_space).starts_with('>'))
+			});
+			if close == self.len() {
+				self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?;
+			}
 			let program = self.program(content_start, close)?;
 			self.at = close;
 			if close < self.len() {
@@ -1288,18 +1288,7 @@ impl<'a> Walker<'a> {
 		}
 		if rule.raw {
 			let content_start = self.at;
-			let mut close = self.at;
-			loop {
-				let Some(i) = self.src[close as usize..].find("</") else {
-					close = self.len();
-					break;
-				};
-				close += i as u32;
-				if closing_tag(&self.src[close as usize..], name).is_some() {
-					break;
-				}
-				close += 2;
-			}
+			let close = self.closing(|rest| closing_tag(rest, name).is_some());
 			self.at = close;
 			let text = Value::Slice(content_start, close);
 			let node = self.host(own::Text, content_start, close, &[(own::raw, text), (own::data, text)]);
@@ -1329,20 +1318,21 @@ impl<'a> Walker<'a> {
 		Ok(())
 	}
 
-	/// `</name`, optional space and `>`, from the cursor.
-	fn find_closing(&self, name: &str) -> Option<u32> {
-		let rest = self.rest();
-		let mut from = 0;
-		while let Some(i) = rest[from..].find("</") {
-			let at = from + i + 2;
-			if let Some(after) = rest[at..].strip_prefix(name)
-				&& after.trim_start_matches(is_space).starts_with('>')
-			{
-				return Some(self.at + (from + i) as u32);
+	/// Where the first `</` that `closes` starts, from the cursor, or the length.
+	fn closing(&self, closes: impl Fn(&str) -> bool) -> u32 {
+		let bytes = self.src.as_bytes();
+		let mut at = self.at as usize;
+		// found by `str::find`, a pass over Svelte's tests took 1% longer
+		loop {
+			at = find_pair(bytes, at, b'<', *b"/");
+			if at >= bytes.len() {
+				return self.len();
 			}
-			from = at;
+			if bytes.get(at + 1) == Some(&b'/') && closes(&self.src[at..]) {
+				return at as u32;
+			}
+			at += 1;
 		}
-		None
 	}
 
 	fn close_tag(&mut self, name: &str) -> Result<()> {

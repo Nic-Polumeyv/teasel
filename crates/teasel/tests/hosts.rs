@@ -174,6 +174,77 @@ fn unfinished_input() {
 	);
 }
 
+/// Raw text ends at the first `</` that closes it, wherever the scan's eight bytes fall.
+#[test]
+fn raw_text_ends_at_its_closing_tag() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
+	let parse = |source: &str, grammar: &str| parse_document(source, grammar, Options(Options::MODULE));
+	let unclosed = format!(r#""code":{},"args":["script"]"#, Code::Unclosed as u8);
+	for pad in 0..9 {
+		let pad = " ".repeat(pad);
+		for body in [
+			"a<b",
+			"1<<2",
+			"\"é\"<1",
+			"\"</div>\"",
+			"\"</scripts>\"",
+			"\"</script\"",
+			"a</1/",
+		] {
+			for closer in ["</script>", "</script \t\n>"] {
+				let answer = parse(&format!("<script>{pad}{body}{closer}"), &svelte);
+				let end = 8 + pad.len() + body.encode_utf16().count();
+				assert!(
+					answer.contains(&format!(r#""content":{{"type":"Program","start":8,"end":{end},"#)),
+					"{pad}{body}{closer}: {answer}"
+				);
+			}
+		}
+		for body in ["a<b", "a <", "a</", "a</scrip", "a</script", "a</script x>"] {
+			let answer = parse(&format!("<script>{pad}{body}"), &svelte);
+			assert!(answer.contains(&unclosed), "{pad}{body}: {answer}");
+		}
+		for body in ["a<b", "<<", "é<</x>", "</scripts>", "</script"] {
+			for closer in ["</script>", "</SCRIPT x>"] {
+				for (source, grammar) in [
+					(format!("<div><script>{pad}{body}{closer}</div>"), &svelte),
+					(format!("<script>{pad}{body}{closer}"), &vue),
+				] {
+					let answer = parse(&source, grammar);
+					assert!(
+						answer.contains(&format!(r#""raw":"{pad}{body}","#)),
+						"{source}: {answer}"
+					);
+				}
+			}
+			let answer = parse(&format!("<div><script>{pad}{body}"), &svelte);
+			assert!(answer.contains(&unclosed), "{pad}{body}: {answer}");
+		}
+	}
+	// a name short enough for the scan to stop at a `<` that opens no `</`, the closing tag right after it
+	let mut host = minimal();
+	elements(&mut host).rules = Some(Record(list![(
+		"r",
+		definition::Element {
+			content: Some(definition::Content::Raw),
+			..element("Element")
+		},
+	)]));
+	let short = host.json();
+	for pad in 0..9 {
+		let pad = " ".repeat(pad);
+		for body in ["<", "<<", "a<<", "</<"] {
+			let answer = parse(&format!("<r>{pad}{body}</r>"), &short);
+			assert!(
+				answer.contains(&format!(r#""raw":"{pad}{body}","#)),
+				"{pad}{body}: {answer}"
+			);
+		}
+	}
+}
+
 #[test]
 fn tags_fill_unread() {
 	let mut host = minimal();

@@ -204,6 +204,35 @@ mod tests {
 	}
 
 	#[test]
+	fn finds_the_first_pair_or_a_first_near_the_end() {
+		for len in 0..26 {
+			for pair in 0..=len {
+				for lone in 0..=len {
+					let mut bytes = vec![b'a'; len];
+					if lone < len {
+						bytes[lone] = b'<';
+					}
+					if pair + 1 < len {
+						bytes[pair] = b'<';
+						bytes[pair + 1] = b'/';
+					}
+					for from in (0..=len).step_by(3) {
+						let exact = (from..len).find(|&i| bytes[i..].starts_with(b"</")).unwrap_or(len);
+						let found = find_pair(&bytes, from, b'<', *b"/");
+						assert!(
+							found == exact || (found < exact && bytes[found] == b'<' && found + 8 >= len),
+							"{:?} from {from}: {found}",
+							std::string::String::from_utf8_lossy(&bytes)
+						);
+					}
+				}
+			}
+		}
+		assert_eq!(find_pair(b"<a <! <script", 0, b'<', *b"!s"), 3);
+		assert_eq!(find_pair(b"<a <b <script>....", 0, b'<', *b"!s"), 6);
+	}
+
+	#[test]
 	fn classes_match_the_predicates() {
 		for b in 0..=255u8 {
 			assert_eq!(class(b) & SPACE != 0, matches!(b, b' ' | b'\t' | 0x0b | 0x0c));
