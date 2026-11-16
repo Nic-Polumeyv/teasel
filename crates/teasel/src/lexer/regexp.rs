@@ -13,8 +13,6 @@ pub(super) struct Rejected {
 	pub code: Code,
 	pub at: usize,
 	pub end: usize,
-	/// The code is about a name, a number or a modifier: `Scratch::name` holds it.
-	pub named: bool,
 }
 
 /// `named`: the pattern holds a `(?<` that is not a lookbehind's, outside every class.
@@ -36,7 +34,6 @@ pub(super) fn validate(pattern: &str, flags: &str, named: bool, scratch: &mut Sc
 			code,
 			at,
 			end: at + flag.len_utf8(),
-			named: false,
 		});
 	}
 	let unicode = seen >> 6 != 0;
@@ -69,13 +66,6 @@ pub(crate) struct Scratch {
 	name: String,
 }
 
-impl Scratch {
-	/// What the last error with `named` is about.
-	pub(super) fn name(&self) -> &str {
-		&self.name
-	}
-}
-
 const NONE: u32 = u32::MAX;
 /// A class atom that is a set of characters, `\d` or `\p{…}`: no end of a range.
 const SET: u32 = u32::MAX;
@@ -97,8 +87,8 @@ enum Kind {
 	Behind,
 }
 
-/// A group name: the `(` of the last group of the name, and the span of the first `\k` that asks
-/// for it.
+/// A group name: the `(` of the last group of the name, and where the first `\k` that asks for it
+/// spells it.
 struct Name {
 	declared: u32,
 	referenced: (u32, u32),
@@ -147,7 +137,7 @@ struct Walk<'a> {
 	/// `\k` is a reference to a name, not an escaped `k`.
 	named: bool,
 	captures: u32,
-	/// The largest `\1` to `\9…` of a unicode pattern, and its span.
+	/// The largest `\1` to `\9…` of a unicode pattern, and where its number stands.
 	reference: (u32, usize, usize),
 	/// Without `u` an astral character is two class atoms: the trail surrogate of the one whose
 	/// lead was just read, the next atom.
@@ -164,11 +154,11 @@ impl<'a> Walk<'a> {
 		while !self.text.is_char_boundary(end) {
 			end += 1;
 		}
-		self.fail_at(code, at, end, false)
+		self.fail_at(code, at, end)
 	}
 
-	fn fail_at<T>(&self, code: Code, at: usize, end: usize, named: bool) -> Result<T> {
-		Err(Rejected { code, at, end, named })
+	fn fail_at<T>(&self, code: Code, at: usize, end: usize) -> Result<T> {
+		Err(Rejected { code, at, end })
 	}
 
 	fn peek(&self) -> Option<u8> {
@@ -248,27 +238,15 @@ impl<'a> Walk<'a> {
 		}
 		if let [_, .., unclosed] = self.scratch.groups[..] {
 			let open = unclosed.open as usize;
-			return self.fail_at(Code::UnterminatedRegexpGroup, open - 1, open, false);
+			return self.fail_at(Code::UnterminatedRegexpGroup, open - 1, open);
 		}
-		let Scratch { names, name, .. } = &mut *self.scratch;
 		let (number, at, end) = self.reference;
 		if number > self.captures {
-			name.clear();
-			name.push_str(&self.text[at + 1..end]);
-			return self.fail_at(Code::UndefinedRegexpGroup, at, end, true);
+			return self.fail_at(Code::UndefinedRegexpGroup, at, end);
 		}
-		let undeclared = names.iter().filter(|(_, known)| known.declared == NONE);
-		match undeclared.min_by_key(|(_, known)| known.referenced) {
-			Some((
-				unknown,
-				&Name {
-					referenced: (at, end), ..
-				},
-			)) => {
-				name.clear();
-				name.push_str(unknown);
-				self.fail_at(Code::UndefinedRegexpGroup, at as usize, end as usize, true)
-			}
+		let undeclared = self.scratch.names.values().filter(|name| name.declared == NONE);
+		match undeclared.map(|name| name.referenced).min() {
+			Some((at, end)) => self.fail_at(Code::UndefinedRegexpGroup, at as usize, end as usize),
 			None => Ok(()),
 		}
 	}
@@ -307,7 +285,7 @@ impl<'a> Walk<'a> {
 			// still earlier group of the name then does too
 			let holder = groups[groups.partition_point(|group| group.open <= known.declared) - 1];
 			if known.declared != NONE && known.declared >= holder.alternative {
-				return self.fail_at(Code::DuplicateRegexpGroupName, at, self.pos, true);
+				return self.fail_at(Code::DuplicateRegexpGroupName, at + 3, self.pos - 1);
 			}
 			known.declared = at as u32;
 		}
@@ -325,9 +303,7 @@ impl<'a> Walk<'a> {
 		let mut seen = 0;
 		while let Some(bit) = self.peek().and_then(|byte| b"ims".iter().position(|&m| m == byte)) {
 			if (seen | taken) & 1 << bit != 0 {
-				self.scratch.name.clear();
-				self.scratch.name.push(b"ims"[bit] as char);
-				return self.fail_at(Code::DuplicateRegexpModifier, self.pos, self.pos + 1, true);
+				return self.fail_at(Code::DuplicateRegexpModifier, self.pos, self.pos + 1);
 			}
 			seen |= 1 << bit;
 			self.pos += 1;
@@ -394,7 +370,7 @@ impl<'a> Walk<'a> {
 				let Scratch { names, name, .. } = &mut *self.scratch;
 				let known = known(names, name);
 				if known.referenced.0 == NONE {
-					known.referenced = (at as u32, self.pos as u32);
+					known.referenced = (at as u32 + 3, self.pos as u32 - 1);
 				}
 			}
 			// a back reference or an octal escape, and a `k`, a `p` or any other character escaping
@@ -407,7 +383,7 @@ impl<'a> Walk<'a> {
 					self.pos += 1;
 				}
 				if number > self.reference.0 {
-					self.reference = (number, at, self.pos);
+					self.reference = (number, at + 1, self.pos);
 				}
 			}
 			b'0' if !self.peek().is_some_and(|digit| digit.is_ascii_digit()) => {}
@@ -565,7 +541,7 @@ impl<'a> Walk<'a> {
 			return Ok(Some(std::mem::take(&mut self.trail)));
 		}
 		let Some(c) = self.char() else {
-			return self.fail_at(Code::InvalidRegexpClass, at, at + 1, false);
+			return self.fail_at(Code::InvalidRegexpClass, at, at + 1);
 		};
 		let from = self.pos;
 		self.pos += c.len_utf8();
@@ -671,12 +647,7 @@ impl<'a> Walk<'a> {
 			let from = self.pos;
 			let strings = match self.text.as_bytes()[from..] {
 				[] => {
-					return self.fail_at(
-						Code::InvalidRegexpClass,
-						class.at as usize,
-						class.at as usize + 1,
-						false,
-					);
+					return self.fail_at(Code::InvalidRegexpClass, class.at as usize, class.at as usize + 1);
 				}
 				[b']', ..] => {
 					self.pos += 1;

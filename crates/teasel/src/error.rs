@@ -372,11 +372,11 @@ codes! {
 	InvalidRegexpGroup,
 	/// A group name in a regular expression that is not a name, or a `\k` without one.
 	InvalidRegexpGroupName,
-	/// A name given to two groups of a regular expression that can both match; `args` names it.
+	/// A name given to two groups of a regular expression that can both match.
 	DuplicateRegexpGroupName,
-	/// A reference to a group the regular expression does not have; `args` holds its name or number.
+	/// A name or number in a regular expression that refers to a group it does not have.
 	UndefinedRegexpGroup,
-	/// A modifier given twice in a group of a regular expression; `args` names it.
+	/// A modifier given twice in a group of a regular expression.
 	DuplicateRegexpModifier,
 	/// A quantifier in a regular expression with nothing to repeat.
 	LoneRegexpQuantifier,

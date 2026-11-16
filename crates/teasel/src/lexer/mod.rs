@@ -774,12 +774,9 @@ impl<'a> Lexer<'a> {
 			named,
 			&mut self.regexp,
 		);
-		if let Err(Rejected { code, at, end, named }) = checked {
+		if let Err(Rejected { code, at, end }) = checked {
 			let within = |offset: usize| (start + 1 + offset) as u32;
-			let mut error = SyntaxError::new(within(at), code).to(within(end));
-			if named {
-				error = error.arg(self.strings.intern(self.regexp.name()));
-			}
+			let error = SyntaxError::new(within(at), code).to(within(end));
 			if !self.recover {
 				return Err(Box::new(error));
 			}
