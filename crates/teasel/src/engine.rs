@@ -254,7 +254,7 @@ pub fn parse(
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
 			words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
-			words.push(options.0 | if failed { FAILED } else { 0 });
+			words.push((options.0 & !FAILED) | if failed { FAILED } else { 0 });
 			let mut sits = 0u64;
 			let mut note = |_, buffer: Option<&mut dyn Raw>| {
 				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
