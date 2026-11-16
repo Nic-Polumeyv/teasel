@@ -979,7 +979,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 						| TokenKind::PrivateName(_)
 						| TokenKind::Number(_)
 						| TokenKind::String(_)
-						| TokenKind::Template { .. }
 						| TokenKind::RegExp { .. }
 				));
 				std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind)

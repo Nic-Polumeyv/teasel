@@ -935,11 +935,11 @@ impl<const TS: bool> Parser<'_, TS> {
 		let mut quasis = self.items();
 		let mut expressions = self.items();
 		loop {
+			let chunk_start = self.lexer.pos();
 			let Chunk {
 				cooked,
 				raw,
 				tail,
-				start: chunk_start,
 				end: chunk_end,
 			} = self.lexer.read_template()?;
 			if cooked.is_none() && !is_tagged {

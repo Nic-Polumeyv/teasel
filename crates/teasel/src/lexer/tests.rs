@@ -329,16 +329,18 @@ fn legacy_octal_escapes() {
 fn templates() {
 	let mut lexer = Lexer::new("`a${b}c\\n`");
 	assert_eq!(lexer.next_token().unwrap().kind, Backquote);
+	let start = lexer.pos();
 	let chunk = lexer.read_template().unwrap();
-	assert_eq!((chunk.start, chunk.end), (1, 2));
+	assert_eq!((start, chunk.end), (1, 2));
 	let Chunk { cooked, raw, tail, .. } = chunk;
 	assert_eq!(lexer.strings.get(raw), "a");
 	assert_eq!(cooked, Some(raw));
 	assert!(!tail);
 	assert!(is_ident(&lexer.next_token().unwrap().kind));
 	assert_eq!(lexer.next_token().unwrap().kind, BraceR);
+	let start = lexer.pos();
 	let chunk = lexer.read_template().unwrap();
-	assert_eq!((chunk.start, chunk.end), (6, 9));
+	assert_eq!((start, chunk.end), (6, 9));
 	let Chunk { cooked, raw, tail, .. } = chunk;
 	assert_eq!(lexer.strings.get(cooked.unwrap()), "c\n");
 	assert_eq!(lexer.strings.get(raw), "c\\n");

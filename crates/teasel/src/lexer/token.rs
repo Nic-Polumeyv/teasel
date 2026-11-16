@@ -17,7 +17,6 @@ pub(crate) struct Chunk {
 	pub(crate) cooked: Option<StrId>,
 	pub(crate) raw: StrId,
 	pub(crate) tail: bool,
-	pub(crate) start: u32,
 	pub(crate) end: u32,
 }
 

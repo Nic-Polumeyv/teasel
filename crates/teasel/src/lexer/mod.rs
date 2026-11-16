@@ -203,7 +203,7 @@ impl<'a> Lexer<'a> {
 		Ok(token)
 	}
 
-	// in place: a `Result<Token>` is five words, moved at every `?`, and was 16% of a parse;
+	// in place: a `Result<Token>` moved at every `?` was 16% of a parse;
 	// an error leaves the token half written, and every caller then restores a snapshot or stops
 	pub(crate) fn next_token_into(&mut self, token: &mut Token) -> Result<()> {
 		token.newline_before = self.skip_space()?;
@@ -876,7 +876,6 @@ impl<'a> Lexer<'a> {
 						cooked,
 						raw,
 						tail,
-						start: start as u32,
 						end: end as u32,
 					});
 				}

@@ -3078,7 +3078,7 @@ impl<'a> Walker<'a> {
 			result => result,
 		};
 		let end = parser.consumed_end();
-		self.stopped = parser.stopped();
+		self.stopped = roots.is_ok() && parser.stopped();
 		self.ast = Some(parser.finish());
 		let roots = roots?;
 		self.at = end;
