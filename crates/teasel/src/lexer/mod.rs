@@ -1,6 +1,5 @@
 pub(crate) mod list;
 pub(crate) mod regexp;
-mod regexp_data;
 pub(crate) mod scan;
 pub(crate) mod token;
 pub(crate) mod unicode;
@@ -12,7 +11,7 @@ use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
 use regexp::Rejected;
-use scan::{comment_end, is_new_line, is_whitespace, line_end};
+use scan::{comment_end, is_new_line, is_separator, is_whitespace, line_end};
 use token::{Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
 
@@ -706,12 +705,15 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
 		self.pos = start + 1;
+		let bytes = self.src.as_bytes();
 		let mut escaped = false;
 		let mut in_class = false;
+		let mut named = false;
 		loop {
-			let cut = match self.char() {
-				None => true,
-				Some(c) => is_new_line(c),
+			let cut = match bytes[self.pos..] {
+				[] | [b'\n' | b'\r', ..] => true,
+				[0xe2, ..] => is_separator(&bytes[self.pos..]),
+				_ => false,
 			};
 			if cut {
 				return self.unterminated(start + 1, Code::UnterminatedRegexp, |l| {
@@ -728,19 +730,21 @@ impl<'a> Lexer<'a> {
 					}
 				});
 			}
-			let c = self.char().unwrap();
 			if escaped {
 				escaped = false;
 			} else {
-				match c {
-					'[' => in_class = true,
-					']' if in_class => in_class = false,
-					'/' if !in_class => break,
-					'\\' => escaped = true,
+				match bytes[self.pos] {
+					b'[' => in_class = true,
+					b']' => in_class = false,
+					b'/' if !in_class => break,
+					b'\\' => escaped = true,
+					b'(' if !in_class && bytes[self.pos + 1..].starts_with(b"?<") => {
+						named |= !matches!(bytes.get(self.pos + 3), Some(b'=' | b'!'));
+					}
 					_ => {}
 				}
 			}
-			self.pos += c.len_utf8();
+			self.pos += 1;
 		}
 		let pattern = self.strings.intern(&self.src[start + 1..self.pos]);
 		self.pos += 1;
@@ -764,11 +768,15 @@ impl<'a> Lexer<'a> {
 				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		if let Err(rejected) = regexp::validate(&self.src[start + 1..flags_start - 1], flags_text, &mut self.regexp) {
-			let at = start as u32 + 1;
+		if let Err(rejected) = regexp::validate(
+			&self.src[start + 1..flags_start - 1],
+			flags_text,
+			named,
+			&mut self.regexp,
+		) {
 			let error = match rejected {
-				Rejected::Flag(code) => SyntaxError::new(at, code),
-				Rejected::Pattern(reason) => SyntaxError::new(at, Code::InvalidRegexp)
+				Rejected::Flag(at, code) => SyntaxError::new((flags_start + at) as u32, code),
+				Rejected::Pattern(at, reason) => SyntaxError::new((start + 1 + at) as u32, Code::InvalidRegexp)
 					.arg(pattern)
 					.arg(self.strings.intern(reason)),
 			};

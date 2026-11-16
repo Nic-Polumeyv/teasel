@@ -435,43 +435,108 @@ fn regex_validation() {
 			.map(|_| ())
 			.map_err(|e| (e.describe(&lexer.strings), e.pos))
 	};
-	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
-	// groups side by side are not nested
-	assert!(regex(&format!("/{}/", "()".repeat(1000))).is_ok());
-	assert!(regex(&format!("/{}{}/", "(".repeat(1001), ")".repeat(1001))).is_err());
-	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());
-	assert!(regex("/(?i:a)b/").is_ok());
-	assert!(regex("/\\1(a)/").is_ok());
-	assert_eq!(regex("/(/"), Err(("invalid_regexp '(' 'Unterminated group'".into(), 1)));
-	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 1)));
-	assert_eq!(regex("/a/uv"), Err(("invalid_regexp_flag".into(), 1)));
-	assert_eq!(
-		regex("/\\1/u"),
-		Err(("invalid_regexp '\\1' 'Invalid escape'".into(), 1))
-	);
-	assert_eq!(
-		regex("/[b-a]/"),
-		Err((
-			"invalid_regexp '[b-a]' 'Range out of order in character class'".into(),
-			1
-		))
-	);
-	assert_eq!(
-		regex("/(?<a>x)(?<a>y)/"),
-		Err((
-			"invalid_regexp '(?<a>x)(?<a>y)' 'Duplicate capture group name'".into(),
-			1
-		))
-	);
-	assert_eq!(
-		regex("/\\p{Nope}/u"),
-		Err(("invalid_regexp '\\p{Nope}' 'Invalid property name'".into(), 1))
-	);
-	assert!(regex("/{*/").is_ok());
-	assert_eq!(
-		regex("/{*/u"),
-		Err(("invalid_regexp '{*' 'Lone quantifier brackets'".into(), 1))
-	);
+	let nested = |open: &str, close: &str, flags: &str| format!("/{}{}/{flags}", open.repeat(5000), close.repeat(5000));
+	for valid in [
+		r"/(?<a>x)|(?<a>y)/",
+		r"/(?:(?<a>x)|(?<a>y))\k<a>/",
+		r"/(?<a>x)|(?:y|(?<a>z))/",
+		r"/(?<𝒜>.)\k<𝒜>(?<\u{1d49e}>.)(?<\ud835\udc9f>.)/",
+		r"/(?i:a)(?i-m:b)(?-s:c)(?s-:d)/",
+		r"/\1(a)\k<b>[\k]\c[\c][\c1-\c_]\8\p{L}/",
+		r"/(a)\1\0/u",
+		r"/{*a{b{1c{,2}]}x{1}{/",
+		r"/(?=a)*(?!a){2}/",
+		r"/a{2,2}b{0002,2}c{1,}?/",
+		r"/[a-😀][\d-a][a-\d][---][\b-\t]/",
+		r"/[😀-😁][\ud83d\ude00-\ud83d\ude01][\--\/]/u",
+		r"/\p{Script=Greek}\p{scx=Grek}\P{Lu}\p{gc=L}\p{Any}/u",
+		r"/[\p{L}--[a-z]][\p{L}&&\p{Lu}&&[^a]][\q{ab|c}a-z\d][^\q{a|b}][\p{RGI_Emoji}--\q{x}][^\q{ab}&&a][]/v",
+		"/a/gimsyd",
+		"/a/dv",
+		&nested("(", ")", ""),
+		&nested("(?:a|", ")", "u"),
+		&nested("[", "]", "v"),
+	] {
+		assert_eq!(regex(valid), Ok(()), "{}", &valid[..valid.len().min(80)]);
+	}
+	for (invalid, reason, at) in [
+		(r"/(/", "Unterminated group", 1),
+		(r"/a)/", "Unmatched ')'", 2),
+		(r"/a**/", "Nothing to repeat", 3),
+		(r"/^*/", "Nothing to repeat", 2),
+		(r"/a|*/", "Nothing to repeat", 3),
+		(r"/(?<=a)*/", "Nothing to repeat", 7),
+		(r"/(?=a)*/u", "Nothing to repeat", 6),
+		(r"/{1}/", "Nothing to repeat", 1),
+		(r"/a{2,1}/", "numbers out of order in {} quantifier", 2),
+		(
+			r"/a{9007199254740993,9007199254740992}/",
+			"numbers out of order in {} quantifier",
+			2,
+		),
+		(r"/{*/u", "Lone quantifier brackets", 1),
+		(r"/a}/u", "Lone quantifier brackets", 2),
+		(r"/a{1/u", "Incomplete quantifier", 2),
+		(r"/\1/u", "Invalid escape", 1),
+		(r"/(a)\2/u", "Invalid escape", 4),
+		(r"/a\00/u", "Invalid escape", 2),
+		(r"/a\-/u", "Invalid escape", 2),
+		(r"/a\x4/u", "Invalid escape", 2),
+		(r"/a[\1]/u", "Invalid escape", 3),
+		(r"/a\c/u", "Invalid unicode escape", 2),
+		(r"/a\u{110000}/u", "Invalid unicode escape", 2),
+		(r"/[b-a]/", "Range out of order in character class", 2),
+		(r"/[😀-😁]/", "Range out of order in character class", 6),
+		(
+			r"/[\ud83d\ude00-\ud83d\ude01]/",
+			"Range out of order in character class",
+			8,
+		),
+		(r"/x[a-\d]/u", "Invalid character class", 3),
+		(r"/(?<a>x)(?<a>y)/", "Duplicate capture group name", 8),
+		(r"/(?<a>x)(?<\u0061>y)/", "Duplicate capture group name", 8),
+		(r"/(?:(?<a>x))(?<a>z)/", "Duplicate capture group name", 12),
+		(r"/(?<a>(?<a>x))/", "Duplicate capture group name", 6),
+		(
+			r"/(?<a>.)|(?<b>.)(?:(?<c>.)|(?<b>.))/",
+			"Duplicate capture group name",
+			27,
+		),
+		(r"/(?<a>x)[\k]/", "Invalid escape", 9),
+		(r"/\k<a>(?<b>x)/", "Invalid named capture referenced", 1),
+		(r"/a\k<a>/u", "Invalid named capture referenced", 2),
+		(r"/(?<a>x)\k/", "Invalid named reference", 8),
+		(r"/(?<1>a)/", "Invalid capture group name", 1),
+		(r"/(?<a/", "Invalid capture group name", 1),
+		(r"/a(?x:a)/", "Invalid group", 2),
+		(r"/(?ii:a)/", "Duplicate regular expression modifiers", 4),
+		(r"/(?i-i:a)/", "Duplicate regular expression modifiers", 5),
+		(r"/(?-:a)/", "Invalid regular expression modifiers", 1),
+		(r"/\p{Nope}/u", "Invalid property name", 1),
+		(r"/a\P{RGI_Emoji}/v", "Invalid property name", 2),
+		(r"/\p{sc=Nope}/u", "Invalid property value", 1),
+		(r"/[^\q{ab}]/v", "Negated character class may contain strings", 1),
+		(r"/a[^[\q{}]]/v", "Negated character class may contain strings", 2),
+		(r"/[a&&&b]/v", "Invalid character in character class", 3),
+		(r"/[a-z&&b]/v", "Invalid character in character class", 5),
+		(r"/[a--b&&c]/v", "Invalid character in character class", 6),
+		(r"/[a&&]/v", "Invalid character in character class", 5),
+		(r"/[a-]/v", "Invalid character in character class", 3),
+		(r"/[a!!]/v", "Invalid character in character class", 3),
+		(r"/[a(]/v", "Invalid character in character class", 3),
+		(r"/[z-a]/v", "Range out of order in character class", 2),
+		(r"/[a\q]/v", "Invalid escape", 3),
+	] {
+		let pattern = &invalid[1..invalid.rfind('/').unwrap()];
+		assert_eq!(
+			regex(invalid),
+			Err((format!("invalid_regexp '{pattern}' '{reason}'"), at)),
+			"{invalid}"
+		);
+	}
+	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 4)));
+	assert_eq!(regex("/a/guv"), Err(("invalid_regexp_flag".into(), 5)));
+	assert_eq!(regex("/a/gx"), Err(("invalid_regexp_flag".into(), 4)));
 }
 
 #[test]
