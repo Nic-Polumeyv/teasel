@@ -2,4 +2,4 @@
 '@teasel/parser': patch
 ---
 
-Parsing is 1 to 2% faster
+Parsing is up to 2% faster
