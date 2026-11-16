@@ -58,14 +58,20 @@ async function fetched() {
 
 // a panic traps the instance for good: a fresh one takes over, and grammars are read again in it
 let generation = 0;
+// the instance is spent, and the next call starts the fresh one: where a stack overflow is caught there may be no stack left to start it
+let spent = false;
 
 function guarded<T>(f: () => T): T {
+	if (spent) {
+		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+		spent = false;
+	}
 	try {
 		return f();
 	} catch (error) {
 		// a stack overflow unwinds the module mid-parse and leaves it as unusable as a trap does
 		if (!(error instanceof WebAssembly.RuntimeError || error instanceof RangeError)) throw error;
-		wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+		spent = true;
 		generation++;
 		throw new Error('the engine panicked and started over', { cause: error });
 	}
@@ -87,7 +93,7 @@ let layout_text: string | undefined;
 // read once, before any view of the tree: writing it can grow the memory and detach them
 function layout() {
 	if (layout_text === undefined) {
-		wasm.layout();
+		guarded(() => wasm.layout());
 		layout_text = text();
 	}
 	return layout_text;
