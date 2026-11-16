@@ -359,7 +359,7 @@ pub(crate) fn read<R>(
 	grammar: Option<&Grammar>,
 	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
 ) -> R {
-	let options = if grammar.is_some_and(|grammar| host::typescript(source, grammar)) {
+	let options = if !options.typescript() && grammar.is_some_and(|grammar| host::typescript(source, grammar)) {
 		options.with(Options::TYPESCRIPT)
 	} else {
 		options
