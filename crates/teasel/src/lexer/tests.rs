@@ -1,13 +1,13 @@
 use super::Lexer;
 use super::token::{
-	Keyword, Token,
+	Chunk, Keyword, Token,
 	TokenKind::{self, *},
 };
 use crate::ast::{Comment, CommentKind};
 use crate::interner::StrId;
 use std::assert_matches;
 
-fn tokens(src: &str) -> Vec<Token> {
+fn tokens(src: &str) -> Vec<(Token, u32)> {
 	let mut lexer = Lexer::new(src);
 	let mut out = Vec::new();
 	loop {
@@ -15,18 +15,18 @@ fn tokens(src: &str) -> Vec<Token> {
 		if token.kind == Eof {
 			return out;
 		}
-		out.push(token);
+		out.push((token, lexer.pos()));
 	}
 }
 
 fn kinds(src: &str) -> Vec<TokenKind> {
-	tokens(src).into_iter().map(|t| t.kind).collect()
+	tokens(src).into_iter().map(|(t, _)| t.kind).collect()
 }
 
 fn texts(src: &str) -> Vec<&str> {
 	tokens(src)
 		.into_iter()
-		.map(|t| &src[t.start as usize..t.end as usize])
+		.map(|(t, end)| &src[t.start as usize..end as usize])
 		.collect()
 }
 
@@ -331,9 +331,7 @@ fn templates() {
 	assert_eq!(lexer.next_token().unwrap().kind, Backquote);
 	let chunk = lexer.read_template().unwrap();
 	assert_eq!((chunk.start, chunk.end), (1, 2));
-	let Template { cooked, raw, tail } = chunk.kind else {
-		panic!()
-	};
+	let Chunk { cooked, raw, tail, .. } = chunk;
 	assert_eq!(lexer.strings.get(raw), "a");
 	assert_eq!(cooked, Some(raw));
 	assert!(!tail);
@@ -341,9 +339,7 @@ fn templates() {
 	assert_eq!(lexer.next_token().unwrap().kind, BraceR);
 	let chunk = lexer.read_template().unwrap();
 	assert_eq!((chunk.start, chunk.end), (6, 9));
-	let Template { cooked, raw, tail } = chunk.kind else {
-		panic!()
-	};
+	let Chunk { cooked, raw, tail, .. } = chunk;
 	assert_eq!(lexer.strings.get(cooked.unwrap()), "c\n");
 	assert_eq!(lexer.strings.get(raw), "c\\n");
 	assert!(tail);
@@ -355,9 +351,7 @@ fn template_invalid_escapes_cook_to_nothing() {
 	for src in ["`\\unicode`", "`\\1`", "`\\x`", "`\\8`"] {
 		let mut lexer = Lexer::new(src);
 		lexer.next_token().unwrap();
-		let Template { cooked, tail, .. } = lexer.read_template().unwrap().kind else {
-			panic!()
-		};
+		let Chunk { cooked, tail, .. } = lexer.read_template().unwrap();
 		assert_eq!(cooked, None, "{src}");
 		assert!(tail);
 	}
@@ -367,16 +361,12 @@ fn template_invalid_escapes_cook_to_nothing() {
 fn template_newlines_normalise() {
 	let mut lexer = Lexer::new("`a\r\nb\rc`");
 	lexer.next_token().unwrap();
-	let Template { cooked, raw, .. } = lexer.read_template().unwrap().kind else {
-		panic!()
-	};
+	let Chunk { cooked, raw, .. } = lexer.read_template().unwrap();
 	assert_eq!(lexer.strings.get(cooked.unwrap()), "a\nb\nc");
 	assert_eq!(lexer.strings.get(raw), "a\nb\nc");
 	let mut lexer = Lexer::new("`a\\\r\nb\\\rc`");
 	lexer.next_token().unwrap();
-	let Template { cooked, raw, .. } = lexer.read_template().unwrap().kind else {
-		panic!()
-	};
+	let Chunk { cooked, raw, .. } = lexer.read_template().unwrap();
 	assert_eq!(lexer.strings.get(cooked.unwrap()), "abc");
 	assert_eq!(lexer.strings.get(raw), "a\\\nb\\\nc");
 	let mut lexer = Lexer::new("`abc");
@@ -398,13 +388,14 @@ fn regex() {
 	let RegExp { pattern, flags } = re.kind else { panic!() };
 	assert_eq!(lexer.strings.get(pattern), "a[/]b\\/c");
 	assert_eq!(lexer.strings.get(flags), "gi");
-	assert_eq!((re.start, re.end), (0, 12));
+	assert_eq!((re.start, lexer.pos()), (0, 12));
 	assert_eq!(lexer.next_token().unwrap().kind, Semi);
 
 	let mut lexer = Lexer::new("/=x/");
 	let t = lexer.next_token().unwrap();
 	assert_eq!(t.kind, SlashEq);
-	assert_eq!(lexer.read_regex(t).unwrap().end, 4);
+	lexer.read_regex(t).unwrap();
+	assert_eq!(lexer.pos(), 4);
 
 	let mut lexer = Lexer::new("/abc\n/");
 	let t = lexer.next_token().unwrap();
@@ -518,7 +509,10 @@ fn html_comments_outside_modules() {
 
 #[test]
 fn newline_before() {
-	let flags: Vec<bool> = tokens("a\nb c\u{2028}d").iter().map(|t| t.newline_before).collect();
+	let flags: Vec<bool> = tokens("a\nb c\u{2028}d")
+		.iter()
+		.map(|(t, _)| t.newline_before)
+		.collect();
 	assert_eq!(flags, [false, true, false, true]);
 }
 

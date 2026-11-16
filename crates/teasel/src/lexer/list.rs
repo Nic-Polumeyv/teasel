@@ -291,9 +291,6 @@ impl Lexer<'_> {
 	/// The rest of a template after its backquote or a substitution's `}`, through the next
 	/// substitution's `${` (false) or its end (true).
 	fn template_part(&mut self) -> Option<bool> {
-		match self.read_template().ok()?.kind {
-			TokenKind::Template { tail, .. } => Some(tail),
-			_ => None,
-		}
+		Some(self.read_template().ok()?.tail)
 	}
 }

@@ -4,14 +4,21 @@ use crate::interner::StrId;
 pub(crate) struct Token {
 	pub(crate) kind: TokenKind,
 	pub(crate) start: u32,
-	pub(crate) end: u32,
 	pub(crate) newline_before: bool,
 	/// An identifier or keyword written with a unicode escape.
 	pub(crate) escaped: bool,
-	/// A string, template or regular expression the source ends or a line break cuts short.
-	pub(crate) unclosed: bool,
 	/// One of the host's stop tokens, read outside every bracket the parse opened.
 	pub(crate) stop: bool,
+}
+
+/// A template's text from after a backquote or `}` up to the next `${` or the closing backquote.
+#[derive(Debug)]
+pub(crate) struct Chunk {
+	pub(crate) cooked: Option<StrId>,
+	pub(crate) raw: StrId,
+	pub(crate) tail: bool,
+	pub(crate) start: u32,
+	pub(crate) end: u32,
 }
 
 impl Token {
@@ -19,10 +26,8 @@ impl Token {
 		Token {
 			kind: TokenKind::Eof,
 			start: pos,
-			end: pos,
 			newline_before: false,
 			escaped: false,
-			unclosed: false,
 			stop: false,
 		}
 	}
@@ -32,7 +37,7 @@ impl Token {
 	pub(crate) fn ends_operand(&self) -> bool {
 		use TokenKind::*;
 		match self.kind {
-			Ident(_) | PrivateName(_) | Number(_) | BigInt | String(_) | Template { .. } | RegExp { .. } => true,
+			Ident(_) | PrivateName(_) | Number(_) | BigInt | String(_) | RegExp { .. } => true,
 			ParenR | BracketR | BraceR | PlusPlus | MinusMinus => true,
 			Keyword(k) => matches!(
 				k,
@@ -47,7 +52,9 @@ impl Token {
 	}
 }
 
+// with a tag of one byte, what the compiler picks when left to it, a parse is 5 to 11% slower
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u32)]
 pub(crate) enum TokenKind {
 	Eof,
 	Ident(StrId),
@@ -56,15 +63,7 @@ pub(crate) enum TokenKind {
 	Number(f64),
 	BigInt,
 	String(StrId),
-	Template {
-		cooked: Option<StrId>,
-		raw: StrId,
-		tail: bool,
-	},
-	RegExp {
-		pattern: StrId,
-		flags: StrId,
-	},
+	RegExp { pattern: StrId, flags: StrId },
 
 	BraceL,
 	BraceR,
