@@ -38,7 +38,7 @@ let failed = 0;
 // what a parse answers or throws, read off the engine directly
 function outcome(engine: Engine, source: string, on: number, entry: number, at: number, end?: number) {
 	const cut = source.slice(0, end);
-	return decode(engine.parse(cut, on, entry, at, '', undefined), cut, engine, on, entry === 3);
+	return decode(engine.parse(cut, on, entry, at, '', undefined), cut, engine, entry === 3);
 }
 
 const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));
@@ -142,14 +142,14 @@ function numbered(answer: Decoded) {
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
 function json(name: string, source: string, options: Options, entry: number, at: number) {
 	const on = flags(options);
-	const tree = JSON.stringify(numbered(decode(native.parse(source, on, entry, at, '', undefined), source, native, on, entry === 3)), as_json);
+	const tree = JSON.stringify(numbered(decode(native.parse(source, on, entry, at, '', undefined), source, native, entry === 3)), as_json);
 	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
 }
 
 // a whole document of the host's
 function document(name: string, source: string, options: Options) {
 	const on = flags(options);
-	const tree = JSON.stringify(numbered(decode(native.parse(source, on, 0, 0, '', grammar), source, native, on, false, names)), as_json);
+	const tree = JSON.stringify(numbered(decode(native.parse(source, on, 0, 0, '', grammar), source, native, false, names)), as_json);
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
 	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
 }

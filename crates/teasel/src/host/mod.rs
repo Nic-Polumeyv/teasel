@@ -1172,18 +1172,12 @@ impl<'a> Walker<'a> {
 		if let Some(script) = script {
 			self.expect(">")?;
 			let content_start = self.at;
-			let close = self.closing(|rest| {
-				let after = rest[2..].strip_prefix(name);
-				after.is_some_and(|after| after.trim_start_matches(is_space).starts_with('>'))
-			});
+			let (close, end) = self.closing(name);
 			if close == self.len() {
 				self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?;
 			}
 			let program = self.program(content_start, close)?;
-			self.at = close;
-			if close < self.len() {
-				self.close_tag(name)?;
-			}
+			self.at = end;
 			let mut module = false;
 			for &id in &attributes {
 				for &(attribute, value) in &script.module {
@@ -1288,15 +1282,13 @@ impl<'a> Walker<'a> {
 		}
 		if rule.raw {
 			let content_start = self.at;
-			let close = self.closing(|rest| closing_tag(rest, name).is_some());
-			self.at = close;
+			let (close, end) = self.closing(name);
+			self.at = end;
 			let text = Value::Slice(content_start, close);
 			let node = self.host(own::Text, content_start, close, &[(own::raw, text), (own::data, text)]);
-			match closing_tag(self.rest(), name) {
-				Some(len) => self.at += len as u32,
-				None => self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?,
+			if close == self.len() {
+				self.report_at(self.len(), self.len(), Code::Unclosed, Some(name))?;
 			}
-			let end = self.at;
 			let mut nodes = self.nodes.take();
 			nodes.push(node);
 			finish(self, attributes, fields, nodes, end);
@@ -1318,28 +1310,22 @@ impl<'a> Walker<'a> {
 		Ok(())
 	}
 
-	/// Where the first `</` that `closes` starts, from the cursor, or the length.
-	fn closing(&self, closes: impl Fn(&str) -> bool) -> u32 {
+	/// Where the first closing tag of `name` starts and where it ends, from the cursor; the length
+	/// twice when there is none.
+	fn closing(&self, name: &str) -> (u32, u32) {
 		let bytes = self.src.as_bytes();
 		let mut at = self.at as usize;
 		// found by `str::find`, a pass over Svelte's tests took 1% longer
 		loop {
 			at = find_pair(bytes, at, b'<', *b"/");
 			if at >= bytes.len() {
-				return self.len();
+				return (self.len(), self.len());
 			}
-			if bytes.get(at + 1) == Some(&b'/') && closes(&self.src[at..]) {
-				return at as u32;
+			if let Some(len) = closing_tag(&self.src[at..], name) {
+				return (at as u32, (at + len) as u32);
 			}
 			at += 1;
 		}
-	}
-
-	fn close_tag(&mut self, name: &str) -> Result<()> {
-		self.expect("</")?;
-		self.expect(name)?;
-		self.space();
-		self.expect(">")
 	}
 
 	fn tag_name(&mut self, attribute: bool) -> Result<&'a str> {
