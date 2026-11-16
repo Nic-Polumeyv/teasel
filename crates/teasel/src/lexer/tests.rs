@@ -433,7 +433,7 @@ fn regex_validation() {
 		lexer
 			.read_regex(t)
 			.map(|_| ())
-			.map_err(|e| (e.describe(&lexer.strings), e.pos))
+			.map_err(|e| (e.describe(&lexer.strings), e.pos, e.end))
 	};
 	let nested = |open: &str, close: &str, flags: &str| format!("/{}{}/{flags}", open.repeat(5000), close.repeat(5000));
 	for valid in [
@@ -459,84 +459,77 @@ fn regex_validation() {
 	] {
 		assert_eq!(regex(valid), Ok(()), "{}", &valid[..valid.len().min(80)]);
 	}
-	for (invalid, reason, at) in [
-		(r"/(/", "Unterminated group", 1),
-		(r"/a)/", "Unmatched ')'", 2),
-		(r"/a**/", "Nothing to repeat", 3),
-		(r"/^*/", "Nothing to repeat", 2),
-		(r"/a|*/", "Nothing to repeat", 3),
-		(r"/(?<=a)*/", "Nothing to repeat", 7),
-		(r"/(?=a)*/u", "Nothing to repeat", 6),
-		(r"/{1}/", "Nothing to repeat", 1),
-		(r"/a{2,1}/", "numbers out of order in {} quantifier", 2),
+	for (invalid, error, at, end) in [
+		(r"/(/", "unterminated_regexp_group", 1, 2),
+		(r"/a)/", "unopened_regexp_group", 2, 3),
+		(r"/a**/", "lone_regexp_quantifier", 3, 4),
+		(r"/^*/", "lone_regexp_quantifier", 2, 3),
+		(r"/a|*/", "lone_regexp_quantifier", 3, 4),
+		(r"/(?<=a)*/", "lone_regexp_quantifier", 7, 8),
+		(r"/(?=a)*/u", "lone_regexp_quantifier", 6, 7),
+		(r"/{1}/", "lone_regexp_quantifier", 1, 4),
+		(r"/a{2,1}/", "regexp_quantifier_order", 2, 7),
 		(
 			r"/a{9007199254740993,9007199254740992}/",
-			"numbers out of order in {} quantifier",
+			"regexp_quantifier_order",
 			2,
+			37,
 		),
-		(r"/{*/u", "Lone quantifier brackets", 1),
-		(r"/a}/u", "Lone quantifier brackets", 2),
-		(r"/a{1/u", "Incomplete quantifier", 2),
-		(r"/\1/u", "Invalid escape", 1),
-		(r"/(a)\2/u", "Invalid escape", 4),
-		(r"/a\00/u", "Invalid escape", 2),
-		(r"/a\-/u", "Invalid escape", 2),
-		(r"/a\x4/u", "Invalid escape", 2),
-		(r"/a[\1]/u", "Invalid escape", 3),
-		(r"/a\c/u", "Invalid unicode escape", 2),
-		(r"/a\u{110000}/u", "Invalid unicode escape", 2),
-		(r"/[b-a]/", "Range out of order in character class", 2),
-		(r"/[😀-😁]/", "Range out of order in character class", 6),
-		(
-			r"/[\ud83d\ude00-\ud83d\ude01]/",
-			"Range out of order in character class",
-			8,
-		),
-		(r"/x[a-\d]/u", "Invalid character class", 3),
-		(r"/(?<a>x)(?<a>y)/", "Duplicate capture group name", 8),
-		(r"/(?<a>x)(?<\u0061>y)/", "Duplicate capture group name", 8),
-		(r"/(?:(?<a>x))(?<a>z)/", "Duplicate capture group name", 12),
-		(r"/(?<a>(?<a>x))/", "Duplicate capture group name", 6),
+		(r"/{*/u", "lone_regexp_bracket", 1, 2),
+		(r"/a}/u", "lone_regexp_bracket", 2, 3),
+		(r"/a{1/u", "lone_regexp_bracket", 2, 3),
+		(r"/\1/u", "undefined_regexp_group '1'", 1, 3),
+		(r"/(a)\2/u", "undefined_regexp_group '2'", 4, 6),
+		(r"/a\00/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\-/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\x4/u", "invalid_regexp_escape", 2, 4),
+		(r"/a[\1]/u", "invalid_regexp_escape", 3, 5),
+		(r"/a\c/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\u{110000}/u", "invalid_regexp_escape", 2, 11),
+		(r"/[b-a]/", "regexp_range_order", 2, 5),
+		(r"/[😀-😁]/", "regexp_range_order", 2, 11),
+		(r"/[\ud83d\ude00-\ud83d\ude01]/", "regexp_range_order", 8, 21),
+		(r"/x[a-\d]/u", "invalid_regexp_class", 3, 7),
+		(r"/(?<a>x)(?<a>y)/", "duplicate_regexp_group_name 'a'", 8, 13),
+		(r"/(?<a>x)(?<\u0061>y)/", "duplicate_regexp_group_name 'a'", 8, 18),
+		(r"/(?:(?<a>x))(?<a>z)/", "duplicate_regexp_group_name 'a'", 12, 17),
+		(r"/(?<a>(?<a>x))/", "duplicate_regexp_group_name 'a'", 6, 11),
 		(
 			r"/(?<a>.)|(?<b>.)(?:(?<c>.)|(?<b>.))/",
-			"Duplicate capture group name",
+			"duplicate_regexp_group_name 'b'",
 			27,
+			32,
 		),
-		(r"/(?<a>x)[\k]/", "Invalid escape", 9),
-		(r"/\k<a>(?<b>x)/", "Invalid named capture referenced", 1),
-		(r"/a\k<a>/u", "Invalid named capture referenced", 2),
-		(r"/(?<a>x)\k/", "Invalid named reference", 8),
-		(r"/(?<1>a)/", "Invalid capture group name", 1),
-		(r"/(?<a/", "Invalid capture group name", 1),
-		(r"/a(?x:a)/", "Invalid group", 2),
-		(r"/(?ii:a)/", "Duplicate regular expression modifiers", 4),
-		(r"/(?i-i:a)/", "Duplicate regular expression modifiers", 5),
-		(r"/(?-:a)/", "Invalid regular expression modifiers", 1),
-		(r"/\p{Nope}/u", "Invalid property name", 1),
-		(r"/a\P{RGI_Emoji}/v", "Invalid property name", 2),
-		(r"/\p{sc=Nope}/u", "Invalid property value", 1),
-		(r"/[^\q{ab}]/v", "Negated character class may contain strings", 1),
-		(r"/a[^[\q{}]]/v", "Negated character class may contain strings", 2),
-		(r"/[a&&&b]/v", "Invalid character in character class", 3),
-		(r"/[a-z&&b]/v", "Invalid character in character class", 5),
-		(r"/[a--b&&c]/v", "Invalid character in character class", 6),
-		(r"/[a&&]/v", "Invalid character in character class", 5),
-		(r"/[a-]/v", "Invalid character in character class", 3),
-		(r"/[a!!]/v", "Invalid character in character class", 3),
-		(r"/[a(]/v", "Invalid character in character class", 3),
-		(r"/[z-a]/v", "Range out of order in character class", 2),
-		(r"/[a\q]/v", "Invalid escape", 3),
+		(r"/(?<a>x)[\k]/", "invalid_regexp_escape", 9, 11),
+		(r"/\k<a>(?<b>x)/", "undefined_regexp_group 'a'", 1, 6),
+		(r"/a\k<a>/u", "undefined_regexp_group 'a'", 2, 7),
+		(r"/(?<a>x)\k/", "invalid_regexp_group_name", 8, 10),
+		(r"/(?<1>a)/", "invalid_regexp_group_name", 1, 5),
+		(r"/(?<a/", "invalid_regexp_group_name", 1, 5),
+		(r"/a(?x:a)/", "invalid_regexp_group", 2, 4),
+		(r"/(?ii:a)/", "duplicate_regexp_modifier 'i'", 4, 5),
+		(r"/(?i-i:a)/", "duplicate_regexp_modifier 'i'", 5, 6),
+		(r"/(?-:a)/", "invalid_regexp_group", 1, 5),
+		(r"/\p{Nope}/u", "invalid_regexp_property", 1, 8),
+		(r"/a\P{RGI_Emoji}/v", "invalid_regexp_property", 2, 15),
+		(r"/\p{sc=Nope}/u", "invalid_regexp_property", 1, 11),
+		(r"/[^\q{ab}]/v", "invalid_regexp_class", 1, 10),
+		(r"/a[^[\q{}]]/v", "invalid_regexp_class", 2, 11),
+		(r"/[a&&&b]/v", "invalid_regexp_class", 3, 5),
+		(r"/[a-z&&b]/v", "invalid_regexp_class", 5, 7),
+		(r"/[a--b&&c]/v", "invalid_regexp_class", 6, 8),
+		(r"/[a&&]/v", "invalid_regexp_class", 5, 6),
+		(r"/[a-]/v", "invalid_regexp_class", 3, 4),
+		(r"/[a!!]/v", "invalid_regexp_class", 3, 4),
+		(r"/[a(]/v", "invalid_regexp_class", 3, 4),
+		(r"/[z-a]/v", "regexp_range_order", 2, 5),
+		(r"/[a\q]/v", "invalid_regexp_escape", 3, 5),
 	] {
-		let pattern = &invalid[1..invalid.rfind('/').unwrap()];
-		assert_eq!(
-			regex(invalid),
-			Err((format!("invalid_regexp '{pattern}' '{reason}'"), at)),
-			"{invalid}"
-		);
+		assert_eq!(regex(invalid), Err((error.into(), at, end)), "{invalid}");
 	}
-	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 4)));
-	assert_eq!(regex("/a/guv"), Err(("invalid_regexp_flag".into(), 5)));
-	assert_eq!(regex("/a/gx"), Err(("invalid_regexp_flag".into(), 4)));
+	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 4, 5)));
+	assert_eq!(regex("/a/guv"), Err(("invalid_regexp_flag".into(), 5, 6)));
+	assert_eq!(regex("/a/gx"), Err(("invalid_regexp_flag".into(), 4, 5)));
 }
 
 #[test]

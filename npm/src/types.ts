@@ -218,7 +218,7 @@ export const CODES = [
 	'unterminated_string',
 	'unterminated_template',
 	'unterminated_regexp',
-	'invalid_regexp',
+	'unterminated_regexp_group',
 	'invalid_regexp_flag',
 	'duplicate_regexp_flag',
 	'invalid_number',
@@ -371,6 +371,19 @@ export const CODES = [
 	'using_in_ambient',
 	'property_after_instantiation',
 	'accessor_placement',
+	'unopened_regexp_group',
+	'invalid_regexp_group',
+	'invalid_regexp_group_name',
+	'duplicate_regexp_group_name',
+	'undefined_regexp_group',
+	'duplicate_regexp_modifier',
+	'lone_regexp_quantifier',
+	'regexp_quantifier_order',
+	'lone_regexp_bracket',
+	'invalid_regexp_escape',
+	'invalid_regexp_property',
+	'regexp_range_order',
+	'invalid_regexp_class',
 ] as const;
 
 /** What a parse error names in `code`; what each means is at Error codes. */

@@ -768,18 +768,18 @@ impl<'a> Lexer<'a> {
 				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		if let Err(rejected) = regexp::validate(
+		let checked = regexp::validate(
 			&self.src[start + 1..flags_start - 1],
 			flags_text,
 			named,
 			&mut self.regexp,
-		) {
-			let error = match rejected {
-				Rejected::Flag(at, code) => SyntaxError::new((flags_start + at) as u32, code),
-				Rejected::Pattern(at, reason) => SyntaxError::new((start + 1 + at) as u32, Code::InvalidRegexp)
-					.arg(pattern)
-					.arg(self.strings.intern(reason)),
-			};
+		);
+		if let Err(Rejected { code, at, end, named }) = checked {
+			let within = |offset: usize| (start + 1 + offset) as u32;
+			let mut error = SyntaxError::new(within(at), code).to(within(end));
+			if named {
+				error = error.arg(self.strings.intern(self.regexp.name()));
+			}
 			if !self.recover {
 				return Err(Box::new(error));
 			}

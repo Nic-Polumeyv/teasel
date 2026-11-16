@@ -7,27 +7,37 @@ use crate::interner::FastMap;
 
 type Result<T> = std::result::Result<T, Rejected>;
 
-/// Where a literal is wrong: an offset into its flags, or into its pattern.
-pub(super) enum Rejected {
-	Flag(usize, Code),
-	/// With the reason, `Code::InvalidRegexp`'s second argument after the pattern.
-	Pattern(usize, &'static str),
+/// What is wrong with a literal and where, as offsets from the start of its pattern: the flags
+/// start one past its end.
+pub(super) struct Rejected {
+	pub code: Code,
+	pub at: usize,
+	pub end: usize,
+	/// The code is about a name, a number or a modifier: `Scratch::name` holds it.
+	pub named: bool,
 }
 
 /// `named`: the pattern holds a `(?<` that is not a lookbehind's, outside every class.
 pub(super) fn validate(pattern: &str, flags: &str, named: bool, scratch: &mut Scratch) -> Result<()> {
 	let mut seen = 0u8;
-	for (at, flag) in flags.bytes().enumerate() {
-		let Some(bit) = b"gimsyduv".iter().position(|&known| known == flag) else {
-			return Err(Rejected::Flag(at, Code::InvalidRegexpFlag));
+	for (at, flag) in flags.char_indices() {
+		let bit = b"gimsyduv".iter().position(|&known| known as char == flag);
+		let code = match bit {
+			None => Code::InvalidRegexpFlag,
+			Some(bit) if seen & 1 << bit != 0 => Code::DuplicateRegexpFlag,
+			Some(6 | 7) if seen >> 6 != 0 => Code::InvalidRegexpFlag,
+			Some(bit) => {
+				seen |= 1 << bit;
+				continue;
+			}
 		};
-		if seen & 1 << bit != 0 {
-			return Err(Rejected::Flag(at, Code::DuplicateRegexpFlag));
-		}
-		seen |= 1 << bit;
-		if seen >> 6 == 3 {
-			return Err(Rejected::Flag(at, Code::InvalidRegexpFlag));
-		}
+		let at = pattern.len() + 1 + at;
+		return Err(Rejected {
+			code,
+			at,
+			end: at + flag.len_utf8(),
+			named: false,
+		});
 	}
 	let unicode = seen >> 6 != 0;
 	let mut walk = Walk {
@@ -37,7 +47,7 @@ pub(super) fn validate(pattern: &str, flags: &str, named: bool, scratch: &mut Sc
 		sets: seen >> 7 != 0,
 		named: named || unicode,
 		captures: 0,
-		reference: (0, 0),
+		reference: (0, 0, 0),
 		trail: 0,
 		scratch,
 	};
@@ -57,6 +67,13 @@ pub(crate) struct Scratch {
 	classes: Vec<Class>,
 	names: FastMap<String, Name>,
 	name: String,
+}
+
+impl Scratch {
+	/// What the last error with `named` is about.
+	pub(super) fn name(&self) -> &str {
+		&self.name
+	}
 }
 
 const NONE: u32 = u32::MAX;
@@ -80,10 +97,11 @@ enum Kind {
 	Behind,
 }
 
-/// A group name: the `(` of the last group of the name, and the first `\k` that asks for it.
+/// A group name: the `(` of the last group of the name, and the span of the first `\k` that asks
+/// for it.
 struct Name {
 	declared: u32,
-	referenced: u32,
+	referenced: (u32, u32),
 }
 
 /// An open class of a pattern with the `v` flag.
@@ -114,7 +132,7 @@ fn known<'n>(names: &'n mut FastMap<String, Name>, name: &str) -> &'n mut Name {
 	if !names.contains_key(name) {
 		let unknown = Name {
 			declared: NONE,
-			referenced: NONE,
+			referenced: (NONE, NONE),
 		};
 		names.insert(name.to_owned(), unknown);
 	}
@@ -129,8 +147,8 @@ struct Walk<'a> {
 	/// `\k` is a reference to a name, not an escaped `k`.
 	named: bool,
 	captures: u32,
-	/// The largest `\1` to `\9…` of a unicode pattern, and where it is.
-	reference: (u32, usize),
+	/// The largest `\1` to `\9…` of a unicode pattern, and its span.
+	reference: (u32, usize, usize),
 	/// Without `u` an astral character is two class atoms: the trail surrogate of the one whose
 	/// lead was just read, the next atom.
 	trail: u32,
@@ -138,8 +156,19 @@ struct Walk<'a> {
 }
 
 impl<'a> Walk<'a> {
-	fn fail<T>(&self, at: usize, reason: &'static str) -> Result<T> {
-		Err(Rejected::Pattern(at, reason))
+	/// `code` for what stands from `at` to where the walk is: one character at least, and an
+	/// escape with the character it escapes.
+	fn fail<T>(&self, code: Code, at: usize) -> Result<T> {
+		let escape = self.text[at..].starts_with('\\') as usize;
+		let mut end = self.pos.max(at + 1 + escape).min(self.text.len());
+		while !self.text.is_char_boundary(end) {
+			end += 1;
+		}
+		self.fail_at(code, at, end, false)
+	}
+
+	fn fail_at<T>(&self, code: Code, at: usize, end: usize, named: bool) -> Result<T> {
+		Err(Rejected { code, at, end, named })
 	}
 
 	fn peek(&self) -> Option<u8> {
@@ -181,7 +210,7 @@ impl<'a> Walk<'a> {
 				b')' => {
 					let group = self.scratch.groups.pop().unwrap();
 					if self.scratch.groups.is_empty() {
-						return self.fail(at, "Unmatched ')'");
+						return self.fail(Code::UnopenedRegexpGroup, at);
 					}
 					match group.kind {
 						Kind::Group => true,
@@ -201,32 +230,45 @@ impl<'a> Walk<'a> {
 					self.eat(b'?');
 					false
 				}
-				b'*' | b'+' | b'?' => return self.fail(at, "Nothing to repeat"),
+				b'*' | b'+' | b'?' => return self.fail(Code::LoneRegexpQuantifier, at),
 				b'{' => match self.braces() {
-					Some(_) if !repeats => return self.fail(at, "Nothing to repeat"),
-					Some(false) => return self.fail(at, "numbers out of order in {} quantifier"),
+					Some(_) if !repeats => return self.fail(Code::LoneRegexpQuantifier, at),
+					Some(false) => return self.fail(Code::RegexpQuantifierOrder, at),
 					Some(true) => {
 						self.eat(b'?');
 						false
 					}
-					None if self.unicode && repeats => return self.fail(at, "Incomplete quantifier"),
-					None if self.unicode => return self.fail(at, "Lone quantifier brackets"),
+					None if self.unicode => return self.fail(Code::LoneRegexpBracket, at),
 					None => true,
 				},
-				b'}' | b']' if self.unicode => return self.fail(at, "Lone quantifier brackets"),
+				b'}' | b']' if self.unicode => return self.fail(Code::LoneRegexpBracket, at),
 				b'\\' => self.escape(at)?,
 				_ => true,
 			};
 		}
 		if let [_, .., unclosed] = self.scratch.groups[..] {
-			return self.fail(unclosed.open as usize - 1, "Unterminated group");
+			let open = unclosed.open as usize;
+			return self.fail_at(Code::UnterminatedRegexpGroup, open - 1, open, false);
 		}
-		if self.reference.0 > self.captures {
-			return self.fail(self.reference.1, "Invalid escape");
+		let Scratch { names, name, .. } = &mut *self.scratch;
+		let (number, at, end) = self.reference;
+		if number > self.captures {
+			name.clear();
+			name.push_str(&self.text[at + 1..end]);
+			return self.fail_at(Code::UndefinedRegexpGroup, at, end, true);
 		}
-		let undeclared = self.scratch.names.values().filter(|name| name.declared == NONE);
-		match undeclared.map(|name| name.referenced).min() {
-			Some(at) => self.fail(at as usize, "Invalid named capture referenced"),
+		let undeclared = names.iter().filter(|(_, known)| known.declared == NONE);
+		match undeclared.min_by_key(|(_, known)| known.referenced) {
+			Some((
+				unknown,
+				&Name {
+					referenced: (at, end), ..
+				},
+			)) => {
+				name.clear();
+				name.push_str(unknown);
+				self.fail_at(Code::UndefinedRegexpGroup, at as usize, end as usize, true)
+			}
 			None => Ok(()),
 		}
 	}
@@ -246,10 +288,10 @@ impl<'a> Walk<'a> {
 				None
 			};
 			if !self.eat(b':') {
-				return self.fail(at, "Invalid group");
+				return self.fail(Code::InvalidRegexpGroup, at);
 			}
 			if add == 0 && remove == Some(0) {
-				return self.fail(at, "Invalid regular expression modifiers");
+				return self.fail(Code::InvalidRegexpGroup, at);
 			}
 		} else if self.eat(b'=') || self.eat(b'!') {
 			kind = Kind::Behind;
@@ -265,7 +307,7 @@ impl<'a> Walk<'a> {
 			// still earlier group of the name then does too
 			let holder = groups[groups.partition_point(|group| group.open <= known.declared) - 1];
 			if known.declared != NONE && known.declared >= holder.alternative {
-				return self.fail(at, "Duplicate capture group name");
+				return self.fail_at(Code::DuplicateRegexpGroupName, at, self.pos, true);
 			}
 			known.declared = at as u32;
 		}
@@ -283,7 +325,9 @@ impl<'a> Walk<'a> {
 		let mut seen = 0;
 		while let Some(bit) = self.peek().and_then(|byte| b"ims".iter().position(|&m| m == byte)) {
 			if (seen | taken) & 1 << bit != 0 {
-				return self.fail(self.pos, "Duplicate regular expression modifiers");
+				self.scratch.name.clear();
+				self.scratch.name.push(b"ims"[bit] as char);
+				return self.fail_at(Code::DuplicateRegexpModifier, self.pos, self.pos + 1, true);
 			}
 			seen |= 1 << bit;
 			self.pos += 1;
@@ -296,14 +340,15 @@ impl<'a> Walk<'a> {
 		self.scratch.name.clear();
 		loop {
 			let Some(mut c) = self.char() else {
-				return self.fail(at, "Invalid capture group name");
+				return self.fail(Code::InvalidRegexpGroupName, at);
 			};
 			self.pos += c.len_utf8();
 			if c == '>' && !self.scratch.name.is_empty() {
 				return Ok(());
 			}
 			if c == '\\' && self.eat(b'u') {
-				c = self.unicode_escape(at, true)?.and_then(char::from_u32).unwrap_or(c);
+				let code = self.unicode_escape(at, true).ok().flatten();
+				c = code.and_then(char::from_u32).unwrap_or(c);
 			}
 			let fits = if self.scratch.name.is_empty() {
 				is_id_start(c)
@@ -311,7 +356,7 @@ impl<'a> Walk<'a> {
 				is_id_continue(c)
 			};
 			if !fits {
-				return self.fail(at, "Invalid capture group name");
+				return self.fail(Code::InvalidRegexpGroupName, at);
 			}
 			self.scratch.name.push(c);
 		}
@@ -322,7 +367,7 @@ impl<'a> Walk<'a> {
 	fn escape(&mut self, at: usize) -> Result<bool> {
 		let Some(byte) = self.peek() else {
 			return if self.unicode {
-				self.fail(at, "Invalid escape")
+				self.fail(Code::InvalidRegexpEscape, at)
 			} else {
 				Ok(true)
 			};
@@ -332,10 +377,10 @@ impl<'a> Walk<'a> {
 			b'b' | b'B' => return Ok(false),
 			b'd' | b'D' | b's' | b'S' | b'w' | b'W' | b't' | b'n' | b'v' | b'f' | b'r' => {}
 			b'c' if self.peek().is_some_and(|letter| letter.is_ascii_alphabetic()) => self.pos += 1,
-			b'c' if self.unicode => return self.fail(at, "Invalid unicode escape"),
+			b'c' if self.unicode => return self.fail(Code::InvalidRegexpEscape, at),
 			b'x' => {
 				if self.hex(2).is_none() && self.unicode {
-					return self.fail(at, "Invalid escape");
+					return self.fail(Code::InvalidRegexpEscape, at);
 				}
 			}
 			b'u' => {
@@ -343,12 +388,14 @@ impl<'a> Walk<'a> {
 			}
 			b'k' if self.named => {
 				if !self.eat(b'<') {
-					return self.fail(at, "Invalid named reference");
+					return self.fail(Code::InvalidRegexpGroupName, at);
 				}
 				self.name(at)?;
 				let Scratch { names, name, .. } = &mut *self.scratch;
 				let known = known(names, name);
-				known.referenced = known.referenced.min(at as u32);
+				if known.referenced.0 == NONE {
+					known.referenced = (at as u32, self.pos as u32);
+				}
 			}
 			// a back reference or an octal escape, and a `k`, a `p` or any other character escaping
 			// itself: nothing of them is an error, whatever follows is read as itself
@@ -360,7 +407,7 @@ impl<'a> Walk<'a> {
 					self.pos += 1;
 				}
 				if number > self.reference.0 {
-					self.reference = (number, at);
+					self.reference = (number, at, self.pos);
 				}
 			}
 			b'0' if !self.peek().is_some_and(|digit| digit.is_ascii_digit()) => {}
@@ -369,7 +416,7 @@ impl<'a> Walk<'a> {
 			}
 			b'^' | b'$' | b'\\' | b'.' | b'*' | b'+' | b'?' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'|' | b'/' => {
 			}
-			_ => return self.fail(at, "Invalid escape"),
+			_ => return self.fail(Code::InvalidRegexpEscape, at),
 		}
 		Ok(true)
 	}
@@ -441,24 +488,24 @@ impl<'a> Walk<'a> {
 				return Ok(Some(value));
 			}
 		}
-		self.fail(at, "Invalid unicode escape")
+		self.fail(Code::InvalidRegexpEscape, at)
 	}
 
 	/// A `\p` or `\P` after its letter; answers whether it may match more than one character.
 	fn property(&mut self, at: usize, negated: bool) -> Result<bool> {
 		let listed = |list: &str, name: &str| list.split(' ').any(|known| known == name);
 		if !self.eat(b'{') {
-			return self.fail(at, "Invalid property name");
+			return self.fail(Code::InvalidRegexpProperty, at);
 		}
 		let name = self.word();
 		let strings = if self.eat(b'=') {
 			let values = match name {
 				"General_Category" | "gc" => GENERAL_CATEGORIES,
 				"Script" | "sc" | "Script_Extensions" | "scx" => SCRIPTS,
-				_ => return self.fail(at, "Invalid property name"),
+				_ => return self.fail(Code::InvalidRegexpProperty, at),
 			};
 			if !listed(values, self.word()) {
-				return self.fail(at, "Invalid property value");
+				return self.fail(Code::InvalidRegexpProperty, at);
 			}
 			false
 		} else if listed(BINARY, name) || listed(GENERAL_CATEGORIES, name) {
@@ -466,10 +513,10 @@ impl<'a> Walk<'a> {
 		} else if self.sets && listed(STRINGS, name) {
 			true
 		} else {
-			return self.fail(at, "Invalid property name");
+			return self.fail(Code::InvalidRegexpProperty, at);
 		};
 		if !self.eat(b'}') || negated && strings {
-			return self.fail(at, "Invalid property name");
+			return self.fail(Code::InvalidRegexpProperty, at);
 		}
 		Ok(strings)
 	}
@@ -488,8 +535,12 @@ impl<'a> Walk<'a> {
 	/// The class whose `[` at `at` was just passed, of a pattern without the `v` flag.
 	fn class(&mut self, at: usize) -> Result<()> {
 		self.eat(b'^');
+		let mut from = self.pos;
 		loop {
-			let from = self.pos;
+			// a trail surrogate starts where its character does
+			if self.trail == 0 {
+				from = self.pos;
+			}
 			let Some(left) = self.class_atom(at)? else {
 				return Ok(());
 			};
@@ -500,10 +551,10 @@ impl<'a> Walk<'a> {
 				return Ok(());
 			};
 			if self.unicode && (left == SET || right == SET) {
-				return self.fail(from, "Invalid character class");
+				return self.fail(Code::InvalidRegexpClass, from);
 			}
 			if left != SET && right != SET && left > right {
-				return self.fail(from, "Range out of order in character class");
+				return self.fail(Code::RegexpRangeOrder, from);
 			}
 		}
 	}
@@ -514,7 +565,7 @@ impl<'a> Walk<'a> {
 			return Ok(Some(std::mem::take(&mut self.trail)));
 		}
 		let Some(c) = self.char() else {
-			return self.fail(at, "Unterminated character class");
+			return self.fail_at(Code::InvalidRegexpClass, at, at + 1, false);
 		};
 		let from = self.pos;
 		self.pos += c.len_utf8();
@@ -539,7 +590,7 @@ impl<'a> Walk<'a> {
 			letter => {
 				return match self.character(from)? {
 					Some(value) => Ok(Some(value)),
-					None if self.unicode || letter == Some(b'k') => self.fail(from, "Invalid escape"),
+					None if self.unicode || letter == Some(b'k') => self.fail(Code::InvalidRegexpEscape, from),
 					// a `\c` no control letter follows: the `\` is the atom
 					None => Ok(Some('\\' as u32)),
 				};
@@ -589,7 +640,7 @@ impl<'a> Walk<'a> {
 			'0' if !self.peek().is_some_and(|digit| digit.is_ascii_digit()) => 0,
 			'x' => match self.hex(2) {
 				Some(value) => value,
-				None if self.unicode => return self.fail(at, "Invalid escape"),
+				None if self.unicode => return self.fail(Code::InvalidRegexpEscape, at),
 				None => 'x' as u32,
 			},
 			'u' => self.unicode_escape(at, self.unicode)?.unwrap_or('u' as u32),
@@ -619,14 +670,21 @@ impl<'a> Walk<'a> {
 		loop {
 			let from = self.pos;
 			let strings = match self.text.as_bytes()[from..] {
-				[] => return self.fail(class.at as usize, "Unterminated character class"),
+				[] => {
+					return self.fail_at(
+						Code::InvalidRegexpClass,
+						class.at as usize,
+						class.at as usize + 1,
+						false,
+					);
+				}
 				[b']', ..] => {
 					self.pos += 1;
 					if matches!(class.state, AndNext | MinusNext) {
-						return self.fail(from, "Invalid character in character class");
+						return self.fail(Code::InvalidRegexpClass, from);
 					}
 					if class.negated && class.strings {
-						return self.fail(class.at as usize, "Negated character class may contain strings");
+						return self.fail(Code::InvalidRegexpClass, class.at as usize);
 					}
 					let Some(outer) = self.scratch.classes.pop() else {
 						return Ok(());
@@ -640,12 +698,12 @@ impl<'a> Walk<'a> {
 					class.state = match (class.state, self.text.as_bytes()[from]) {
 						(One | And, b'&') if self.peek() != Some(b'&') => AndNext,
 						(One | Minus, b'-') => MinusNext,
-						_ => return self.fail(from, "Invalid character in character class"),
+						_ => return self.fail(Code::InvalidRegexpClass, from),
 					};
 					continue;
 				}
 				_ if matches!(class.state, And | Minus) => {
-					return self.fail(from, "Invalid character in character class");
+					return self.fail(Code::InvalidRegexpClass, from);
 				}
 				[b'[', ..] => {
 					self.pos += 1;
@@ -663,7 +721,7 @@ impl<'a> Walk<'a> {
 						if matches!(class.state, Empty | One | Union) && self.eat(b'-') {
 							match self.set_character()? {
 								Some(right) if left > right => {
-									return self.fail(from, "Range out of order in character class");
+									return self.fail(Code::RegexpRangeOrder, from);
 								}
 								Some(_) => {
 									class.state = Union;
@@ -728,7 +786,7 @@ impl<'a> Walk<'a> {
 	/// class escape; answers whether it may match more than one character.
 	fn set_operand(&mut self, at: usize) -> Result<bool> {
 		if !self.eat(b'\\') {
-			return self.fail(at, "Invalid character in character class");
+			return self.fail(Code::InvalidRegexpClass, at);
 		}
 		let letter = self.peek();
 		self.pos += 1;
@@ -748,11 +806,11 @@ impl<'a> Walk<'a> {
 					}
 				}
 				if !self.eat(b'}') {
-					return self.fail(at, "Invalid character in character class");
+					return self.fail(Code::InvalidRegexpClass, at);
 				}
 				Ok(strings)
 			}
-			_ => self.fail(at, "Invalid escape"),
+			_ => self.fail(Code::InvalidRegexpEscape, at),
 		}
 	}
 }

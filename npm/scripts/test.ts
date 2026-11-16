@@ -110,7 +110,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const codes = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => [e.code, ...e.args]);
 	assert.deepEqual(codes('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
 		['redeclaration', 'a'],
-		['invalid_regexp', 'a{2,1}', 'numbers out of order in {} quantifier'],
+		['regexp_quantifier_order'],
 		['strict_binding', 'eval'],
 	]);
 	assert.deepEqual(codes('class C { static public x }', { typescript: true }), [['modifier_order', 'public', 'static'], ['unexpected_token']]);
