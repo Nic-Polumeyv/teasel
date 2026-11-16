@@ -255,7 +255,6 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn split_lt(&mut self) {
 		self.lexer.set_pos(self.tok.start + 1);
 		self.tok.kind = TokenKind::Lt;
-		self.tok.end = self.tok.start + 1;
 	}
 
 	/// At the start of an expression the plugin reads a lone `<` whatever follows it.
@@ -1320,7 +1319,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		)?;
 		if !decorators.is_empty() {
 			if self.is(TokenKind::BraceR) {
-				return self.error(self.tok.end, Code::DecoratorPlacement);
+				return self.error(self.lexer.pos(), Code::DecoratorPlacement);
 			}
 			modifiers.extras.decorators = Some(self.list_of(&decorators));
 		}

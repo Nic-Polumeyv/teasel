@@ -810,7 +810,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	pub(crate) fn raise<T>(&self, error: SyntaxError) -> Result<T> {
 		let end = if error.pos == self.tok.start {
-			self.tok.end
+			self.lexer.pos()
 		} else {
 			error.pos
 		};
@@ -828,7 +828,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		let code = if self.is(TokenKind::Eof) && !self.lexer.stopped {
+		let code = if self.is(TokenKind::Eof) && !self.stopped() {
 			Code::UnexpectedEof
 		} else {
 			Code::UnexpectedToken
@@ -940,7 +940,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.within_limit()?;
 		let boundary = self.tok.ends_operand();
-		self.prev_end = self.tok.end;
+		self.prev_end = self.lexer.pos();
 		self.lexer.next_token_into(&mut self.tok)?;
 		if boundary {
 			self.stop_after_operand();
@@ -956,10 +956,14 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		}
 	}
 
+	/// Whether the parse ended before the source did, at the host's own syntax.
+	pub(crate) fn stopped(&self) -> bool {
+		self.is(TokenKind::Eof) && (self.tok.start as usize) < self.source().len()
+	}
+
 	/// Ends the parse at the current token: the host's own syntax starts there.
 	pub(crate) fn stop_here(&mut self) {
 		self.lexer.set_pos(self.tok.start);
-		self.lexer.stopped = true;
 		self.tok = Token::eof(self.tok.start);
 	}
 
@@ -975,7 +979,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 						| TokenKind::PrivateName(_)
 						| TokenKind::Number(_)
 						| TokenKind::String(_)
-						| TokenKind::Template { .. }
 						| TokenKind::RegExp { .. }
 				));
 				std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind)

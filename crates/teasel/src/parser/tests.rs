@@ -611,6 +611,12 @@ fn recovery() {
 		[6, 8, 11]
 	);
 
+	// a regular expression whose flags do not read is passed over as far as it was read
+	{
+		let (ast, _, end) = JS.recovered("/a/g\\u{1}", 0, Entry::Expression, module, "");
+		assert_eq!((end, codes(&ast)), (9, vec!["invalid_unicode_escape@4".to_string()]));
+	}
+
 	// TypeScript: a speculation fails as in strict mode, so `g<A, B` is a sequence; a missing type
 	// is a placeholder
 	{
