@@ -248,14 +248,13 @@ pub fn parse(
 		|ast, roots, end, options, words| {
 			let failed = roots.is_none();
 			prepare(ast, source, &positions, options, failed);
-			// `end`, the roots by number, a word of what the answer is, each view's length, then where
+			// `end`, the roots by number, the options the answer was read with, each view's length, then where
 			// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
 			words.clear();
 			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
 			words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
 			words.extend(roots.iter().map(|root| root.unwrap().index()));
-			let typescript = if options.typescript() { TYPESCRIPT } else { 0 };
-			words.push(typescript | if failed { FAILED } else { 0 });
+			words.push(options.0 | if failed { FAILED } else { 0 });
 			let mut sits = 0u64;
 			let mut note = |_, buffer: Option<&mut dyn Raw>| {
 				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
@@ -345,10 +344,9 @@ pub fn entry(index: f64) -> Result<Entry, String> {
 		.ok_or_else(|| format!("{index} is no entry"))
 }
 
-/// The answer's word, what the caller could not know: the parse failed, the tree is TypeScript's
-/// (a document's language is the grammar's to tell).
-const FAILED: u32 = 1;
-const TYPESCRIPT: u32 = 2;
+/// On the answer's word beside the options as they ended up, a document's language being the
+/// grammar's to tell: the parse failed.
+const FAILED: u32 = 1 << 31;
 
 /// Parses with the session's tree of its language, in TypeScript when the grammar says so of a
 /// script tag; `finish` gets the tree, its roots, `end`, the options as they ended up and the words.

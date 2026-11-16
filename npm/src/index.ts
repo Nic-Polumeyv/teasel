@@ -113,11 +113,10 @@ export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: nu
 function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, grammar: object | undefined, names: readonly string[] | undefined): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
 	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${String(offset)} is no offset between characters of the text`);
-	const on = flags(options);
-	const words = engine.parse(text, on, entry, offset, stop, grammar);
+	const words = engine.parse(text, flags(options), entry, offset, stop, grammar);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine, on, entry === 3, names) as Parsed<T>;
+		const parsed = decode(words, text, engine, entry === 3, names) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {
