@@ -174,7 +174,8 @@ fn unfinished_input() {
 	);
 }
 
-/// Raw text ends at the first `</` that closes it, wherever the scan's eight bytes fall.
+/// A script, a style sheet and raw text end at the first closing tag, read by one rule, wherever
+/// the scan's eight bytes fall.
 #[test]
 fn raw_text_ends_at_its_closing_tag() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -193,7 +194,7 @@ fn raw_text_ends_at_its_closing_tag() {
 			"\"</script\"",
 			"a</1/",
 		] {
-			for closer in ["</script>", "</script \t\n>"] {
+			for closer in ["</script>", "</script \t\n>", "</SCRIPT>", "</script x>"] {
 				let answer = parse(&format!("<script>{pad}{body}{closer}"), &svelte);
 				let end = 8 + pad.len() + body.encode_utf16().count();
 				assert!(
@@ -202,9 +203,28 @@ fn raw_text_ends_at_its_closing_tag() {
 				);
 			}
 		}
-		for body in ["a<b", "a <", "a</", "a</scrip", "a</script", "a</script x>"] {
+		for body in [
+			"a<b",
+			"a <",
+			"a</",
+			"a</scrip",
+			"a</script",
+			"a</script x",
+			"a</scripts>",
+		] {
 			let answer = parse(&format!("<script>{pad}{body}"), &svelte);
 			assert!(answer.contains(&unclosed), "{pad}{body}: {answer}");
+		}
+		for closer in ["</style>", "</style \t\n>", "</STYLE>", "</style x>"] {
+			let answer = parse(&format!("<style>{pad}a{{}}{closer}"), &svelte);
+			assert!(
+				answer.contains(&format!(r#""styles":"{pad}a{{}}","#)),
+				"{pad}{closer}: {answer}"
+			);
+		}
+		for closer in ["", "</style", "</style x", "</styles>"] {
+			let answer = parse(&format!("<style>{pad}a{{}}{closer}"), &svelte);
+			assert!(answer.contains("\"node\":null"), "{pad}{closer}: {answer}");
 		}
 		for body in ["a<b", "<<", "é<</x>", "</scripts>", "</script"] {
 			for closer in ["</script>", "</SCRIPT x>"] {
