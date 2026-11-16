@@ -1216,11 +1216,9 @@ function hosts(C: Compiled, engine: Views, names: readonly string[] | undefined)
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// what `words[lens]` says of an answer, what the caller could not know: the parse failed, the tree is TypeScript's (a document's language is the grammar's to tell); each view's length follows it, then where the tree's buffers sit
-const FAILED = 1, TYPESCRIPT = 2;
-// the options the answer was asked with, as `flags` packed them
+// `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a document's grammar said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
 const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
-const TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
+const FAILED = 1 << 31, TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
 	const build = rows.build;
@@ -1298,15 +1296,15 @@ class Answer {
 }
 
 /**
- * The answer of the last parse, asked with the options `flags` packed, `listed` for the parameter
- * list entry: `words` are `end`, the roots by number, a word of what the answer is and each
- * view's length; the tree itself is read in place. `names` are those of the grammar a document was read by.
+ * The answer of the last parse, `listed` for the parameter list entry: `words` are `end`, the
+ * roots by number, the options it was read with and each view's length; the tree itself is read
+ * in place. `names` are those of the grammar a document was read by.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, flags: number, listed: boolean, names?: readonly string[]): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views, listed: boolean, names?: readonly string[]): Decoded {
 	const C = compile(engine);
 	const lens = 2 + words[1];
 	const what = words[lens];
-	const typescript = (what & TYPESCRIPT) !== 0;
+	const typescript = (what & TS_OPTION) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
 	const at = G.at;
 	const lo = words[lens + at.sits], hi = words[lens + at.sits + 1];
@@ -1314,7 +1312,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 	G.sat[0] = lo;
 	G.sat[1] = hi;
 	const tree = engine.tree(typescript, moved);
-	const erase = (flags & TS_OPTION) === ERASED, failed = (what & FAILED) !== 0;
+	const erase = (what & ERASED) !== 0, failed = (what & FAILED) !== 0;
 	const spans = words[lens + at.spans] !== 0;
 	const scoped = !failed && words[lens + at.scopes] !== 0;
 	const rows = tree[at.errors] as Uint32Array;
@@ -1408,8 +1406,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, flags:
 			} else node = build(S, words[2], undefined);
 		}
 		answer = new Answer(node, words[0], source);
-		if (!failed && (flags & COMMENTS) !== 0) answer.comments = comments(S, undefined);
-		if (failed || (flags & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
+		if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
+		if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 		if (!failed && erase) answer.typescript = kept(S);
 		if (!failed && scoped) {
 			answer.scopes = S.scopes;
