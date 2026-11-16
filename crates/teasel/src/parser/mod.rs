@@ -963,12 +963,28 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.tok = Token::eof(self.tok.start);
 	}
 
+	/// Whether the current token is of `kind`: a keyword by its word, any other by its kind alone.
+	// by the derived `==`, which also compares what a kind carries, JavaScript and TypeScript parse 1 to 2% slower
 	pub(crate) fn is(&self, kind: TokenKind) -> bool {
-		self.tok.kind == kind
+		match kind {
+			TokenKind::Keyword(keyword) => self.is_keyword(keyword),
+			_ => {
+				debug_assert!(!matches!(
+					kind,
+					TokenKind::Ident(_)
+						| TokenKind::PrivateName(_)
+						| TokenKind::Number(_)
+						| TokenKind::String(_)
+						| TokenKind::Template { .. }
+						| TokenKind::RegExp { .. }
+				));
+				std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind)
+			}
+		}
 	}
 
 	pub(crate) fn is_keyword(&self, keyword: Keyword) -> bool {
-		self.tok.kind == TokenKind::Keyword(keyword)
+		matches!(self.tok.kind, TokenKind::Keyword(k) if k == keyword)
 	}
 
 	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {
