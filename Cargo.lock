@@ -4,18 +4,18 @@ version = 4
 
 [[package]]
 name = "teasel"
-version = "0.0.24"
+version = "0.0.25"
 
 [[package]]
 name = "teasel-node"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "teasel",
 ]
 
 [[package]]
 name = "teasel-wasm"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "teasel",
 ]
