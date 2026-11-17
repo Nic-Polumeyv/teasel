@@ -53,11 +53,9 @@
 	"errors": [
 		{
 			"code": 8,
-			"args": [
-				"@"
-			],
+			"args": [],
 			"pos": 6,
-			"end": 6,
+			"end": 7,
 			"line": 1,
 			"column": 6
 		},

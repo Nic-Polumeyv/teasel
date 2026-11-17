@@ -391,7 +391,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			unreachable!()
 		};
 		if unique && self.current_scope().has(name, TYPE) {
-			return self.error_name(self.start_of(id), Code::TypeRedeclaration, name);
+			return self.error_on(id, Code::TypeRedeclaration);
 		}
 		if self.ts.state.global_depth > 0 {
 			self.declare_global(name);

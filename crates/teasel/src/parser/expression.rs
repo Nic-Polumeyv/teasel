@@ -1507,16 +1507,16 @@ impl<const TS: bool> Parser<'_, TS> {
 			return self.error(start, Code::ArgumentsInFieldInitializer);
 		}
 		if flags & (word::ARGUMENTS | word::AWAIT) != 0 && self.in_class_static_block() {
-			return self.error_name(start, Code::InvalidInStaticBlock, id_name);
+			return self.error_over(start, Code::InvalidInStaticBlock);
 		}
 		if flags & word::KEYWORD != 0 {
-			return self.error_name(start, Code::UnexpectedKeyword, id_name);
+			return self.error_over(start, Code::UnexpectedKeyword);
 		}
 		if self.is_reserved_word(flags) {
 			if !self.in_async() && name == "await" {
 				return self.error(start, Code::AwaitOutsideAsync);
 			}
-			return self.error_name(start, Code::ReservedWord, id_name);
+			return self.error_over(start, Code::ReservedWord);
 		}
 		Ok(())
 	}
@@ -1560,7 +1560,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		match self.private_names.last_mut() {
 			Some(scope) => scope.used.push((name, start)),
 			None => {
-				return self.error_arg(start, Code::UndeclaredPrivateName, &format!("#{}", self.str(name)));
+				return self.error_on(id, Code::UndeclaredPrivateName);
 			}
 		}
 		Ok(id)
@@ -1778,7 +1778,7 @@ impl<const TS: bool> Parser<'_, TS> {
 					&& (self.is_reserved_word(flags)
 						|| (flags & (word::EVAL | word::ARGUMENTS) != 0 && !(self.typescript() && self.in_ambient())))
 				{
-					return self.error_name(start, Code::StrictBinding, name);
+					return self.error_over(start, Code::StrictBinding);
 				}
 				if is_bind {
 					if binding == Binding::Lexical && text == "let" {

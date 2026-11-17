@@ -192,8 +192,11 @@ impl<'a> Lexer<'a> {
 		Err(Box::new(SyntaxError::new(pos as u32, code).arg(arg)))
 	}
 
-	fn unexpected_character<T>(&mut self, pos: usize, c: char) -> Result<T> {
-		self.error_arg(pos, Code::UnexpectedCharacter, c.encode_utf8(&mut [0; 4]))
+	fn unexpected_character<T>(&self, pos: usize, c: char) -> Result<T> {
+		let end = pos + c.len_utf8();
+		Err(Box::new(
+			SyntaxError::new(pos as u32, Code::UnexpectedCharacter).to(end as u32),
+		))
 	}
 
 	pub(crate) fn next_token(&mut self) -> Result<Token> {
@@ -232,9 +235,11 @@ impl<'a> Lexer<'a> {
 			let kind = match self.read_kind(b, start) {
 				Ok(kind) => kind,
 				Err(error) if self.recover => {
+					// past what could not be read, not past what the error spans: the character after
+					// a lone `#` is the next token's
 					let after = self
 						.src
-						.ceil_char_boundary((error.end as usize).max(self.pos).max(start + 1));
+						.ceil_char_boundary((error.pos as usize).max(self.pos).max(start + 1));
 					self.errors.push(*error);
 					self.pos = after;
 					token.newline_before |= self.skip_space()?;

@@ -4,11 +4,9 @@
 	"errors": [
 		{
 			"code": 10,
-			"args": [
-				"yield"
-			],
+			"args": [],
 			"pos": 29,
-			"end": 29,
+			"end": 34,
 			"line": 1,
 			"column": 29
 		}

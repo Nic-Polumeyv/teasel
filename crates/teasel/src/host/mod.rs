@@ -2391,7 +2391,7 @@ impl<'a> Walker<'a> {
 		let id_end = self.at;
 		let name = &self.src[id_start as usize..id_end as usize];
 		if reserved(name) {
-			return self.fail(id_start, id_end, Code::ReservedWord, Some(name));
+			return self.fail(id_start, id_end, Code::ReservedWord, None);
 		}
 		self.space();
 		self.expect(close)?;
@@ -3121,7 +3121,7 @@ impl<'a> Walker<'a> {
 		let end = self.at;
 		let word = &self.src[start as usize..end as usize];
 		if reserved(word) || (self.options.has(Options::MODULE) && word == "await") {
-			self.report_at(start, end, Code::ReservedWord, Some(word))?;
+			self.report_at(start, end, Code::ReservedWord, None)?;
 		}
 		let name = self.intern(word);
 		Ok(self.ast().add(NodeKind::Identifier { name }, start, end))

@@ -186,7 +186,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			&& self.strict
 			&& self.lexer.word_flags(name) & word::STRICT != 0
 		{
-			return self.error_name(self.start_of(id), Code::ReservedWord, name);
+			return self.error_on(id, Code::ReservedWord);
 		}
 		let body = if self.eat(TokenKind::Dot)? {
 			let inner_start = self.tok.start;

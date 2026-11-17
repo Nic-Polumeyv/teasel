@@ -138,7 +138,7 @@ fn punctuators() {
 			Amp, AmpAmp, AmpEq, AmpAmpEq, Pipe, PipePipe, PipeEq, PipePipeEq, Caret, CaretEq
 		]
 	);
-	assert_eq!(error("x@y"), ("unexpected_character '@'".into(), 1));
+	assert_eq!(error("x@y"), ("unexpected_character".into(), 1));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn private_names() {
 	};
 	assert_eq!(lexer.strings.get(name), "foo");
 	assert_matches!(single("#class").1.kind, PrivateName(_));
-	assert_eq!(error("# a"), ("unexpected_character ' '".into(), 1));
+	assert_eq!(error("# a"), ("unexpected_character".into(), 1));
 }
 
 #[test]
@@ -583,7 +583,7 @@ fn unicode_whitespace() {
 
 #[test]
 fn unexpected_characters() {
-	assert_eq!(error("a ¬ b").0, "unexpected_character '¬'");
+	assert_eq!(error("a ¬ b").0, "unexpected_character");
 	assert_eq!(error("\\").0, "expected_unicode_escape");
 }
 
