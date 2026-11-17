@@ -287,7 +287,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			}
 		}
 		if redeclared {
-			return self.error_name(pos, Code::Redeclaration, name);
+			return self.error_over(pos, Code::Redeclaration);
 		}
 		Ok(())
 	}

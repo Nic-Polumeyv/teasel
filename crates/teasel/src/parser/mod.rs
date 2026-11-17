@@ -8,7 +8,7 @@ pub(crate) mod tests;
 
 use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind};
 use crate::error::SyntaxError;
-use crate::interner::StrId;
+use crate::interner::{Interner, StrId};
 use crate::lexer::Lexer;
 use crate::lexer::token::{Keyword, Token, TokenKind};
 use crate::typescript::TypeScript;
@@ -815,6 +815,25 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			error.pos
 		};
 		Err(Box::new(error.to(end)))
+	}
+
+	/// An error over a span that is not the current token's.
+	pub(crate) fn error_span<T>(&self, pos: u32, end: u32, code: Code) -> Result<T> {
+		Err(Box::new(SyntaxError::new(pos, code).to(end)))
+	}
+
+	/// An error over a node already read.
+	pub(crate) fn error_on<T>(&self, node: NodeId, code: Code) -> Result<T> {
+		self.error_span(self.start_of(node), self.end_of(node), code)
+	}
+
+	/// An error over the name that starts at `pos`, read again for where it ends: a node of the
+	/// name may end past it, at its type.
+	pub(crate) fn error_over<T>(&self, pos: u32, code: Code) -> Result<T> {
+		let mut lexer = Lexer::with(self.source(), Interner::sized(0));
+		lexer.set_pos(pos);
+		let end = lexer.next_token().map_or(pos, |_| lexer.pos());
+		self.error_span(pos, end, code)
 	}
 
 	pub(crate) fn error_arg<T>(&mut self, pos: u32, code: Code, arg: &str) -> Result<T> {

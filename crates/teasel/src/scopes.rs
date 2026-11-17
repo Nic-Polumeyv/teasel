@@ -974,7 +974,7 @@ impl<'a> Binder<'a> {
 				let n = *self.ast.node(node);
 				self.out
 					.errors
-					.push(SyntaxError::new(n.start, Code::Redeclaration).arg(name).to(n.end));
+					.push(SyntaxError::new(n.start, Code::Redeclaration).to(n.end));
 			}
 			self.declared(node, existing, kind, false);
 			return;

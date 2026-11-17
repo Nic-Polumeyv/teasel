@@ -4,11 +4,9 @@
 	"errors": [
 		{
 			"code": 47,
-			"args": [
-				"a"
-			],
+			"args": [],
 			"pos": 9,
-			"end": 9,
+			"end": 10,
 			"line": 1,
 			"column": 9
 		}

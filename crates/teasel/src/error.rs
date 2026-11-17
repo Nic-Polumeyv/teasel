@@ -38,11 +38,11 @@ codes! {
 	Placement,
 	/// The text ended while a token was still needed; `pos` is the end of what was parsed.
 	UnexpectedEof,
-	/// A character no token starts with; `args` holds it.
+	/// A character no token starts with.
 	UnexpectedCharacter,
-	/// A keyword where a name or expression is needed; `args` names it.
+	/// A keyword where a name or expression is needed.
 	UnexpectedKeyword,
-	/// A reserved word used as a name; `args` names it.
+	/// A reserved word used as a name.
 	ReservedWord,
 	/// A keyword spelled with an escape sequence; `args` names it.
 	EscapeInKeyword,
@@ -96,7 +96,7 @@ codes! {
 	StrictDelete,
 	/// `"use strict"` in a function whose parameters are not all plain names.
 	StrictDirectiveNonSimpleParams,
-	/// A name strict mode does not allow to be declared or assigned; `args` names it.
+	/// A name strict mode does not allow to be declared or assigned.
 	StrictBinding,
 	/// A legacy octal number or escape in strict mode.
 	StrictOctal,
@@ -104,9 +104,9 @@ codes! {
 	StrictEscape,
 	/// `let` as the name of a `let`, `const`, `using` or class declaration.
 	LetAsBinding,
-	/// A name declared again where it cannot be; `args` names it.
+	/// A name declared again where it cannot be.
 	Redeclaration,
-	/// A label already in use; `args` names it.
+	/// A label already in use.
 	DuplicateLabel,
 	/// A parameter name used twice where that is not allowed.
 	DuplicateParameter,
@@ -114,9 +114,9 @@ codes! {
 	DuplicateProto,
 	/// Two `default` clauses in a `switch`.
 	DuplicateDefault,
-	/// A name exported twice; `args` names it.
+	/// A name exported twice.
 	DuplicateExport,
-	/// An exported name that is not declared; `args` names it.
+	/// An exported name that is not declared.
 	UndefinedExport,
 	/// An export of a string name with no `from`.
 	StringExportWithoutFrom,
@@ -140,7 +140,7 @@ codes! {
 	NewTargetEscaped,
 	/// `new.target` outside a function or class static block.
 	NewTargetOutsideFunction,
-	/// A `break` or `continue` with no loop, switch or label to go to; `args` names the statement.
+	/// A `break` or `continue` with no loop, switch or label to go to.
 	Unsyntactic,
 	/// `return` outside a function.
 	ReturnOutsideFunction,
@@ -162,7 +162,7 @@ codes! {
 	YieldAsIdentifier,
 	/// `yield` in a parameter's default value.
 	YieldInDefaultValue,
-	/// `await` or `arguments` in a class static block; `args` names it.
+	/// `await` or `arguments` in a class static block.
 	InvalidInStaticBlock,
 	/// `arguments` in a class field initializer.
 	ArgumentsInFieldInitializer,
@@ -184,7 +184,7 @@ codes! {
 	MixedCoalesce,
 	/// A private name outside the left side of `in`.
 	PrivateNameOutsideIn,
-	/// A private name no enclosing class declares; `args` names it.
+	/// A private name no enclosing class declares.
 	UndeclaredPrivateName,
 	/// `delete` of a private name.
 	DeletePrivate,
@@ -318,7 +318,7 @@ codes! {
 	ExportDeclareWithoutDeclaration,
 	/// `interface` followed by other than a name.
 	InterfaceWithoutName,
-	/// A type declared again; `args` names it.
+	/// A type declared again.
 	TypeRedeclaration,
 	/// `import type` on an import alias.
 	ImportTypeAlias,

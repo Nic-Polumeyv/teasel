@@ -113,7 +113,7 @@ impl<const TS: bool> Parser<'_, TS> {
 				if let Some(pos) = last.remove(&name)
 					&& !self.declares_export(name)
 				{
-					let error = self.error_name(pos, Code::UndefinedExport, name);
+					let error = self.error_over(pos, Code::UndefinedExport);
 					self.record(error)?;
 				}
 			}
@@ -442,7 +442,7 @@ impl<const TS: bool> Parser<'_, TS> {
 					|| (label.is_some() && is_break))
 		});
 		if !found {
-			return self.error_arg(start, Code::Unsyntactic, if is_break { "break" } else { "continue" });
+			return self.error_span(start, start + if is_break { 5 } else { 8 }, Code::Unsyntactic);
 		}
 		let kind = if is_break {
 			NodeKind::BreakStatement { label }
@@ -902,7 +902,7 @@ impl<const TS: bool> Parser<'_, TS> {
 
 	fn parse_labeled(&mut self, start: u32, name: StrId, label: NodeId, context: Context) -> Result<NodeId> {
 		if self.labels.iter().any(|l| l.name == Some(name)) {
-			return self.error_name(self.start_of(label), Code::DuplicateLabel, name);
+			return self.error_on(label, Code::DuplicateLabel);
 		}
 		let kind = match self.tok.kind {
 			TokenKind::Keyword(Keyword::Do | Keyword::For | Keyword::While) => LabelKind::Loop,
@@ -987,7 +987,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			match self.kind(id) {
 				NodeKind::Identifier { name } => {
 					if self.rebinds_catch_param(name) {
-						return self.error_name(self.start_of(id), Code::Redeclaration, name);
+						return self.error_over(self.start_of(id), Code::Redeclaration);
 					}
 				}
 				NodeKind::VariableDeclarator { id, .. } => stack.push(Some(id)),
@@ -1397,7 +1397,7 @@ impl<const TS: bool> Parser<'_, TS> {
 	fn check_export_name(&self, exports: &mut Exports, name: StrId, pos: u32) -> Result<()> {
 		// an error in TypeScript too, an exported overload would be one
 		if exports.first(name, pos) != pos && !self.typescript() {
-			return self.error_name(pos, Code::DuplicateExport, name);
+			return self.error_over(pos, Code::DuplicateExport);
 		}
 		Ok(())
 	}
@@ -1553,7 +1553,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			_ => PrivateKind::Any,
 		};
 		if self.declare_private_name(name, private_kind) {
-			return self.error_arg(self.start_of(key), Code::Redeclaration, &format!("#{}", self.str(name)));
+			return self.error_on(key, Code::Redeclaration);
 		}
 		Ok(())
 	}
@@ -1583,7 +1583,7 @@ impl<const TS: bool> Parser<'_, TS> {
 			match self.private_names.last_mut() {
 				Some(parent) => parent.used.push((name, pos)),
 				None => {
-					return self.error_arg(pos, Code::UndeclaredPrivateName, &format!("#{}", self.str(name)));
+					return self.error_over(pos, Code::UndeclaredPrivateName);
 				}
 			}
 		}
