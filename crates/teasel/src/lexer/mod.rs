@@ -1,6 +1,5 @@
 pub(crate) mod list;
 pub(crate) mod regexp;
-mod regexp_data;
 pub(crate) mod scan;
 pub(crate) mod token;
 pub(crate) mod unicode;
@@ -12,7 +11,7 @@ use crate::ast::{Comment, CommentKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::{Interner, StrId};
 use regexp::Rejected;
-use scan::{comment_end, is_new_line, is_whitespace, line_end};
+use scan::{comment_end, is_new_line, is_separator, is_whitespace, line_end};
 use token::{Chunk, Keyword, Token, TokenKind};
 use unicode::{is_id_continue, is_id_start};
 
@@ -688,12 +687,23 @@ impl<'a> Lexer<'a> {
 	pub(crate) fn read_regex(&mut self, token: Token) -> Result<Token> {
 		let start = token.start as usize;
 		self.pos = start + 1;
-		let mut escaped = false;
+		let bytes = self.src.as_bytes();
 		let mut in_class = false;
+		let mut named = false;
 		loop {
-			let cut = match self.char() {
-				None => true,
-				Some(c) => is_new_line(c),
+			while bytes
+				.get(self.pos)
+				.is_some_and(|&b| scan::class(b) & (scan::NEWLINE | scan::REGEXP) == 0)
+			{
+				self.pos += 1;
+			}
+			// a `\` takes the byte after it along, unless the line ends there
+			let escaped = bytes.get(self.pos) == Some(&b'\\');
+			self.pos += escaped as usize;
+			let cut = match bytes[self.pos..] {
+				[] | [b'\n' | b'\r', ..] => true,
+				[0xe2, ..] => is_separator(&bytes[self.pos..]),
+				_ => false,
 			};
 			if cut {
 				return self.unterminated(start + 1, Code::UnterminatedRegexp, |l| {
@@ -708,19 +718,18 @@ impl<'a> Lexer<'a> {
 					}
 				});
 			}
-			let c = self.char().unwrap();
-			if escaped {
-				escaped = false;
-			} else {
-				match c {
-					'[' => in_class = true,
-					']' if in_class => in_class = false,
-					'/' if !in_class => break,
-					'\\' => escaped = true,
+			if !escaped {
+				match bytes[self.pos] {
+					b'[' => in_class = true,
+					b']' => in_class = false,
+					b'/' if !in_class => break,
+					b'(' if !in_class && bytes[self.pos + 1..].starts_with(b"?<") => {
+						named |= !matches!(bytes.get(self.pos + 3), Some(b'=' | b'!'));
+					}
 					_ => {}
 				}
 			}
-			self.pos += c.len_utf8();
+			self.pos += 1;
 		}
 		let pattern = self.strings.intern(&self.src[start + 1..self.pos]);
 		self.pos += 1;
@@ -744,14 +753,15 @@ impl<'a> Lexer<'a> {
 				.push(SyntaxError::new(flags_start as u32, Code::UnexpectedToken));
 		}
 		let flags_text = &self.src[flags_start..self.pos];
-		if let Err(rejected) = regexp::validate(&self.src[start + 1..flags_start - 1], flags_text, &mut self.regexp) {
-			let at = start as u32 + 1;
-			let error = match rejected {
-				Rejected::Flag(code) => SyntaxError::new(at, code),
-				Rejected::Pattern(reason) => SyntaxError::new(at, Code::InvalidRegexp)
-					.arg(pattern)
-					.arg(self.strings.intern(reason)),
-			};
+		let checked = regexp::validate(
+			&self.src[start + 1..flags_start - 1],
+			flags_text,
+			named,
+			&mut self.regexp,
+		);
+		if let Err(Rejected { code, at, end }) = checked {
+			let within = |offset: usize| (start + 1 + offset) as u32;
+			let error = SyntaxError::new(within(at), code).to(within(end));
 			if !self.recover {
 				return Err(Box::new(error));
 			}

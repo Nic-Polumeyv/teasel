@@ -426,45 +426,103 @@ fn regex_validation() {
 		lexer
 			.read_regex(t)
 			.map(|_| ())
-			.map_err(|e| (e.describe(&lexer.strings), e.pos))
+			.map_err(|e| (e.describe(&lexer.strings), e.pos, e.end))
 	};
-	assert!(regex("/(?<a>x)|(?<a>y)/").is_ok());
-	// groups side by side are not nested
-	assert!(regex(&format!("/{}/", "()".repeat(1000))).is_ok());
-	assert!(regex(&format!("/{}{}/", "(".repeat(1001), ")".repeat(1001))).is_err());
-	assert!(regex("/[\\p{L}--[a-z]]/v").is_ok());
-	assert!(regex("/(?i:a)b/").is_ok());
-	assert!(regex("/\\1(a)/").is_ok());
-	assert_eq!(regex("/(/"), Err(("invalid_regexp '(' 'Unterminated group'".into(), 1)));
-	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 1)));
-	assert_eq!(regex("/a/uv"), Err(("invalid_regexp_flag".into(), 1)));
-	assert_eq!(
-		regex("/\\1/u"),
-		Err(("invalid_regexp '\\1' 'Invalid escape'".into(), 1))
-	);
-	assert_eq!(
-		regex("/[b-a]/"),
-		Err((
-			"invalid_regexp '[b-a]' 'Range out of order in character class'".into(),
-			1
-		))
-	);
-	assert_eq!(
-		regex("/(?<a>x)(?<a>y)/"),
-		Err((
-			"invalid_regexp '(?<a>x)(?<a>y)' 'Duplicate capture group name'".into(),
-			1
-		))
-	);
-	assert_eq!(
-		regex("/\\p{Nope}/u"),
-		Err(("invalid_regexp '\\p{Nope}' 'Invalid property name'".into(), 1))
-	);
-	assert!(regex("/{*/").is_ok());
-	assert_eq!(
-		regex("/{*/u"),
-		Err(("invalid_regexp '{*' 'Lone quantifier brackets'".into(), 1))
-	);
+	let nested = |open: &str, close: &str, flags: &str| format!("/{}{}/{flags}", open.repeat(5000), close.repeat(5000));
+	for valid in [
+		r"/(?<a>x)|(?<a>y)/",
+		r"/(?:(?<a>x)|(?<a>y))\k<a>/",
+		r"/(?<a>x)|(?:y|(?<a>z))/",
+		r"/(?<𝒜>.)\k<𝒜>(?<\u{1d49e}>.)(?<\ud835\udc9f>.)/",
+		r"/(?i:a)(?i-m:b)(?-s:c)(?s-:d)/",
+		r"/\1(a)\k<b>[\k]\c[\c][\c1-\c_]\8\p{L}/",
+		r"/(a)\1\0/u",
+		r"/{*a{b{1c{,2}]}x{1}{/",
+		r"/(?=a)*(?!a){2}/",
+		r"/a{2,2}b{0002,2}c{1,}?/",
+		r"/[a-😀][\d-a][a-\d][---][\b-\t]/",
+		r"/[😀-😁][\ud83d\ude00-\ud83d\ude01][\--\/]/u",
+		r"/\p{Script=Greek}\p{scx=Grek}\P{Lu}\p{gc=L}\p{Any}/u",
+		r"/[\p{L}--[a-z]][\p{L}&&\p{Lu}&&[^a]][\q{ab|c}a-z\d][^\q{a|b}][\p{RGI_Emoji}--\q{x}][^\q{ab}&&a][]/v",
+		"/a/gimsyd",
+		"/a/dv",
+		&nested("(", ")", ""),
+		&nested("(?:a|", ")", "u"),
+		&nested("[", "]", "v"),
+	] {
+		assert_eq!(regex(valid), Ok(()), "{}", &valid[..valid.len().min(80)]);
+	}
+	for (invalid, error, at, end) in [
+		(r"/(/", "unterminated_regexp_group", 1, 2),
+		(r"/a)/", "unopened_regexp_group", 2, 3),
+		(r"/a**/", "lone_regexp_quantifier", 3, 4),
+		(r"/^*/", "lone_regexp_quantifier", 2, 3),
+		(r"/a|*/", "lone_regexp_quantifier", 3, 4),
+		(r"/(?<=a)*/", "lone_regexp_quantifier", 7, 8),
+		(r"/(?=a)*/u", "lone_regexp_quantifier", 6, 7),
+		(r"/{1}/", "lone_regexp_quantifier", 1, 4),
+		(r"/a{2,1}/", "regexp_quantifier_order", 2, 7),
+		(
+			r"/a{9007199254740993,9007199254740992}/",
+			"regexp_quantifier_order",
+			2,
+			37,
+		),
+		(r"/{*/u", "lone_regexp_bracket", 1, 2),
+		(r"/a}/u", "lone_regexp_bracket", 2, 3),
+		(r"/a{1/u", "lone_regexp_bracket", 2, 3),
+		(r"/\1/u", "undefined_regexp_group", 2, 3),
+		(r"/(a)\2/u", "undefined_regexp_group", 5, 6),
+		(r"/a\00/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\-/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\x4/u", "invalid_regexp_escape", 2, 4),
+		(r"/a[\1]/u", "invalid_regexp_escape", 3, 5),
+		(r"/a\c/u", "invalid_regexp_escape", 2, 4),
+		(r"/a\u{110000}/u", "invalid_regexp_escape", 2, 11),
+		(r"/[b-a]/", "regexp_range_order", 2, 5),
+		(r"/[😀-😁]/", "regexp_range_order", 2, 11),
+		(r"/[\ud83d\ude00-\ud83d\ude01]/", "regexp_range_order", 8, 21),
+		(r"/x[a-\d]/u", "invalid_regexp_class", 3, 7),
+		(r"/(?<a>x)(?<a>y)/", "duplicate_regexp_group_name", 11, 12),
+		(r"/(?<a>x)(?<\u0061>y)/", "duplicate_regexp_group_name", 11, 17),
+		(r"/(?:(?<a>x))(?<a>z)/", "duplicate_regexp_group_name", 15, 16),
+		(r"/(?<a>(?<a>x))/", "duplicate_regexp_group_name", 9, 10),
+		(
+			r"/(?<a>.)|(?<b>.)(?:(?<c>.)|(?<b>.))/",
+			"duplicate_regexp_group_name",
+			30,
+			31,
+		),
+		(r"/(?<a>x)[\k]/", "invalid_regexp_escape", 9, 11),
+		(r"/\k<a>(?<b>x)/", "undefined_regexp_group", 4, 5),
+		(r"/a\k<a>/u", "undefined_regexp_group", 5, 6),
+		(r"/(?<a>x)\k/", "invalid_regexp_group_name", 8, 10),
+		(r"/(?<1>a)/", "invalid_regexp_group_name", 1, 5),
+		(r"/(?<a/", "invalid_regexp_group_name", 1, 5),
+		(r"/a(?x:a)/", "invalid_regexp_group", 2, 4),
+		(r"/(?ii:a)/", "duplicate_regexp_modifier", 4, 5),
+		(r"/(?i-i:a)/", "duplicate_regexp_modifier", 5, 6),
+		(r"/(?-:a)/", "invalid_regexp_group", 1, 5),
+		(r"/\p{Nope}/u", "invalid_regexp_property", 1, 8),
+		(r"/a\P{RGI_Emoji}/v", "invalid_regexp_property", 2, 15),
+		(r"/\p{sc=Nope}/u", "invalid_regexp_property", 1, 11),
+		(r"/[^\q{ab}]/v", "invalid_regexp_class", 1, 10),
+		(r"/a[^[\q{}]]/v", "invalid_regexp_class", 2, 11),
+		(r"/[a&&&b]/v", "invalid_regexp_class", 3, 5),
+		(r"/[a-z&&b]/v", "invalid_regexp_class", 5, 7),
+		(r"/[a--b&&c]/v", "invalid_regexp_class", 6, 8),
+		(r"/[a&&]/v", "invalid_regexp_class", 5, 6),
+		(r"/[a-]/v", "invalid_regexp_class", 3, 4),
+		(r"/[a!!]/v", "invalid_regexp_class", 3, 4),
+		(r"/[a(]/v", "invalid_regexp_class", 3, 4),
+		(r"/[z-a]/v", "regexp_range_order", 2, 5),
+		(r"/[a\q]/v", "invalid_regexp_escape", 3, 5),
+	] {
+		assert_eq!(regex(invalid), Err((error.into(), at, end)), "{invalid}");
+	}
+	assert_eq!(regex("/a/gg"), Err(("duplicate_regexp_flag".into(), 4, 5)));
+	assert_eq!(regex("/a/guv"), Err(("invalid_regexp_flag".into(), 5, 6)));
+	assert_eq!(regex("/a/gx"), Err(("invalid_regexp_flag".into(), 4, 5)));
 }
 
 #[test]

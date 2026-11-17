@@ -60,8 +60,8 @@ codes! {
 	UnterminatedTemplate,
 	/// A regular expression the line or text ends inside.
 	UnterminatedRegexp,
-	/// A regular expression pattern that does not parse; `args` holds the pattern and the reason.
-	InvalidRegexp,
+	/// A group of a regular expression never closed.
+	UnterminatedRegexpGroup,
 	/// A regular expression flag that does not exist.
 	InvalidRegexpFlag,
 	/// A regular expression flag given twice.
@@ -366,6 +366,32 @@ codes! {
 	PropertyAfterInstantiation,
 	/// `accessor` on other than a property.
 	AccessorPlacement,
+	/// A `)` in a regular expression with no group open.
+	UnopenedRegexpGroup,
+	/// A `(?` in a regular expression that starts no group.
+	InvalidRegexpGroup,
+	/// A group name in a regular expression that is not a name, or a `\k` without one.
+	InvalidRegexpGroupName,
+	/// A name given to two groups of a regular expression that can both match.
+	DuplicateRegexpGroupName,
+	/// A name or number in a regular expression that refers to a group it does not have.
+	UndefinedRegexpGroup,
+	/// A modifier given twice in a group of a regular expression.
+	DuplicateRegexpModifier,
+	/// A quantifier in a regular expression with nothing to repeat.
+	LoneRegexpQuantifier,
+	/// A `{n,m}` in a regular expression whose first number is the larger.
+	RegexpQuantifierOrder,
+	/// A `{`, `}` or `]` that opens or closes nothing, in a regular expression with the `u` or `v` flag.
+	LoneRegexpBracket,
+	/// An escape in a regular expression that does not parse, or that its flags do not allow.
+	InvalidRegexpEscape,
+	/// A `\p` or `\P` in a regular expression that names no Unicode property or value its flags allow.
+	InvalidRegexpProperty,
+	/// A range in a class of a regular expression whose first end is the larger.
+	RegexpRangeOrder,
+	/// A class in a regular expression whose contents its flags do not allow.
+	InvalidRegexpClass,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -5,6 +5,9 @@ pub(crate) const ID_CONTINUE: u8 = 8;
 pub(crate) const DIGIT: u8 = 16;
 /// May start what `skip_space` reads: space, a line break, a comment or an HTML comment.
 pub(crate) const TRIVIA: u8 = 32;
+/// Means something to the search for a regular expression literal's end, with `NEWLINE`: a
+/// slash, a backslash, a bracket, a `(` or the first byte of a line or paragraph separator.
+pub(crate) const REGEXP: u8 = 64;
 
 pub(crate) static CLASS: [u8; 256] = classes();
 
@@ -29,9 +32,13 @@ const fn classes() -> [u8; 256] {
 		if class & (SPACE | NEWLINE) != 0 || matches!(c, b'/' | b'<' | b'-') {
 			class |= TRIVIA;
 		}
+		if matches!(c, b'/' | b'\\' | b'[' | b']' | b'(') {
+			class |= REGEXP;
+		}
 		table[b] = class;
 		b += 1;
 	}
+	table[0xe2] = REGEXP;
 	table
 }
 
@@ -246,6 +253,10 @@ mod tests {
 				b.is_ascii_alphanumeric() || b == b'$' || b == b'_'
 			);
 			assert_eq!(class(b) & DIGIT != 0, b.is_ascii_digit());
+			assert_eq!(
+				class(b) & REGEXP != 0,
+				matches!(b, b'/' | b'\\' | b'[' | b']' | b'(' | 0xe2)
+			);
 		}
 		assert_eq!(run_of(b"abc1_$ x", 0, ID_CONTINUE), 6);
 		assert_eq!(run_of(b"  \tx", 0, SPACE), 3);

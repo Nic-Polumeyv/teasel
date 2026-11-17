@@ -110,7 +110,7 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	const codes = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => [e.code, ...e.args]);
 	assert.deepEqual(codes('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
 		['redeclaration', 'a'],
-		['invalid_regexp', 'a{2,1}', 'numbers out of order in {} quantifier'],
+		['regexp_quantifier_order'],
 		['strict_binding', 'eval'],
 	]);
 	assert.deepEqual(codes('class C { static public x }', { typescript: true }), [['modifier_order', 'public', 'static'], ['unexpected_token']]);
@@ -319,6 +319,96 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	assert.equal(program(`/*${'c'.repeat(1 << 25)}*/ w;`).body[0].expression.name, 'w');
 	assert.equal(program('v;').body[0].expression.name, 'v');
 	console.log(name, 'ok');
+}
+
+// regular expressions written from their grammar, some then damaged: the engine and the host's `RegExp` agree on which are valid
+{
+	let seed = 1;
+	const below = (n: number) => ((seed ^= seed << 13), (seed ^= seed >>> 17), (seed ^= seed << 5), (seed >>>= 0) % n);
+	const pick = (list: string[]) => list[below(list.length)];
+	const maybe = (percent: number) => below(100) < percent;
+	const NAMES = ['a', 'b', 'aa', '$', '_x', 'é', '𝒜', '\\u0061', '\\u{62}', '\\ud835\\udc9c', '1', '', 'a-'];
+	const CHARS = ['a', 'b', 'c', 'k', 'u', 'x', 'z', '0', '1', '8', '9', '_', ' ', ',', '-', '=', '!', ':', '<', '>', '&', '#', '~', '@', '%', ';', '`', 'é', '😀', '😁', '{', '}', ']', '^', '$', '.', '*', '+', '?', '|', '(', ')', '['];
+	const ESCAPES = ['\\d', '\\D', '\\s', '\\S', '\\w', '\\W', '\\t', '\\n', '\\v', '\\f', '\\r', '\\b', '\\B', '\\0', '\\00', '\\01', '\\08', '\\1', '\\2', '\\3', '\\9', '\\10', '\\12', '\\377', '\\400', '\\8', '\\cA', '\\cz', '\\c', '\\c1', '\\c_', '\\x41', '\\x4', '\\xg0', '\\u0041', '\\u004', '\\u{41}', '\\u{1F600}', '\\u{110000}', '\\u{}', '\\u{4', '\\uD83D', '\\uDE00', '\\uD83D\\uDE00', '\\uDE00\\uD83D', '\\k', '\\k<a>', '\\k<b>', '\\k<aa>', '\\k<', '\\k<>', '\\k<𝒜>', '\\p{L}', '\\P{L}', '\\p{Lu}', '\\p{ASCII}', '\\p{Script=Greek}', '\\p{sc=Grek}', '\\p{scx=Latin}', '\\p{gc=L}', '\\p{General_Category=Letter}', '\\p{RGI_Emoji}', '\\P{RGI_Emoji}', '\\p{Basic_Emoji}', '\\p{Nope}', '\\p{sc=Nope}', '\\p{L', '\\p', '\\p{}', '\\p{=L}', '\\p{gc=}', '\\p{L1}', '\\p{Any}', '\\-', '\\/', '\\\\', '\\.', '\\*', '\\(', '\\)', '\\[', '\\]', '\\{', '\\}', '\\|', '\\^', '\\$', '\\?', '\\+', '\\a', '\\e', '\\_', '\\ ', '\\é', '\\😀', '\\&', '\\!', '\\#', '\\%', '\\,', '\\:', '\;', '\\<', '\\=', '\\>', '\\@', '\\`', '\\~', '\\q{ab|c}', '\\q{a}', '\\q{}', '\\q{a|}', '\\q', '\\q{a'];
+	const QUANT = ['*', '+', '?', '*?', '+?', '??', '{1}', '{1,}', '{1,2}', '{2,1}', '{0}', '{01,1}', '{1,01}', '{10,9}', '{9,10}', '{,2}', '{', '{1', '{1,', '{a}', '{}', '{1}?', '{1,2}?', '}', '{99999999999999999999,1}', '{1,99999999999999999999}'];
+	const MODS = ['i', 'm', 's', 'im', 'ims', 'ii', '', 'x', 'i-m', '-i', 'i-', '-', 'i-i', 'm-im', '-ii', 'ims-'];
+	const SPLICE = ['(', ')', '[', ']', '{', '}', '|', '\\', '-', '&&', '--', '?', '*', '(?<a>', '(?<', '(?', '\\k<a>', '\\k', '^', ',', '<', '>', ':', '=', 'k', '0', '😀'];
+	const FLAGS = ['', '', '', '', 'u', 'u', 'u', 'v', 'v', 'v', 'i', 'gimsyd', 'gu', 'dv', 'uv', 'gg', 'x', 'uu', 'vu', 'gx'];
+	const char = () => pick(CHARS.slice(0, 32));
+	const atom = (depth: number): string => {
+		const r = below(100);
+		if (r < 30) return char();
+		if (r < 34) return '.';
+		if (r < 52) return pick(ESCAPES);
+		if (r < 68) return set(depth);
+		if (depth > 4) return char();
+		if (r < 76) return `(${disjunction(depth + 1)})`;
+		if (r < 82) return `(?:${disjunction(depth + 1)})`;
+		if (r < 90) return `(?<${pick(NAMES)}>${disjunction(depth + 1)})`;
+		if (r < 94) return `(?${pick(MODS)}:${disjunction(depth + 1)})`;
+		return pick(CHARS);
+	};
+	const term = (depth: number) => {
+		const r = below(100);
+		if (r < 5) return pick(['^', '$', '\\b', '\\B']) + (maybe(15) ? pick(QUANT) : '');
+		if (r < 12 && depth <= 4) return `(?${pick(['=', '!', '<=', '<!'])}${disjunction(depth + 1)})` + (maybe(30) ? pick(QUANT) : '');
+		return atom(depth) + (maybe(30) ? pick(QUANT) : '');
+	};
+	const disjunction = (depth: number) => {
+		let out = '';
+		for (let alternatives = maybe(35) ? 2 + below(2) : 1; alternatives > 0; alternatives--) {
+			for (let terms = below(4); terms > 0; terms--) out += term(depth);
+			if (alternatives > 1) out += '|';
+		}
+		return out;
+	};
+	const member = () => (maybe(45) ? char() : maybe(20) ? pick(CHARS) : pick(ESCAPES));
+	const set = (depth: number) => {
+		let out = maybe(20) ? '[^' : '[';
+		const style = below(10);
+		for (let i = below(4); i > 0; i--) {
+			out += maybe(30) ? `${member()}-${member()}` : maybe(17) && depth < 4 ? set(depth + 1) : member();
+			if (i > 1) out += style < 2 ? '&&' : style < 4 ? '--' : maybe(8) ? pick(['&&', '--', '&', '-']) : '';
+		}
+		return out + (maybe(10) ? '-]' : ']');
+	};
+	const damage = (pattern: string) => {
+		const chars = [...pattern];
+		for (let edits = 1 + below(2); edits > 0; edits--) {
+			const at = below(chars.length + 1);
+			if (maybe(25)) chars.splice(at, 1);
+			else chars.splice(at, 0, maybe(33) && chars.length > 0 ? chars[below(chars.length)] : pick(SPLICE));
+		}
+		return chars.join('');
+	};
+	// a body the literal ends where it is meant to: no bare `/` outside a class, nothing left open
+	const closed = (pattern: string) => {
+		let escaped = false, bracket = false;
+		for (const c of pattern) {
+			if (escaped) escaped = false;
+			else if (c === '\\') escaped = true;
+			else if (c === '[' || c === ']') bracket = c === '[';
+			else if (c === '/' && !bracket) return false;
+		}
+		return !bracket && !escaped && pattern !== '' && pattern[0] !== '*' && pattern[0] !== '/';
+	};
+	const valid = (read: () => unknown) => {
+		try {
+			read();
+			return true;
+		} catch (e) {
+			if (!(e instanceof SyntaxError)) throw e;
+			return false;
+		}
+	};
+	// an older host does not read modifiers or a name given twice
+	for (let cases = valid(() => new RegExp('(?i:a)|(?<a>x)|(?<a>y)')) ? 50_000 : 0; cases > 0; ) {
+		const pattern = maybe(40) ? damage(disjunction(0)) : disjunction(0);
+		if (!closed(pattern)) continue;
+		cases--;
+		const flags = pick(FLAGS);
+		assert.equal(valid(() => read(`/${pattern}/${flags}`)), valid(() => new RegExp(pattern, flags)), `/${pattern}/${flags}`);
+	}
 }
 
 // a document of a host language: the host's nodes around the JavaScript ones, one tree
