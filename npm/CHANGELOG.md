@@ -1,5 +1,33 @@
 # @teasel/parser
 
+## 0.0.25
+
+### Patch Changes
+
+- [#272](https://github.com/Nic-Polumeyv/teasel/pull/272) [`35ada7e`](https://github.com/Nic-Polumeyv/teasel/commit/35ada7e6a6a5a70974f969b683f8107ea242599c) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A root `<script>` or `<style>` ends at its closing tag in any case, as one inside an element does
+
+- [#262](https://github.com/Nic-Polumeyv/teasel/pull/262) [`513b766`](https://github.com/Nic-Polumeyv/teasel/commit/513b766aca2a963a774d51fa0700f79a65c89f72) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - The first parse in a process is faster
+
+- [#265](https://github.com/Nic-Polumeyv/teasel/pull/265) [`441dc87`](https://github.com/Nic-Polumeyv/teasel/commit/441dc87f07dc88303bc80e7e72cd263d1de3bfcb) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A document with many elements parses faster
+
+- [#275](https://github.com/Nic-Polumeyv/teasel/pull/275) [`4dbfc00`](https://github.com/Nic-Polumeyv/teasel/commit/4dbfc00a9b19e7db8ea66f19f62444810310b2d0) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Parsing is up to 2% faster
+
+- [#250](https://github.com/Nic-Polumeyv/teasel/pull/250) [`41d5914`](https://github.com/Nic-Polumeyv/teasel/commit/41d5914195d871492c819bf8707c2e10c657ccd2) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Nodes no longer carry `loc`, and the `locations` option is gone: `answer.locate(offset)` gives an offset's line and column
+
+- [#274](https://github.com/Nic-Polumeyv/teasel/pull/274) [`6449075`](https://github.com/Nic-Polumeyv/teasel/commit/6449075fce627cbc2f744c4462d061b5af8c3911) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A regular expression error names its mistake in `code` and spans it from `pos` to `end`: `invalid_regexp` and its two arguments are gone
+
+- [#274](https://github.com/Nic-Polumeyv/teasel/pull/274) [`6449075`](https://github.com/Nic-Polumeyv/teasel/commit/6449075fce627cbc2f744c4462d061b5af8c3911) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A regular expression error points at what is wrong in the pattern or flags, `\k` in a class beside a named group is an error, and groups nest to any depth
+
+- [#277](https://github.com/Nic-Polumeyv/teasel/pull/277) [`e8fdda5`](https://github.com/Nic-Polumeyv/teasel/commit/e8fdda54ef765e1b8955bd12464b520bfe2ee22a) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A stack overflow inside the WebAssembly engine can no longer leave the broken engine in place
+
+- [#271](https://github.com/Nic-Polumeyv/teasel/pull/271) [`00b1e41`](https://github.com/Nic-Polumeyv/teasel/commit/00b1e419281b7671d156239f4e8e600bbfa42daa) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A document with a script parses faster
+
+- [#276](https://github.com/Nic-Polumeyv/teasel/pull/276) [`99fbde3`](https://github.com/Nic-Polumeyv/teasel/commit/99fbde33b24141745107e5936961381b72d95089) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - With `errorRecovery`, a regular expression whose flags do not read is passed over whole
+
+- [#268](https://github.com/Nic-Polumeyv/teasel/pull/268) [`7b35f90`](https://github.com/Nic-Polumeyv/teasel/commit/7b35f90646e60547de916bce5fd6c9fbe86591bf) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - A small parse is faster
+
+- [#270](https://github.com/Nic-Polumeyv/teasel/pull/270) [`1cbc564`](https://github.com/Nic-Polumeyv/teasel/commit/1cbc564b7f59e7e73783c4d54f5b8ee033bfb8e1) Thanks [@Nic-Polumeyv](https://github.com/Nic-Polumeyv)! - Parsing is a few percent faster
+
 ## 0.0.24
 
 ### Patch Changes
