@@ -688,10 +688,18 @@ impl<'a> Lexer<'a> {
 		let start = token.start as usize;
 		self.pos = start + 1;
 		let bytes = self.src.as_bytes();
-		let mut escaped = false;
 		let mut in_class = false;
 		let mut named = false;
 		loop {
+			while bytes
+				.get(self.pos)
+				.is_some_and(|&b| scan::class(b) & (scan::NEWLINE | scan::REGEXP) == 0)
+			{
+				self.pos += 1;
+			}
+			// a `\` takes the byte after it along, unless the line ends there
+			let escaped = bytes.get(self.pos) == Some(&b'\\');
+			self.pos += escaped as usize;
 			let cut = match bytes[self.pos..] {
 				[] | [b'\n' | b'\r', ..] => true,
 				[0xe2, ..] => is_separator(&bytes[self.pos..]),
@@ -710,14 +718,11 @@ impl<'a> Lexer<'a> {
 					}
 				});
 			}
-			if escaped {
-				escaped = false;
-			} else {
+			if !escaped {
 				match bytes[self.pos] {
 					b'[' => in_class = true,
 					b']' => in_class = false,
 					b'/' if !in_class => break,
-					b'\\' => escaped = true,
 					b'(' if !in_class && bytes[self.pos + 1..].starts_with(b"?<") => {
 						named |= !matches!(bytes.get(self.pos + 3), Some(b'=' | b'!'));
 					}

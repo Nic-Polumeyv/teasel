@@ -469,7 +469,7 @@ impl<'a> Walk<'a> {
 
 	/// A `\p` or `\P` after its letter; answers whether it may match more than one character.
 	fn property(&mut self, at: usize, negated: bool) -> Result<bool> {
-		let listed = |list: &str, name: &str| list.split(' ').any(|known| known == name);
+		let listed = |names: &[&str], name: &str| names.binary_search(&name).is_ok();
 		if !self.eat(b'{') {
 			return self.fail(Code::InvalidRegexpProperty, at);
 		}
@@ -786,49 +786,89 @@ impl<'a> Walk<'a> {
 	}
 }
 
-// ECMA-262's tables of the names `\p{…}` takes: #table-binary-unicode-properties,
+// ECMA-262's tables of the names `\p{…}` takes, sorted: #table-binary-unicode-properties,
 // #table-binary-unicode-properties-of-strings, #table-unicode-general-category-values and
 // #table-unicode-script-values
-const BINARY: &str = "ASCII ASCII_Hex_Digit AHex Alphabetic Alpha Any Assigned Bidi_Control Bidi_C Bidi_Mirrored Bidi_M Case_Ignorable \
-	CI Cased Changes_When_Casefolded CWCF Changes_When_Casemapped CWCM Changes_When_Lowercased CWL \
-	Changes_When_NFKC_Casefolded CWKCF Changes_When_Titlecased CWT Changes_When_Uppercased CWU Dash \
-	Default_Ignorable_Code_Point DI Deprecated Dep Diacritic Dia Emoji Emoji_Component Emoji_Modifier \
-	Emoji_Modifier_Base Emoji_Presentation Extender Ext Grapheme_Base Gr_Base Grapheme_Extend Gr_Ext Hex_Digit Hex \
-	IDS_Binary_Operator IDSB IDS_Trinary_Operator IDST ID_Continue IDC ID_Start IDS Ideographic Ideo Join_Control \
-	Join_C Logical_Order_Exception LOE Lowercase Lower Math Noncharacter_Code_Point NChar Pattern_Syntax Pat_Syn \
-	Pattern_White_Space Pat_WS Quotation_Mark QMark Radical Regional_Indicator RI Sentence_Terminal STerm \
-	Soft_Dotted SD Terminal_Punctuation Term Unified_Ideograph UIdeo Uppercase Upper Variation_Selector VS \
-	White_Space space XID_Continue XIDC XID_Start XIDS Extended_Pictographic EBase EComp EMod EPres ExtPict";
-const STRINGS: &str = "Basic_Emoji Emoji_Keycap_Sequence RGI_Emoji_Modifier_Sequence RGI_Emoji_Flag_Sequence RGI_Emoji_Tag_Sequence \
-	RGI_Emoji_ZWJ_Sequence RGI_Emoji";
-const GENERAL_CATEGORIES: &str = "Cased_Letter LC Close_Punctuation Pe Connector_Punctuation Pc Control Cc cntrl Currency_Symbol Sc \
-	Dash_Punctuation Pd Decimal_Number Nd digit Enclosing_Mark Me Final_Punctuation Pf Format Cf Initial_Punctuation \
-	Pi Letter L Letter_Number Nl Line_Separator Zl Lowercase_Letter Ll Mark M Combining_Mark Math_Symbol Sm \
-	Modifier_Letter Lm Modifier_Symbol Sk Nonspacing_Mark Mn Number N Open_Punctuation Ps Other C Other_Letter Lo \
-	Other_Number No Other_Punctuation Po Other_Symbol So Paragraph_Separator Zp Private_Use Co Punctuation P punct \
-	Separator Z Space_Separator Zs Spacing_Mark Mc Surrogate Cs Symbol S Titlecase_Letter Lt Unassigned Cn \
-	Uppercase_Letter Lu";
-const SCRIPTS: &str = "Adlam Adlm Ahom Anatolian_Hieroglyphs Hluw Arabic Arab Armenian Armn Avestan Avst Balinese Bali Bamum Bamu \
-	Bassa_Vah Bass Batak Batk Bengali Beng Bhaiksuki Bhks Bopomofo Bopo Brahmi Brah Braille Brai Buginese Bugi Buhid \
-	Buhd Canadian_Aboriginal Cans Carian Cari Caucasian_Albanian Aghb Chakma Cakm Cham Cherokee Cher Common Zyyy \
-	Coptic Copt Qaac Cuneiform Xsux Cypriot Cprt Cyrillic Cyrl Deseret Dsrt Devanagari Deva Duployan Dupl \
-	Egyptian_Hieroglyphs Egyp Elbasan Elba Ethiopic Ethi Georgian Geor Glagolitic Glag Gothic Goth Grantha Gran \
-	Greek Grek Gujarati Gujr Gurmukhi Guru Han Hani Hangul Hang Hanunoo Hano Hatran Hatr Hebrew Hebr Hiragana Hira \
-	Imperial_Aramaic Armi Inherited Zinh Qaai Inscriptional_Pahlavi Phli Inscriptional_Parthian Prti Javanese Java \
-	Kaithi Kthi Kannada Knda Katakana Kana Kayah_Li Kali Kharoshthi Khar Khmer Khmr Khojki Khoj Khudawadi Sind Lao \
-	Laoo Latin Latn Lepcha Lepc Limbu Limb Linear_A Lina Linear_B Linb Lisu Lycian Lyci Lydian Lydi Mahajani Mahj \
-	Malayalam Mlym Mandaic Mand Manichaean Mani Marchen Marc Masaram_Gondi Gonm Meetei_Mayek Mtei Mende_Kikakui Mend \
-	Meroitic_Cursive Merc Meroitic_Hieroglyphs Mero Miao Plrd Modi Mongolian Mong Mro Mroo Multani Mult Myanmar Mymr \
-	Nabataean Nbat New_Tai_Lue Talu Newa Nko Nkoo Nushu Nshu Ogham Ogam Ol_Chiki Olck Old_Hungarian Hung Old_Italic \
-	Ital Old_North_Arabian Narb Old_Permic Perm Old_Persian Xpeo Old_South_Arabian Sarb Old_Turkic Orkh Oriya Orya \
-	Osage Osge Osmanya Osma Pahawh_Hmong Hmng Palmyrene Palm Pau_Cin_Hau Pauc Phags_Pa Phag Phoenician Phnx \
-	Psalter_Pahlavi Phlp Rejang Rjng Runic Runr Samaritan Samr Saurashtra Saur Sharada Shrd Shavian Shaw Siddham \
-	Sidd SignWriting Sgnw Sinhala Sinh Sora_Sompeng Sora Soyombo Soyo Sundanese Sund Syloti_Nagri Sylo Syriac Syrc \
-	Tagalog Tglg Tagbanwa Tagb Tai_Le Tale Tai_Tham Lana Tai_Viet Tavt Takri Takr Tamil Taml Tangut Tang Telugu Telu \
-	Thaana Thaa Thai Tibetan Tibt Tifinagh Tfng Tirhuta Tirh Ugaritic Ugar Vai Vaii Warang_Citi Wara Yi Yiii \
-	Zanabazar_Square Zanb Dogra Dogr Gunjala_Gondi Gong Hanifi_Rohingya Rohg Makasar Maka Medefaidrin Medf \
-	Old_Sogdian Sogo Sogdian Sogd Elymaic Elym Nandinagari Nand Nyiakeng_Puachue_Hmong Hmnp Wancho Wcho Chorasmian \
-	Chrs Diak Dives_Akuru Khitan_Small_Script Kits Yezi Yezidi Cypro_Minoan Cpmn Old_Uyghur Ougr Tangsa Tnsa Toto \
-	Vithkuqi Vith Berf Beria_Erfe Gara Garay Gukh Gurung_Khema Hrkt Katakana_Or_Hiragana Kawi Kirat_Rai Krai \
-	Nag_Mundari Nagm Ol_Onal Onao Sidetic Sidt Sunu Sunuwar Tai_Yo Tayo Todhri Todr Tolong_Siki Tols Tulu_Tigalari \
-	Tutg Unknown Zzzz";
+#[rustfmt::skip]
+const BINARY: &[&str] = &[
+	"AHex", "ASCII", "ASCII_Hex_Digit", "Alpha", "Alphabetic", "Any", "Assigned", "Bidi_C", "Bidi_Control",
+	"Bidi_M", "Bidi_Mirrored", "CI", "CWCF", "CWCM", "CWKCF", "CWL", "CWT", "CWU", "Case_Ignorable", "Cased",
+	"Changes_When_Casefolded", "Changes_When_Casemapped", "Changes_When_Lowercased", "Changes_When_NFKC_Casefolded",
+	"Changes_When_Titlecased", "Changes_When_Uppercased", "DI", "Dash", "Default_Ignorable_Code_Point", "Dep",
+	"Deprecated", "Dia", "Diacritic", "EBase", "EComp", "EMod", "EPres", "Emoji", "Emoji_Component",
+	"Emoji_Modifier", "Emoji_Modifier_Base", "Emoji_Presentation", "Ext", "ExtPict", "Extended_Pictographic",
+	"Extender", "Gr_Base", "Gr_Ext", "Grapheme_Base", "Grapheme_Extend", "Hex", "Hex_Digit", "IDC", "IDS", "IDSB",
+	"IDST", "IDS_Binary_Operator", "IDS_Trinary_Operator", "ID_Continue", "ID_Start", "Ideo", "Ideographic",
+	"Join_C", "Join_Control", "LOE", "Logical_Order_Exception", "Lower", "Lowercase", "Math", "NChar",
+	"Noncharacter_Code_Point", "Pat_Syn", "Pat_WS", "Pattern_Syntax", "Pattern_White_Space", "QMark",
+	"Quotation_Mark", "RI", "Radical", "Regional_Indicator", "SD", "STerm", "Sentence_Terminal", "Soft_Dotted",
+	"Term", "Terminal_Punctuation", "UIdeo", "Unified_Ideograph", "Upper", "Uppercase", "VS", "Variation_Selector",
+	"White_Space", "XIDC", "XIDS", "XID_Continue", "XID_Start", "space",
+];
+#[rustfmt::skip]
+const STRINGS: &[&str] = &[
+	"Basic_Emoji", "Emoji_Keycap_Sequence", "RGI_Emoji", "RGI_Emoji_Flag_Sequence", "RGI_Emoji_Modifier_Sequence",
+	"RGI_Emoji_Tag_Sequence", "RGI_Emoji_ZWJ_Sequence",
+];
+#[rustfmt::skip]
+const GENERAL_CATEGORIES: &[&str] = &[
+	"C", "Cased_Letter", "Cc", "Cf", "Close_Punctuation", "Cn", "Co", "Combining_Mark", "Connector_Punctuation",
+	"Control", "Cs", "Currency_Symbol", "Dash_Punctuation", "Decimal_Number", "Enclosing_Mark", "Final_Punctuation",
+	"Format", "Initial_Punctuation", "L", "LC", "Letter", "Letter_Number", "Line_Separator", "Ll", "Lm", "Lo",
+	"Lowercase_Letter", "Lt", "Lu", "M", "Mark", "Math_Symbol", "Mc", "Me", "Mn", "Modifier_Letter",
+	"Modifier_Symbol", "N", "Nd", "Nl", "No", "Nonspacing_Mark", "Number", "Open_Punctuation", "Other",
+	"Other_Letter", "Other_Number", "Other_Punctuation", "Other_Symbol", "P", "Paragraph_Separator", "Pc", "Pd",
+	"Pe", "Pf", "Pi", "Po", "Private_Use", "Ps", "Punctuation", "S", "Sc", "Separator", "Sk", "Sm", "So",
+	"Space_Separator", "Spacing_Mark", "Surrogate", "Symbol", "Titlecase_Letter", "Unassigned", "Uppercase_Letter",
+	"Z", "Zl", "Zp", "Zs", "cntrl", "digit", "punct",
+];
+#[rustfmt::skip]
+const SCRIPTS: &[&str] = &[
+	"Adlam", "Adlm", "Aghb", "Ahom", "Anatolian_Hieroglyphs", "Arab", "Arabic", "Armenian", "Armi", "Armn",
+	"Avestan", "Avst", "Bali", "Balinese", "Bamu", "Bamum", "Bass", "Bassa_Vah", "Batak", "Batk", "Beng", "Bengali",
+	"Berf", "Beria_Erfe", "Bhaiksuki", "Bhks", "Bopo", "Bopomofo", "Brah", "Brahmi", "Brai", "Braille", "Bugi",
+	"Buginese", "Buhd", "Buhid", "Cakm", "Canadian_Aboriginal", "Cans", "Cari", "Carian", "Caucasian_Albanian",
+	"Chakma", "Cham", "Cher", "Cherokee", "Chorasmian", "Chrs", "Common", "Copt", "Coptic", "Cpmn", "Cprt",
+	"Cuneiform", "Cypriot", "Cypro_Minoan", "Cyrillic", "Cyrl", "Deseret", "Deva", "Devanagari", "Diak",
+	"Dives_Akuru", "Dogr", "Dogra", "Dsrt", "Dupl", "Duployan", "Egyp", "Egyptian_Hieroglyphs", "Elba", "Elbasan",
+	"Elym", "Elymaic", "Ethi", "Ethiopic", "Gara", "Garay", "Geor", "Georgian", "Glag", "Glagolitic", "Gong",
+	"Gonm", "Goth", "Gothic", "Gran", "Grantha", "Greek", "Grek", "Gujarati", "Gujr", "Gukh", "Gunjala_Gondi",
+	"Gurmukhi", "Guru", "Gurung_Khema", "Han", "Hang", "Hangul", "Hani", "Hanifi_Rohingya", "Hano", "Hanunoo",
+	"Hatr", "Hatran", "Hebr", "Hebrew", "Hira", "Hiragana", "Hluw", "Hmng", "Hmnp", "Hrkt", "Hung",
+	"Imperial_Aramaic", "Inherited", "Inscriptional_Pahlavi", "Inscriptional_Parthian", "Ital", "Java", "Javanese",
+	"Kaithi", "Kali", "Kana", "Kannada", "Katakana", "Katakana_Or_Hiragana", "Kawi", "Kayah_Li", "Khar",
+	"Kharoshthi", "Khitan_Small_Script", "Khmer", "Khmr", "Khoj", "Khojki", "Khudawadi", "Kirat_Rai", "Kits",
+	"Knda", "Krai", "Kthi", "Lana", "Lao", "Laoo", "Latin", "Latn", "Lepc", "Lepcha", "Limb", "Limbu", "Lina",
+	"Linb", "Linear_A", "Linear_B", "Lisu", "Lyci", "Lycian", "Lydi", "Lydian", "Mahajani", "Mahj", "Maka",
+	"Makasar", "Malayalam", "Mand", "Mandaic", "Mani", "Manichaean", "Marc", "Marchen", "Masaram_Gondi",
+	"Medefaidrin", "Medf", "Meetei_Mayek", "Mend", "Mende_Kikakui", "Merc", "Mero", "Meroitic_Cursive",
+	"Meroitic_Hieroglyphs", "Miao", "Mlym", "Modi", "Mong", "Mongolian", "Mro", "Mroo", "Mtei", "Mult", "Multani",
+	"Myanmar", "Mymr", "Nabataean", "Nag_Mundari", "Nagm", "Nand", "Nandinagari", "Narb", "Nbat", "New_Tai_Lue",
+	"Newa", "Nko", "Nkoo", "Nshu", "Nushu", "Nyiakeng_Puachue_Hmong", "Ogam", "Ogham", "Ol_Chiki", "Ol_Onal",
+	"Olck", "Old_Hungarian", "Old_Italic", "Old_North_Arabian", "Old_Permic", "Old_Persian", "Old_Sogdian",
+	"Old_South_Arabian", "Old_Turkic", "Old_Uyghur", "Onao", "Oriya", "Orkh", "Orya", "Osage", "Osge", "Osma",
+	"Osmanya", "Ougr", "Pahawh_Hmong", "Palm", "Palmyrene", "Pau_Cin_Hau", "Pauc", "Perm", "Phag", "Phags_Pa",
+	"Phli", "Phlp", "Phnx", "Phoenician", "Plrd", "Prti", "Psalter_Pahlavi", "Qaac", "Qaai", "Rejang", "Rjng",
+	"Rohg", "Runic", "Runr", "Samaritan", "Samr", "Sarb", "Saur", "Saurashtra", "Sgnw", "Sharada", "Shavian",
+	"Shaw", "Shrd", "Sidd", "Siddham", "Sidetic", "Sidt", "SignWriting", "Sind", "Sinh", "Sinhala", "Sogd",
+	"Sogdian", "Sogo", "Sora", "Sora_Sompeng", "Soyo", "Soyombo", "Sund", "Sundanese", "Sunu", "Sunuwar", "Sylo",
+	"Syloti_Nagri", "Syrc", "Syriac", "Tagalog", "Tagb", "Tagbanwa", "Tai_Le", "Tai_Tham", "Tai_Viet", "Tai_Yo",
+	"Takr", "Takri", "Tale", "Talu", "Tamil", "Taml", "Tang", "Tangsa", "Tangut", "Tavt", "Tayo", "Telu", "Telugu",
+	"Tfng", "Tglg", "Thaa", "Thaana", "Thai", "Tibetan", "Tibt", "Tifinagh", "Tirh", "Tirhuta", "Tnsa", "Todhri",
+	"Todr", "Tolong_Siki", "Tols", "Toto", "Tulu_Tigalari", "Tutg", "Ugar", "Ugaritic", "Unknown", "Vai", "Vaii",
+	"Vith", "Vithkuqi", "Wancho", "Wara", "Warang_Citi", "Wcho", "Xpeo", "Xsux", "Yezi", "Yezidi", "Yi", "Yiii",
+	"Zanabazar_Square", "Zanb", "Zinh", "Zyyy", "Zzzz",
+];
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// a name is found by bisection
+	#[test]
+	fn names_are_sorted() {
+		for names in [BINARY, STRINGS, GENERAL_CATEGORIES, SCRIPTS] {
+			assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+		}
+	}
+}
