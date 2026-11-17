@@ -810,7 +810,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	pub(crate) fn raise<T>(&self, error: SyntaxError) -> Result<T> {
 		let end = if error.pos == self.tok.start {
-			self.tok.end
+			self.lexer.pos()
 		} else {
 			error.pos
 		};
@@ -828,7 +828,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// The current token is not what the grammar allows; at the end of the input that is its own error.
 	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		let code = if self.is(TokenKind::Eof) && !self.lexer.stopped {
+		let code = if self.is(TokenKind::Eof) && !self.stopped() {
 			Code::UnexpectedEof
 		} else {
 			Code::UnexpectedToken
@@ -940,7 +940,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(crate) fn next_liberal(&mut self) -> Result<()> {
 		self.within_limit()?;
 		let boundary = self.tok.ends_operand();
-		self.prev_end = self.tok.end;
+		self.prev_end = self.lexer.pos();
 		self.lexer.next_token_into(&mut self.tok)?;
 		if boundary {
 			self.stop_after_operand();
@@ -956,19 +956,38 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		}
 	}
 
+	/// Whether the parse ended before the source did, at the host's own syntax.
+	pub(crate) fn stopped(&self) -> bool {
+		self.is(TokenKind::Eof) && (self.tok.start as usize) < self.source().len()
+	}
+
 	/// Ends the parse at the current token: the host's own syntax starts there.
 	pub(crate) fn stop_here(&mut self) {
 		self.lexer.set_pos(self.tok.start);
-		self.lexer.stopped = true;
 		self.tok = Token::eof(self.tok.start);
 	}
 
+	/// Whether the current token is of `kind`: a keyword by its word, any other by its kind alone.
+	// by the derived `==`, which also compares what a kind carries, JavaScript and TypeScript parse 1 to 2% slower
 	pub(crate) fn is(&self, kind: TokenKind) -> bool {
-		self.tok.kind == kind
+		match kind {
+			TokenKind::Keyword(keyword) => self.is_keyword(keyword),
+			_ => {
+				debug_assert!(!matches!(
+					kind,
+					TokenKind::Ident(_)
+						| TokenKind::PrivateName(_)
+						| TokenKind::Number(_)
+						| TokenKind::String(_)
+						| TokenKind::RegExp { .. }
+				));
+				std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind)
+			}
+		}
 	}
 
 	pub(crate) fn is_keyword(&self, keyword: Keyword) -> bool {
-		self.tok.kind == TokenKind::Keyword(keyword)
+		matches!(self.tok.kind, TokenKind::Keyword(k) if k == keyword)
 	}
 
 	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {

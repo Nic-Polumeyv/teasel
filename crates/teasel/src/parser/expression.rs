@@ -4,7 +4,7 @@ use crate::Options;
 use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::list::Role;
-use crate::lexer::token::{Keyword, TokenKind, word};
+use crate::lexer::token::{Chunk, Keyword, TokenKind, word};
 
 use crate::ast::{
 	AssignmentOperator, BinaryOperator, Function, List, LogicalOperator, MethodKind, NodeId, NodeKind, PropertyKind,
@@ -935,26 +935,27 @@ impl<const TS: bool> Parser<'_, TS> {
 		let mut quasis = self.items();
 		let mut expressions = self.items();
 		loop {
-			let chunk = self.lexer.read_template()?;
-			let TokenKind::Template { cooked, raw, tail } = chunk.kind else {
-				unreachable!()
-			};
+			let chunk_start = self.lexer.pos();
+			let Chunk {
+				cooked,
+				raw,
+				tail,
+				end: chunk_end,
+			} = self.lexer.read_template()?;
 			if cooked.is_none() && !is_tagged {
-				let error = self.error(chunk.start, Code::BadTemplateEscape);
+				let error = self.error(chunk_start, Code::BadTemplateEscape);
 				self.record(error)?;
 			}
 			quasis.push(Some(self.add_with_end(
 				NodeKind::TemplateElement { cooked, raw, tail },
-				chunk.start,
-				chunk.end,
+				chunk_start,
+				chunk_end,
 			)));
+			self.prev_end = self.lexer.pos();
+			self.lexer.next_token_into(&mut self.tok)?;
 			if tail {
-				self.prev_end = if chunk.unclosed { chunk.end } else { chunk.end + 1 };
-				self.lexer.next_token_into(&mut self.tok)?;
 				break;
 			}
-			self.prev_end = chunk.end + 2;
-			self.lexer.next_token_into(&mut self.tok)?;
 			// with in_type alone, the JavaScript copy kept the whole type grammar: 32 of its 130 KB
 			let expression = if self.typescript() && self.lexer.in_type {
 				self.parse_type()?

@@ -121,7 +121,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let body = self.list_from(body);
 		self.adapt_directive_prologue(body);
 		self.exit_scope();
-		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.tok.end))
+		Ok(self.add_with_end(NodeKind::Program { body, module }, start, self.lexer.pos()))
 	}
 
 	// a scan of the bytes for the directive missed one after a hashbang or an HTML-like comment
@@ -132,7 +132,7 @@ impl<const TS: bool> Parser<'_, TS> {
 		let snapshot = self.snapshot();
 		let found = self.speculate(|p| {
 			while matches!(p.tok.kind, TokenKind::String(_)) {
-				let (start, end) = (p.tok.start, p.tok.end);
+				let (start, end) = (p.tok.start, p.lexer.pos());
 				let statement = p.parse_statement(Context::None, StatementPlace::Block, None)?;
 				let NodeKind::ExpressionStatement { expression, .. } = p.kind(statement) else {
 					break;

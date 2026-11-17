@@ -161,14 +161,17 @@ fn combinator(rest: &str) -> Option<&'static str> {
 impl<'a> Walker<'a> {
 	/// A style element's sheet, from the content at the cursor through the closing tag.
 	pub(super) fn style_sheet(&mut self, start: u32, name: &str, attributes: Vec<NodeId>) -> Result<NodeId> {
-		let closer = format!("</{name}");
 		let content_start = self.at;
-		let (children, comments, read) = self.sheet(&closer);
+		let (children, comments, read) = self.sheet(Some(name));
 		read?;
 		let content_end = self.at;
-		self.expect(&closer)?;
-		self.space();
-		self.expect(">")?;
+		match closing_tag(self.rest(), name) {
+			Some(len) => self.at += len as u32,
+			None => {
+				self.expect(&format!("</{name}"))?;
+				self.expect(">")?;
+			}
+		}
 		let end = self.at;
 		let attributes = self.list(&attributes);
 		let content = self.host(
@@ -195,7 +198,7 @@ impl<'a> Walker<'a> {
 
 	/// The whole source as a stylesheet.
 	pub(super) fn stylesheet(&mut self) -> Result<NodeId> {
-		let (children, comments, read) = self.sheet("");
+		let (children, comments, read) = self.sheet(None);
 		if let Err(error) = read {
 			self.report(error)?;
 			self.at = self.len();
@@ -211,13 +214,13 @@ impl<'a> Walker<'a> {
 		))
 	}
 
-	/// The rules up to `closer` or the end, and the comments among them, as lists, with the error
-	/// that ended the read early.
-	fn sheet(&mut self, closer: &str) -> (List, List, Result<()>) {
+	/// The rules up to the closing tag of `name` or the end, and the comments among them, as lists,
+	/// with the error that ended the read early.
+	fn sheet(&mut self, name: Option<&str>) -> (List, List, Result<()>) {
 		self.nesting = 0;
 		let mut comments = Vec::new();
 		let mut children = Vec::new();
-		let read = self.rules(closer, &mut children, &mut comments);
+		let read = self.rules(name, &mut children, &mut comments);
 		let comments: Vec<NodeId> = comments
 			.into_iter()
 			.map(|comment| {
@@ -236,10 +239,10 @@ impl<'a> Walker<'a> {
 		(self.list(&children), self.list(&comments), read)
 	}
 
-	fn rules(&mut self, closer: &str, children: &mut Vec<NodeId>, comments: &mut Vec<CssComment>) -> Result<()> {
+	fn rules(&mut self, name: Option<&str>, children: &mut Vec<NodeId>, comments: &mut Vec<CssComment>) -> Result<()> {
 		loop {
 			self.css_space(comments, true)?;
-			if self.at >= self.len() || (!closer.is_empty() && self.matches(closer)) {
+			if self.at >= self.len() || name.is_some_and(|name| closing_tag(self.rest(), name).is_some()) {
 				return Ok(());
 			}
 			children.push(if self.matches("@") {

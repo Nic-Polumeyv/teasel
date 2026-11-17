@@ -621,6 +621,8 @@ if (name !== 'native') {
 					read('<a>{x}</a>', {}, svelte);
 				} catch (e: Any) {
 					restarted = /started over/.test(e.message);
+					// an overflow before the engine is reached says nothing: the next frame up tries again
+					if (!restarted) throw e;
 				}
 			}
 		}
