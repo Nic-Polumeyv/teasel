@@ -957,6 +957,13 @@ fn a_definition_says_only_what_is_read() {
 		directive(list![fields(list![("expression", source("js", "expression", false))])]),
 		"OnDirective: a directive reads one value",
 	);
+	let mut host = directive(list![fields(list![("expression", source("value", "expression", false))])]);
+	if let Some(directives) = &mut host.directives {
+		directives.rules = directives.rules.map(|rules| {
+			Record(rules.0.iter().map(|&(_, rule)| ("", rule)).collect::<Vec<_>>().leak())
+		});
+	}
+	refused(host, "OnDirective: its directive name is empty");
 
 	let svelte_element = |items: &'static [definition::Item<'static>]| {
 		let mut host = minimal();
@@ -1583,6 +1590,28 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(text(elements.other.as_ref().unwrap().ty), "RegularElement");
 	assert_eq!(text(elements.tag("svelte:head").0.unwrap().ty), "SvelteHead");
 	assert!(elements.tag("div").0.is_none());
+}
+
+// a directive is named by its rule and has an argument: without a rule the name is a plain
+// attribute's, without an argument it is an error
+#[test]
+fn a_directive_has_a_name_and_an_argument() {
+	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	let parse = |source: &str| parse_document(source, &svelte, Options(Options::MODULE | Options::ERROR_RECOVERY));
+	let answer = parse("<a :x></a>");
+	assert!(
+		!answer.contains("\"code\"") && answer.contains(r#""type":"Attribute""#) && answer.contains(r#""name":":x""#),
+		"{answer}"
+	);
+	for source in ["<a bind:></a>", "<a on:|once></a>"] {
+		let answer = parse(source);
+		assert!(
+			answer.contains(&format!(r#""code":{},"args":["a directive name"]"#, Code::Expected as u8))
+				&& !answer.contains("Directive\""),
+			"{source}: {answer}"
+		);
+	}
 }
 
 // a repeating branch's node ends where the next branch or the close starts; after a branch read

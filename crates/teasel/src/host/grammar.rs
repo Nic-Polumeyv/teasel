@@ -2077,6 +2077,7 @@ fn lower(d: Definition) -> Result<Grammar, String> {
 		Some(x) => {
 			let (mut rules, mut names) = (Vec::new(), FastMap::default());
 			for (name, rule) in x.rules.iter().flat_map(|r| r.0) {
+				token(&format!("{}: its directive name", rule.node), name)?;
 				names.entry(*name).or_insert(rules.len() as u32);
 				rules.push(directive(rule, n)?);
 			}

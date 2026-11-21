@@ -247,7 +247,8 @@ export interface Definition {
 	readonly directives?: {
 		readonly arg?: string;
 		readonly modifier?: string;
-		readonly rules?: { readonly [name: string]: Directive };
+		/** By the directive's name, which is never empty. */
+		readonly rules?: { readonly [name: string]: Directive } & { readonly ''?: never };
 	};
 	/** By the type of the node each makes. */
 	readonly constructs?: { readonly [type: string]: Construct };

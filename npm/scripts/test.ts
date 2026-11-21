@@ -768,6 +768,9 @@ if (name !== 'native') {
 	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.fragment.nodes[0].fragment.nodes.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
 	assert.throws(() => g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
+	// a directive reads one value from its attribute, beside its flags; its name is never empty
+	assert.throws(() => g.grammar({ ...html, directives: { rules: { on: { node: 'On', form: [{ handler: g.js.expression as Any }] } } } }), { name: 'Error', message: /On: a directive reads one value/ });
+	assert.throws(() => g.grammar({ ...html, directives: { rules: { '': { node: 'On', form: [{ handler: g.value.expression }] } } as Any } }), { name: 'Error', message: /On: its directive name is empty/ });
 	// an identifier that refers to a binding declared elsewhere carries where that declaration is
 	const shape = (value: Any): Any => {
 		if (Array.isArray(value)) return value.map(shape);
@@ -843,6 +846,7 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<NodeType<Svelte, 'Text'>['raw'], string>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['name'], string>>();
+	expect<Equal<NodeType<Svelte, 'BindDirective'>['name'], string>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['modifiers'], string[]>>();
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
@@ -877,6 +881,11 @@ function types(text: string, definition: typeof svelte) {
 	construct({ open: { marker: ['{#b'], form: [{ branches: g.js.expression }, '}', { body: g.content }] }, close: { marker: ['{/b'], form: ['}'] } });
 	// @ts-expect-error a directive's flag is true or false
 	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
+	g.grammar({
+		document: { node: 'Root' },
+		// @ts-expect-error a directive's name is never empty
+		directives: { rules: { '': { node: 'D', form: [{ expression: g.value.expression }] } } },
+	});
 	// @ts-expect-error a directive's argument is its `name`, which teasel names
 	directive({ node: 'D', form: [{ name: g.value.expression }] });
 	// @ts-expect-error `opt` needs items
