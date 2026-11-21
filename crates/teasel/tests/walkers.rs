@@ -38,11 +38,13 @@ fn the_names_and_children_are_the_grammars() {
 fn every_fixture_answers_as_the_grammar() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let grammar = grammar();
+	// a component's script is a module: every set compares trees as one, but the first, the one a script-mode read reaches
 	let sets = [
 		0,
-		Options::COMMENTS | Options::SCOPES,
-		Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES,
-		Options::ERASE | Options::COMMENTS | Options::SCOPES,
+		Options::MODULE,
+		Options::MODULE | Options::COMMENTS | Options::SCOPES,
+		Options::MODULE | Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES,
+		Options::MODULE | Options::ERASE | Options::COMMENTS | Options::SCOPES,
 		Options::MODULE | Options::PARENTHESIZED | Options::SCOPES,
 	];
 	let mut wrong = Vec::new();
@@ -67,8 +69,8 @@ fn every_prefix_answers_as_the_grammar() {
 	for file in common::inputs(&root.join("tests/hosts/svelte")) {
 		let source = fs::read_to_string(&file).unwrap();
 		for bits in [
-			Options::COMMENTS | Options::SCOPES,
-			Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES,
+			Options::MODULE | Options::COMMENTS | Options::SCOPES,
+			Options::MODULE | Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES,
 		] {
 			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 				let cut = &source[..end];

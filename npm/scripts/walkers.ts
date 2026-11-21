@@ -14,14 +14,16 @@ const { svelte } = await import('../src/svelte.ts');
 const { PARENT, SCOPE, REFERENCE } = await import('../src/decode.ts');
 
 const root = new URL('../../crates/teasel/tests/', import.meta.url).pathname;
+// a component's script is a module: every set compares trees as one, but `script`, the one a script-mode read reaches
 const sets: Record<string, Options> = {
-	strict: {},
-	full: { comments: true, scopes: true },
-	recover: { errorRecovery: true, comments: true, scopes: true },
-	erase: { typescript: 'erase', comments: true, scopes: true },
-	module: { sourceType: 'module', parenthesized: true, scopes: true },
+	script: {},
+	module: { sourceType: 'module' },
+	full: { sourceType: 'module', comments: true, scopes: true },
+	recover: { sourceType: 'module', errorRecovery: true, comments: true, scopes: true },
+	erase: { sourceType: 'module', typescript: 'erase', comments: true, scopes: true },
+	parens: { sourceType: 'module', parenthesized: true, scopes: true },
 };
-const cuts: Record<string, Options> = { strict: sets.full, recover: sets.recover };
+const cuts: Record<string, Options> = { full: sets.full, recover: sets.recover };
 
 const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));
 const LINKS = [PARENT, SCOPE, REFERENCE];
@@ -56,14 +58,16 @@ function outcome(text: string, options: Options, language: typeof svelte): unkno
 	}
 }
 
-const tally: Record<string, { compared: number; differing: number }> = {};
+const tally: Record<string, { compared: number; differing: number; trees: number; thrown: number }> = {};
 let shown = 0;
 
 function compare(group: string, label: string, text: string, options: Options, quiet = false) {
-	const counts = (tally[group] ??= { compared: 0, differing: 0 });
+	const counts = (tally[group] ??= { compared: 0, differing: 0, trees: 0, thrown: 0 });
 	counts.compared++;
 	const old = outcome(text, options, grammar as typeof svelte);
 	const now = outcome(text, options, svelte);
+	if ((old as { thrown?: unknown }).thrown === undefined) counts.trees++;
+	else counts.thrown++;
 	const found = differ(old, now, new Map(), '$');
 	if (found === null) return true;
 	counts.differing++;
@@ -123,8 +127,8 @@ if (runs('svelte')) {
 if (wanted.includes('svelte-prefixes')) prefixes('svelte prefixes', files(join(root, 'svelte/packages/svelte/tests')));
 
 let failed = false;
-for (const [group, { compared, differing }] of Object.entries(tally)) {
-	console.log(`${group}: ${compared} compared, ${differing} differing`);
+for (const [group, { compared, differing, trees, thrown }] of Object.entries(tally)) {
+	console.log(`${group}: ${compared} compared (${trees} trees, ${thrown} thrown), ${differing} differing`);
 	failed ||= differing > 0;
 }
 if (failed) process.exit(1);
