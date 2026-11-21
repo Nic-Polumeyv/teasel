@@ -337,6 +337,9 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	// the common case in the token reader, the rest a call: called for all of it, a lexing pass
+	// over app scripts took 3.7% longer in WebAssembly
+	#[inline(always)]
 	fn skip_space(&mut self) -> Result<bool> {
 		let bytes = self.src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)
@@ -357,6 +360,12 @@ impl<'a> Lexer<'a> {
 				}
 			}
 		}
+		self.skip_trivia()
+	}
+
+	#[inline(never)]
+	fn skip_trivia(&mut self) -> Result<bool> {
+		let bytes = self.src.as_bytes();
 		let comments = &mut self.comments;
 		match trivia(self.src, self.pos, self.module, |comment| comments.push(comment)) {
 			Ok((pos, newline)) => {
