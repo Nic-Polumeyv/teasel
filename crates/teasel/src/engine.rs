@@ -163,7 +163,7 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	texts(&mut w, view_names(true));
 	w.end();
-	// the names the hosts' rows number, a stylesheet's and a Svelte component's alike
+	// the names Svelte's rows number, a stylesheet's and a component's alike
 	w.key("names");
 	texts(&mut w, svelte::NAMES.iter().copied());
 	w.key("stylesheet");

@@ -517,7 +517,7 @@ impl<'a> Writer<'a> {
 				let host = self.ast.host_rows[index as usize];
 				match svelte::NAMES.get(host.ty as usize).copied() {
 					None => {
-						// an object of the host's without a type, positions and all
+						// a row without a type, a style element's content, positions and all
 						let node = self.ast.node(id);
 						self.json.object();
 						self.span(node.start, node.end);

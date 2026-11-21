@@ -4,7 +4,7 @@
 //! past a comma with code after it on its line, which it then leads.
 //! The last node of a block, program, array or object takes everything up to the closing
 //! bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the
-//! root. Children are visited in source order. A host's own nodes take no comments: those stay
+//! root. Children are visited in source order. Svelte's own nodes take no comments: those stay
 //! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
@@ -126,7 +126,7 @@ impl Attacher<'_> {
 				self.take(node, Place::Trailing);
 			}
 		} else if parent.is_some_and(|p| self.is_host(p)) {
-			// the last JavaScript before the host's own syntax resumes takes what lies between
+			// the last JavaScript before Svelte's own syntax resumes takes what lies between
 			let mut from = end;
 			while let Some(c) = self.peek() {
 				let at = self.start(c);

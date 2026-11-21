@@ -30,7 +30,8 @@ crate::layout::names! {
 		Namespace = "namespace",
 		/// A TypeScript enum body, where the members are names.
 		Enum = "enum",
-		/// What a host parses at an offset: an expression, a statement, a pattern.
+		/// A component's fragment or a block's body, where the markup's expressions sit; and the scope
+		/// of an expression, statement or pattern `parse_at` reads alone.
 		Fragment = "fragment",
 	}
 }
@@ -72,7 +73,8 @@ crate::layout::names! {
 		Enum = "enum",
 		EnumMember = "enum-member",
 		Namespace = "namespace",
-		/// What a pattern parsed on its own declares; the host says what kind of binding it is.
+		/// What a pattern a component reads on its own declares; the node it stands in says what kind
+		/// of binding it is.
 		Pattern = "pattern",
 	}
 }
@@ -230,7 +232,7 @@ impl<T: Packed> NodeTable<T> {
 }
 
 crate::layout::record! {
-	/// A piece of JavaScript a host read on its own, and what the tables hold for it: the scope it
+	/// A piece of JavaScript a component holds, read on its own, and what the tables hold for it: the scope it
 	/// sits in, and the scopes opened, the bindings declared and the references made inside it, each
 	/// a range of its table since a piece is visited in one go.
 	#[derive(Clone, Copy, Debug)]
@@ -248,7 +250,7 @@ pub struct Scopes {
 	pub scopes: Handed<Scope>,
 	pub bindings: Handed<Binding>,
 	pub references: Handed<Reference>,
-	/// The pieces of JavaScript in a host's document, in the order a walk over the tree meets them;
+	/// The pieces of JavaScript in a component, in the order a walk over the tree meets them;
 	/// empty for a plain parse.
 	pub roots: Handed<Root>,
 	pub root_of: NodeTable<u32>,
@@ -258,7 +260,8 @@ pub struct Scopes {
 	/// assigned by: `Binding::declaration` and `Reference::write_expr` from the node's side.
 	pub declared_by: ByNode,
 	pub writes_of: ByNode,
-	/// A name declared twice in one of the host's scopes, which are lexical like a block's.
+	/// A name declared twice in one of the scopes a component's markup opens, which are lexical like
+	/// a block's.
 	pub errors: Vec<SyntaxError>,
 	scratch: Scratch,
 }
@@ -1172,7 +1175,7 @@ impl<'a> Binder<'a> {
 		for i in from..from + len {
 			while next < self.host_groups.len() && self.host_groups[next].from == i {
 				let group = self.host_groups[next];
-				// a script's program hoists `var` like a script; a fragment is where a template's expressions sit
+				// a script's program hoists `var` like a script; a fragment is where the markup's expressions sit
 				let node = group.node.unwrap_or(id);
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
@@ -1233,7 +1236,7 @@ impl<'a> Binder<'a> {
 		}
 	}
 
-	/// Visits a piece of JavaScript the host read on its own, recording what the tables gain for it.
+	/// Visits a piece of JavaScript the walker read on its own, recording what the tables gain for it.
 	fn root(&mut self, node: NodeId, f: impl FnOnce(&mut Self)) {
 		let index = self.out.roots.len() as u32;
 		let from = (
@@ -1850,7 +1853,7 @@ mod tests {
 		);
 	}
 
-	/// The walk declares a function's own `arguments` when the function closes, so a host's root
+	/// The walk declares a function's own `arguments` when the function closes, so a component's root
 	/// lists it with the rest of the piece, and resolution declares nothing.
 	#[test]
 	fn arguments_is_declared_by_the_walk() {

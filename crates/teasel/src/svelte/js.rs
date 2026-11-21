@@ -8,7 +8,7 @@ use crate::lexer::scan::{find, find_pair, is_space};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
 
-/// Whether the document is TypeScript: a script tag says `lang="ts"`.
+/// Whether the component is TypeScript: a script tag says `lang="ts"`.
 pub(crate) fn typescript(src: &str) -> bool {
 	tag_carries(src, "script", &[("lang", Some("ts"))])
 }
@@ -138,7 +138,7 @@ impl<'a> Walker<'a> {
 		let mut parser = Parser::<TS>::new(src, self.at, self.options, stop, ast);
 		let first = parser.tok.start;
 		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
-			// the placeholder spans what was read: a host copies an expression's text by its range
+			// the placeholder spans what was read: a snippet's type parameters are copied as text by their range
 			Err(error) if parser.recovering() => {
 				let at = error.pos;
 				parser.record(Err(error)).unwrap();
@@ -179,7 +179,7 @@ impl<'a> Walker<'a> {
 	fn program_in<const TS: bool>(&mut self, start: u32, end: u32) -> Result<NodeId> {
 		let ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
-		// the template may declare what the script exports
+		// the markup may declare what the script exports
 		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
 		let mut parser = Parser::<TS>::new(src, start, options, "", ast);
 		let program = parser.start().and_then(|()| parser.parse_program());
@@ -193,7 +193,7 @@ impl<'a> Walker<'a> {
 		self.ast().add(NodeKind::Identifier { name }, start, end)
 	}
 
-	/// An identifier the host reads itself, as a node.
+	/// An identifier the walker reads itself, as a node.
 	pub(crate) fn identifier(&mut self) -> Result<NodeId> {
 		let start = self.at;
 		match self.char() {

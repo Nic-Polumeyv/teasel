@@ -27,9 +27,9 @@ thread_local! {
 	pub(super) static SHAPES: RefCell<Shapes> = RefCell::default();
 }
 
-/// Parses a Svelte document: the host's tree with the JavaScript inside it, positions of the
-/// whole source. Returns the tree and its root.
-pub(crate) fn parse_document(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
+/// Parses a Svelte component: its tree with the JavaScript inside it, positions of the whole
+/// source. Returns the tree and its root.
+pub(crate) fn parse_component(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
 	SHAPES.with(|shapes| {
 		let full = src.len() as u32;
 		let cut = src.trim_end_matches(is_space);
@@ -69,7 +69,7 @@ impl<T> Pool<T> {
 	}
 }
 
-/// What the walker is inside: the document, an element, or a block.
+/// What the walker is inside: the component, an element, or a block.
 enum Frame {
 	Root {
 		nodes: Vec<NodeId>,
@@ -185,7 +185,7 @@ impl<'a> Walker<'a> {
 		self.rest().starts_with(s)
 	}
 
-	/// A word of the host's, followed by nothing that continues an identifier.
+	/// A word of Svelte's, followed by nothing that continues an identifier.
 	pub(crate) fn word(&self, s: &str) -> bool {
 		self.matches(s) && !self.rest()[s.len()..].starts_with(is_id_continue)
 	}
@@ -298,7 +298,7 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	// ── the document
+	// ── the component
 
 	fn run(&mut self) -> Result<NodeId> {
 		let len = self.len();

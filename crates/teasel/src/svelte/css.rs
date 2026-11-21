@@ -1,4 +1,4 @@
-//! The CSS of a style element: rules, at-rules and declarations as host nodes, selectors in
+//! The CSS of a style element: rules, at-rules and declarations as Svelte's nodes, selectors in
 //! full, values as text with their comments listed.
 
 use super::Walker;

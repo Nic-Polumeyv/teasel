@@ -12,7 +12,7 @@ use crate::ast::{HostRow, List, NodeId, NodeKind, Opens, Run, Value};
 pub(crate) struct Name(pub(crate) u32);
 
 impl Name {
-	/// No name: a node of the host's without a type, a block whose body is not filed.
+	/// No name: a node without a type, a style element's content; a block whose body is not filed.
 	pub(crate) const NONE: Name = Name(u32::MAX);
 }
 
@@ -66,7 +66,7 @@ pub(crate) const NAMES: [&str; COUNT] = {
 	out
 };
 
-/// The shapes of the host's nodes, numbered for good as the walker meets them: a node's
+/// The shapes of Svelte's nodes, numbered for good as the walker meets them: a node's
 /// type and each field's name and kind of value. The decoder builds the
 /// nodes of one shape by one literal.
 #[derive(Clone, Debug, Default)]
@@ -110,8 +110,8 @@ impl Shapes {
 	}
 }
 
-/// Every type of node a document holds, each with the fields that hold nodes or lists of them:
-/// what a walk over a document follows.
+/// Every type of node a component holds, each with the fields that hold nodes or lists of them:
+/// what a walk over a component follows.
 pub(crate) fn children() -> Vec<(&'static str, Vec<&'static str>)> {
 	let element = ["attributes", "fragment"];
 	let mut out: Vec<(&'static str, Vec<&'static str>)> = vec![
