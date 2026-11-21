@@ -282,7 +282,7 @@ crate::layout::record! {
 impl HostRow {
 	/// A fragment has no span, and only teasel makes one.
 	pub fn spanned(&self) -> bool {
-		self.ty != crate::host::own::Fragment.0
+		self.ty != crate::svelte::own::Fragment.0
 	}
 }
 

@@ -4,7 +4,7 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::host;
+use crate::svelte;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
 use crate::positions::{Cursor, Positions};
@@ -165,11 +165,11 @@ pub fn layout_json() -> String {
 	w.end();
 	// the names the hosts' rows number, a stylesheet's and a Svelte component's alike
 	w.key("names");
-	texts(&mut w, host::svelte::NAMES.iter().copied());
+	texts(&mut w, svelte::walker::NAMES.iter().copied());
 	w.key("stylesheet");
-	children_table(&mut w, host::stylesheet_children());
+	children_table(&mut w, svelte::stylesheet_children());
 	w.key("svelte");
-	children_table(&mut w, host::svelte::children());
+	children_table(&mut w, svelte::walker::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -305,7 +305,7 @@ pub(crate) fn read<R>(
 	offset: u32,
 	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
 ) -> R {
-	let says = entry == Entry::Svelte && host::svelte::typescript(source);
+	let says = entry == Entry::Svelte && svelte::walker::typescript(source);
 	let options = if !options.typescript() && says {
 		options.with(Options::TYPESCRIPT)
 	} else {

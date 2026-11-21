@@ -5,7 +5,7 @@
 mod core;
 mod css;
 pub(crate) mod entities;
-pub(crate) mod svelte;
+pub(crate) mod walker;
 
 pub(crate) use self::core::own;
 use self::core::Core;
@@ -20,7 +20,7 @@ pub(crate) fn stylesheet_children() -> Vec<(&'static str, Vec<&'static str>)> {
 /// The whole source as a CSS stylesheet; see `Core::stylesheet`. Its rows are numbered among
 /// Svelte's, by the same names.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	svelte::SHAPES.with(|shapes| {
+	walker::SHAPES.with(|shapes| {
 		let mut core = Core::new(src, src.len() as u32, shapes.borrow_mut(), options, reused);
 		let root = core.stylesheet();
 		(core.ast.take().unwrap(), root)

@@ -125,12 +125,12 @@ pub(crate) fn parse_at(
 	reused: Option<Box<Ast>>,
 ) -> (Box<Ast>, Result<(List, u32)>) {
 	if entry == Entry::StyleSheet {
-		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
+		let (mut ast, root) = crate::svelte::parse_stylesheet(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
 	if entry == Entry::Svelte {
-		let (mut ast, root) = crate::host::svelte::parse_document(src, options, reused);
+		let (mut ast, root) = crate::svelte::walker::parse_document(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}

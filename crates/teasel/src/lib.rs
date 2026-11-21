@@ -6,7 +6,7 @@ pub mod engine;
 pub mod error;
 pub mod estree;
 pub mod handed;
-pub(crate) mod host;
+pub(crate) mod svelte;
 pub mod interner;
 pub(crate) mod json;
 pub mod layout;
