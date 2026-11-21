@@ -36,6 +36,7 @@
 		"test": "npm run build:js && node scripts/test.ts && node --no-addons scripts/test.ts && node scripts/test.ts web interpret && node --input-type=commonjs -e \"require('@teasel/parser').parse('x')\" && node --no-addons --input-type=commonjs -e \"require('@teasel/parser').parse('x')\"",
 		"types": "tsc -p tsconfig.json",
 		"check": "npm run build:js && node scripts/check.ts",
+		"bench": "npm run build:js && node scripts/bench.ts",
 		"prepublishOnly": "npm run build:js"
 	},
 	"dependencies": {
@@ -43,6 +44,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^26.0.0",
+		"svelte": "5.59.1",
 		"typescript": "7.0.2"
 	}
 }
