@@ -1,4 +1,4 @@
-// node scripts/bench.ts [--rounds N] [--warmup N] [--json] DIR...: every .svelte file under the directories, parsed by
+// node scripts/bench.ts [--rounds N] [--warmup N] [--gc] [--json] DIR...: every .svelte file under the directories, parsed by
 // Svelte's parser and by teasel with the Svelte grammar, and the times compared. `npm run build:js` first, and the addon
 // or `npm run build:wasm`; `node --no-addons scripts/bench.ts` times WebAssembly. Without a directory it reads the
 // Svelte host tests, which are too few and too small to stand for real components.
@@ -16,6 +16,7 @@ interface Request {
 	inputs: Input[];
 	rounds: number;
 	warmup: number;
+	gc: boolean;
 }
 /** Per kept round: the whole corpus's time, and the part spent in `engine.parse`. */
 interface Answer {
@@ -37,7 +38,7 @@ async function svelteInternal(): Promise<(text: string) => unknown> {
 
 // a child: one job, timed alone, because the decoder builds code per option set, and one process given several parses each of them slower
 if (process.argv[2] === '--child') {
-	process.once('message', async ({ job, inputs, rounds, warmup }: Request) => {
+	process.once('message', async ({ job, inputs, rounds, warmup, gc }: Request) => {
 		let inside = 0;
 		let run: (input: Input) => unknown;
 		if (job === 'svelte') {
@@ -68,7 +69,8 @@ if (process.argv[2] === '--child') {
 		}
 		const answer: Answer = { totals: [], engines: [] };
 		for (let round = 0; round < warmup + rounds; round++) {
-			globalThis.gc?.();
+			// a full collection before each round slowed the next round's decoding about twice over, engine time barely moving: decode share 21–22% without and 36–38% with on WebAssembly, 27% and 42% on the addon (2026-11-21)
+			if (gc) globalThis.gc!();
 			inside = 0;
 			const start = performance.now();
 			for (const input of inputs) run(input);
@@ -88,16 +90,18 @@ async function main() {
 	let rounds = 40;
 	let warmup = 10;
 	let json = false;
+	let gc = false;
 	const dirs: string[] = [];
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--json') json = true;
+		else if (arg === '--gc') gc = true;
 		else if (arg === '--rounds' || arg === '--warmup') {
 			const n = Number(args[++i]);
 			if (!Number.isInteger(n) || n < (arg === '--rounds' ? 1 : 0)) throw new Error(`${arg} takes a count`);
 			if (arg === '--rounds') rounds = n;
 			else warmup = n;
-		} else if (arg.startsWith('--')) throw new Error(`${arg} is not an option: --rounds N, --warmup N, --json`);
+		} else if (arg.startsWith('--')) throw new Error(`${arg} is not an option: --rounds N, --warmup N, --gc, --json`);
 		else dirs.push(arg);
 	}
 	const fallback = dirs.length === 0;
@@ -172,10 +176,10 @@ async function main() {
 	const time = (job: Job, inputs: Input[]) =>
 		new Promise<Answer>((resolve, reject) => {
 			// --no-addons carries over with the parent's flags; the fallback warning was shown once here already
-			const child = fork(new URL(import.meta.url).pathname, ['--child'], { execArgv: [...process.execArgv, '--expose-gc', '--no-warnings'] });
+			const child = fork(new URL(import.meta.url).pathname, ['--child'], { execArgv: [...process.execArgv, ...(gc ? ['--expose-gc'] : []), '--no-warnings'] });
 			child.once('message', (answer: Answer) => resolve(answer));
 			child.once('exit', (code) => (code === 0 ? undefined : reject(new Error(`${job} exited with ${code}`))));
-			child.send({ job, inputs, rounds, warmup } satisfies Request);
+			child.send({ job, inputs, rounds, warmup, gc } satisfies Request);
 		});
 	const stats = (values: number[]) => {
 		const sorted = [...values].sort((a, b) => a - b);
@@ -211,6 +215,7 @@ async function main() {
 		svelte: JSON.parse(readFileSync(new URL('package.json', svelteDir), 'utf8')).version as string,
 		rounds,
 		warmup,
+		gc,
 		corpus: {
 			fallback,
 			found: paths.length,
@@ -245,7 +250,7 @@ async function main() {
 	console.log(fallback ? `corpus: the Svelte host tests, ${c.found} files; too few and too small to stand for real components, pass directories of them` : `corpus: ${dirs.join(' ')}`);
 	console.log(`  ${c.found} .svelte files, ${c.unique} unique; Svelte rejected ${c.svelteRejected}, teasel ${c.teaselRejected}; ${c.timed} timed`);
 	console.log(`  ${kb(c.bytes)} in all, ${kb(c.bytes / c.timed)} on average; ${c.typescript} in TypeScript, ${c.styles} with a style of ${kb(c.styleBytes)} in all`);
-	console.log(`engine: ${result.engine === 'native' ? 'native addon' : 'WebAssembly'}; Node ${result.node}, svelte ${result.svelte}; ${rounds} rounds after ${warmup} warm-up, each row in its own process`);
+	console.log(`engine: ${result.engine === 'native' ? 'native addon' : 'WebAssembly'}; Node ${result.node}, svelte ${result.svelte}; ${rounds} rounds after ${warmup} warm-up${gc ? ', a full collection before each' : ''}, each row in its own process`);
 	console.log(`\n${''.padEnd(30)}${'p10 ms'.padStart(9)}${'median ms'.padStart(11)}${'engine ms'.padStart(11)}${'decode ms'.padStart(11)}${'decode'.padStart(8)}`);
 	const line = (label: string, r: ReturnType<typeof row>) =>
 		console.log(`${label.padEnd(30)}${ms(r.total.p10)}  ${ms(r.total.median)}` + (r.engine ? `  ${ms(r.engine.median)}  ${ms(r.decode!.median)}  ${pct(r.decodeShare!)}` : ''));
