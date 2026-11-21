@@ -19,7 +19,7 @@ const { node } = parse(text, { typescript: true, scopes: true });      // the wh
 const { node: expression } = parseAt(text, js.expression, 7);           // one expression, at offset 7
 ```
 
-The tree is plain ESTree. The options add to the answer: [what parse returns](https://teasel.dev/what-parse-returns) lists them. The scopes, bindings and references hang beside the tree, reached from a node: [scopes](https://teasel.dev/scopes). A template language hands over its whole syntax as a grammar and gets the whole document back as one tree, in one parse: [parsing with a grammar](https://teasel.dev/parsing-with-a-grammar). `parseAt` reads one piece of a text instead, stopping at the host's own tokens: [embedded JavaScript](https://teasel.dev/embedded-javascript). Everything else is at [teasel.dev](https://teasel.dev).
+The tree is plain ESTree. The options add to the answer. The scopes, bindings and references hang beside the tree, reached from a node. A template language hands over its whole syntax as a grammar and gets the whole document back as one tree, in one parse. `parseAt` reads one piece of a text instead, stopping at the host's own tokens.
 
 ## Rust and the command line
 
