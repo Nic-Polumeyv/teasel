@@ -12,9 +12,7 @@ use teasel::Entry;
 use teasel::Options;
 use teasel::estree::parse_document;
 use teasel::host::grammar::definition::{self, Bind, Definition, Node, Source};
-use teasel::host::grammar::{
-	Arena, Construct, DirectiveValue, DocField, Grammar, Item, Place, Record, RootField, Unique,
-};
+use teasel::host::grammar::{Arena, Construct, DocField, Grammar, Item, Place, Record, RootField, Unique};
 
 /// A list of a definition, kept for the process.
 macro_rules! list {
@@ -102,16 +100,14 @@ fn documents() {
 #[test]
 fn every_prefix_answers() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	for name in ["svelte", "vue"] {
-		let grammar = fs::read_to_string(root.join("tests/hosts").join(name).join("host.json")).unwrap();
-		for file in common::inputs(&root.join("tests/hosts").join(name)) {
-			let source = fs::read_to_string(&file).unwrap();
-			for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
-				for recover in [false, true] {
-					let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
-					let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
-					parse_document(&source[..end], &grammar, options);
-				}
+	let grammar = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
+	for file in common::inputs(&root.join("tests/hosts/svelte")) {
+		let source = fs::read_to_string(&file).unwrap();
+		for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
+			for recover in [false, true] {
+				let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
+				let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
+				parse_document(&source[..end], &grammar, options);
 			}
 		}
 	}
@@ -119,13 +115,11 @@ fn every_prefix_answers() {
 
 #[test]
 fn names_are_escaped() {
-	let vue = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hosts/vue/host.json")).unwrap();
-	let grammar = vue.replacen(r#""node":"Root""#, r#""node":"Ro\"ot""#, 1).replacen(
-		r#"{"content":{"from":"js""#,
-		r#"{"con\"tent":{"from":"js""#,
-		1,
-	);
-	let answer = parse_document("<div>{{ hi }}</div>", &grammar, Options(Options::MODULE));
+	let mut host = minimal();
+	host.document.node = "Ro\"ot";
+	host.constructs = Some(Record(list![("Interpolation", expression("con\"tent"))]));
+	let grammar = host.json();
+	let answer = parse_document("{ hi }", &grammar, Options(Options::MODULE));
 	assert!(
 		answer.contains(r#""type":"Ro\"ot""#) && answer.contains(r#""con\"tent":{"#),
 		"{answer}"
@@ -138,13 +132,11 @@ fn names_are_escaped() {
 	);
 }
 
-/// The unfinished and odd inputs the audit found panicking, and the fallback from one expression
-/// to statements, which must not settle for what recovery makes of the expression.
+/// The unfinished and odd inputs the audit found panicking.
 #[test]
 fn unfinished_input() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
-	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
 	let parse = |source: &str, grammar: &str, recover: bool| {
 		let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
 		parse_document(source, grammar, Options(Options::MODULE | Options::COMMENTS | recovery))
@@ -156,22 +148,12 @@ fn unfinished_input() {
 	for source in ["<script / ></script>", "<script / é></script>"] {
 		assert!(parse(source, &svelte, true).contains("\"type\":\"Root\""));
 	}
-	assert!(parse("<a @x=\"@\"/>", &vue, false).contains("\"node\":null"));
+	assert!(parse("<a on:x={@}/>", &svelte, false).contains("\"node\":null"));
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let blocks = format!("{}{}", "{#if a}".repeat(40_000), "{/if}".repeat(40_000));
 	for deep in [elements, blocks] {
 		assert!(parse(&deep, &svelte, false).contains(&format!("\"code\":{},", Code::NestingDepth as u8)));
 	}
-	let program = parse("<button @click=\"let x = 1\"/>", &vue, true);
-	assert!(
-		program.contains("\"type\":\"VariableDeclaration\"") && !program.contains("\"errors\":[{"),
-		"{program}"
-	);
-	let program = parse("<button @click=\"if (ok) foo()\"/>", &vue, true);
-	assert!(
-		program.contains("\"type\":\"IfStatement\"") && !program.contains("\"errors\":[{"),
-		"{program}"
-	);
 }
 
 /// A script, a style sheet and raw text end at the first closing tag, read by one rule, wherever
@@ -180,7 +162,16 @@ fn unfinished_input() {
 fn raw_text_ends_at_its_closing_tag() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let svelte = fs::read_to_string(root.join("tests/hosts/svelte/host.json")).unwrap();
-	let vue = fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap();
+	// a host whose script is an element like any other, which may stand first in the document
+	let mut host = minimal();
+	elements(&mut host).rules = Some(Record(list![(
+		"script",
+		definition::Element {
+			content: Some(definition::Content::Raw),
+			..element("Element")
+		},
+	)]));
+	let plain = host.json();
 	let parse = |source: &str, grammar: &str| parse_document(source, grammar, Options(Options::MODULE));
 	let unclosed = format!(r#""code":{},"args":["script"]"#, Code::Unclosed as u8);
 	for pad in 0..9 {
@@ -230,7 +221,7 @@ fn raw_text_ends_at_its_closing_tag() {
 			for closer in ["</script>", "</SCRIPT x>"] {
 				for (source, grammar) in [
 					(format!("<div><script>{pad}{body}{closer}</div>"), &svelte),
-					(format!("<script>{pad}{body}{closer}"), &vue),
+					(format!("<script>{pad}{body}{closer}"), &plain),
 				] {
 					let answer = parse(&source, grammar);
 					assert!(
@@ -1619,45 +1610,6 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(text(elements.other.as_ref().unwrap().ty), "RegularElement");
 	assert_eq!(text(elements.tag("svelte:head").0.unwrap().ty), "SvelteHead");
 	assert!(elements.tag("div").0.is_none());
-}
-
-#[test]
-fn reads_the_vue_grammar() {
-	let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-	let grammar = Grammar::read(keep(
-		fs::read_to_string(root.join("tests/hosts/vue/host.json")).unwrap(),
-	))
-	.unwrap();
-	assert_eq!(construct(&grammar, "Interpolation").open.marker, ["{{"]);
-	assert!(!grammar.constructs.iter().any(|c| c.stands(Place::Value)) && !grammar.autoclose);
-	let directives = grammar.directives.as_ref().unwrap();
-	assert_eq!(
-		(directives.prefix, directives.modifier, directives.dynamic),
-		(Some("v-"), ".", Some(("[", "]")))
-	);
-	assert_eq!(directives.shorthands.len(), 4);
-	assert_eq!(directives.shorthands[3].modifiers, ["prop"]);
-	let for_ = directives.rule("for").unwrap();
-	let DirectiveValue::Form(form) = &for_.value else {
-		panic!()
-	};
-	assert!(matches!(form.items[1], Item::Group { required: true, .. }));
-	assert!(std::ptr::eq(
-		directives.rule("anything").unwrap(),
-		directives.other.as_ref().unwrap()
-	));
-	let text = |name| grammar.text(name);
-	assert_eq!(
-		(for_.kind.map(text), for_.raw.map(text)),
-		(Some("kind"), Some("rawName"))
-	);
-	assert_eq!(
-		for_.declares
-			.as_ref()
-			.map(|names| names.iter().map(|&name| text(name)).collect::<Vec<_>>()),
-		Some(vec!["value", "key", "index"])
-	);
-	assert_eq!(grammar.verbatim, Some("v-pre"));
 }
 
 // a repeating branch's node ends where the next branch or the close starts; after a branch read

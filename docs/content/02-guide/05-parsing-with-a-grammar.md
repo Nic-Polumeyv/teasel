@@ -112,6 +112,6 @@ errors.map((e) => e.code);                   // ['unclosed', 'expected']
 node.fragment.nodes[0].type;                 // 'Element', read as far as it went
 ```
 
-## Example grammars
+## Example grammar
 
-The package's own tests carry two whole grammars, one for a component language with script and style blocks, directives and `{#each}`-style blocks, and one for a template language with prefixed directives and `{{ }}` interpolation, in `npm/scripts/hosts`. Between them they use every builder.
+The package's own tests carry a whole grammar for a component language with script and style blocks, directives and `{#each}`-style blocks, in `npm/scripts/hosts`.
