@@ -136,7 +136,7 @@ export interface Kept extends Span {
  * `expected '}'`.
  */
 export interface Recovered {
-	/** What went wrong, for a host to branch on; what each code means is at Error codes. */
+	/** What went wrong, for a caller to branch on; what each code means is at Error codes. */
 	code: Code;
 	/** What the error is about, a name or a token, when the code takes any. */
 	args: readonly string[];

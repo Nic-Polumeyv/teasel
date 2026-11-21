@@ -607,7 +607,7 @@ if (name !== 'native') {
 			assert.ok(type in table, `${what}: ${type} is not in children`);
 			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key), `${what}: ${type}.${key} holds nodes but children does not name it`);
 		}
-		// js's table comes from the layout, so a stale entry there is impossible; css's and the hosts' are spelled by hand
+		// js's table comes from the layout, so a stale entry there is impossible; css's and Svelte's are spelled by hand
 		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
 		if (byHand) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
 		seen.clear();
