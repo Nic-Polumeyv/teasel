@@ -299,8 +299,6 @@ enum Frame<'a> {
 		nodes: Vec<NodeId>,
 		/// The attributes on it that keep an element rule's `outside` from applying inside.
 		outside: Vec<&'static str>,
-		/// The element made its subtree verbatim.
-		verbatim: bool,
 		/// The patterns its directives declare in its scope.
 		declared: Vec<NodeId>,
 	},
@@ -352,9 +350,8 @@ type Attribute = (NodeId, Option<(Name, StrId)>);
 /// An attribute name read as a directive: its rule, name, argument and modifiers.
 struct Directive<'a> {
 	rule: &'a DirectiveRule,
-	name: &'a str,
-	/// The argument's text and span, and whether it is an expression in brackets.
-	arg: Option<(&'a str, u32, u32, bool)>,
+	/// The argument's text and span.
+	arg: (&'a str, u32, u32),
 	modifiers: Vec<&'a str>,
 }
 
@@ -380,8 +377,6 @@ struct Walker<'a> {
 	marks: Vec<Mark<'a>>,
 	/// The element the browser closed last, what closed it and how deep the stack was then.
 	autoclosed: Option<(&'a str, &'a str, usize)>,
-	/// How many open elements made their subtree verbatim.
-	verbatim: u32,
 	/// How many CSS blocks and pseudo-class argument lists are open.
 	nesting: u32,
 	/// The patterns the directives of the element being read declare.
@@ -483,7 +478,6 @@ impl<'a> Walker<'a> {
 			end: "",
 			marks: Vec::new(),
 			autoclosed: None,
-			verbatim: 0,
 			nesting: 0,
 			declared: Vec::new(),
 			fields: Pool::default(),
@@ -813,22 +807,12 @@ impl<'a> Walker<'a> {
 		bytes[i] == b'<' && !matches!(bytes.get(i + 1), Some(b) if !b.is_ascii_alphabetic() && *b != b'/' && *b != b'!')
 	}
 
-	/// Skips whitespace up to `limit`.
-	fn space_to(&mut self, limit: u32) {
-		while self.at < limit {
-			match self.char() {
-				Some(c) if is_space(c) => self.at += c.len_utf8() as u32,
-				_ => break,
-			}
-		}
-	}
-
 	fn run(&mut self) -> Result<NodeId> {
 		while self.at < self.len() {
 			let before = self.at;
 			let result = if self.byte() == Some(b'<') && self.tag_start(self.at as usize) {
 				self.element()
-			} else if self.verbatim == 0 && self.construct_starts(self.at as usize) {
+			} else if self.construct_starts(self.at as usize) {
 				self.construct()
 			} else {
 				self.text_node();
@@ -957,7 +941,7 @@ impl<'a> Walker<'a> {
 		// the first character is text whatever it is
 		let mut i = self.at as usize + self.char().map_or(1, char::len_utf8);
 		while i < bytes.len() {
-			if (bytes[i] == b'<' && self.tag_start(i)) || (self.verbatim == 0 && self.construct_starts(i)) {
+			if (bytes[i] == b'<' && self.tag_start(i)) || self.construct_starts(i) {
 				break;
 			}
 			i += 1;
@@ -1079,15 +1063,13 @@ impl<'a> Walker<'a> {
 		let at_root = self.frames.len() == 1;
 		let script = self.grammar.script.as_ref().filter(|s| s.name == name && at_root);
 		let style = self.grammar.style.filter(|s| *s == name && at_root);
-		let attributes_at = self.at;
-		let verbatim_before = self.verbatim;
 		let mut attributes = self.nodes.take();
 		let mut seen = std::mem::take(&mut self.seen);
 		seen.clear();
 		let mut outside = Vec::new();
 		self.declared.clear();
 		loop {
-			let attribute = if script.is_some() || style.is_some() || self.verbatim > 0 {
+			let attribute = if script.is_some() || style.is_some() {
 				self.static_attribute()?
 			} else {
 				self.attribute()?
@@ -1095,16 +1077,6 @@ impl<'a> Walker<'a> {
 			let Some((node, key)) = attribute else { break };
 			if let Some((kind, key)) = key {
 				let text = self.tree().strings.get(key);
-				if self.verbatim == verbatim_before && Some(text) == self.grammar.verbatim {
-					// what came before is read again as plain attributes
-					self.verbatim += 1;
-					self.at = attributes_at;
-					attributes.clear();
-					seen.clear();
-					outside.clear();
-					self.declared.clear();
-					continue;
-				}
 				if kind == own::Attribute
 					&& ty == plain && let Some(&mark) = elements.outside.iter().find(|mark| **mark == text)
 				{
@@ -1124,7 +1096,6 @@ impl<'a> Walker<'a> {
 			self.space();
 		}
 		self.seen = seen;
-		let verbatim_here = self.verbatim > verbatim_before;
 		let declared = std::mem::take(&mut self.declared);
 		let mut fields = self.fields.take();
 		if let Some((field, text)) = rule.this {
@@ -1256,9 +1227,6 @@ impl<'a> Walker<'a> {
 		let finish =
 			|w: &mut Self, attributes: Vec<NodeId>, fields: Vec<(Name, Value)>, nodes: Vec<NodeId>, end: u32| {
 				w.element_node(ty, (start, end), attributes, fields, nodes, &declared);
-				if verbatim_here {
-					w.verbatim -= 1;
-				}
 			};
 		if self_closing || unclosed {
 			let end = self.at;
@@ -1304,7 +1272,6 @@ impl<'a> Walker<'a> {
 			fields,
 			nodes,
 			outside,
-			verbatim: verbatim_here,
 			declared,
 		});
 		Ok(())
@@ -1353,7 +1320,6 @@ impl<'a> Walker<'a> {
 			attributes,
 			fields,
 			nodes,
-			verbatim,
 			declared,
 			..
 		}) = self.frames.pop()
@@ -1361,9 +1327,6 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		self.element_node(ty, (start, end), attributes, fields, nodes, &declared);
-		if verbatim {
-			self.verbatim -= 1;
-		}
 	}
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
@@ -1440,8 +1403,8 @@ impl<'a> Walker<'a> {
 		Ok(Value::Nodes(list))
 	}
 
-	/// `name`, `name=value` or `name="text"`: a plain attribute, as a script tag or a verbatim
-	/// element takes them.
+	/// `name`, `name=value` or `name="text"`: a plain attribute, as a script or style tag takes
+	/// them.
 	fn static_attribute(&mut self) -> Result<Option<Attribute>> {
 		let start = self.at;
 		let name = self.tag_name(true)?;
@@ -1489,35 +1452,16 @@ impl<'a> Walker<'a> {
 		let Some(directives) = &self.grammar.directives else {
 			return Ok(None);
 		};
-		let mut base_modifiers: &[&'static str] = &[];
-		let mut rule = None;
-		let (directive, rest, rest_at): (&'a str, &'a str, usize) = if let Some(shorthand) = directives
-			.shorthands
-			.iter()
-			.find(|s| name.starts_with(s.token) && directives.prefix.is_none_or(|p| !name.starts_with(p)))
-		{
-			base_modifiers = &shorthand.modifiers;
-			(shorthand.name, &name[shorthand.token.len()..], shorthand.token.len())
-		} else if let Some(prefix) = directives.prefix {
-			let Some(after) = name.strip_prefix(prefix) else {
-				return Ok(None);
-			};
-			let len = after
-				.find(|c: char| directives.arg.starts_with(c) || directives.modifier.starts_with(c))
-				.unwrap_or(after.len());
-			let rest = after[len..].strip_prefix(directives.arg).unwrap_or(&after[len..]);
-			(&after[..len], rest, name.len() - rest.len())
-		} else {
-			let Some((head, tail)) = name.split_once(directives.arg) else {
-				return Ok(None);
-			};
-			rule = directives.rule(head);
-			if rule.is_none() {
-				return Ok(None);
-			}
-			(head, tail, head.len() + directives.arg.len())
+		let Some((directive, rest)) = name.split_once(directives.arg) else {
+			return Ok(None);
 		};
-		if directive.is_empty() {
+		let Some(rule) = directives.rule(directive) else {
+			return Ok(None);
+		};
+		let rest_at = directive.len() + directives.arg.len();
+		// the argument, then the modifiers
+		let len = rest.find(directives.modifier).unwrap_or(rest.len());
+		if len == 0 {
 			return self.fail(
 				start,
 				start + name.len() as u32,
@@ -1525,48 +1469,12 @@ impl<'a> Walker<'a> {
 				Some("a directive name"),
 			);
 		}
-		let Some(rule) = rule.or_else(|| directives.rule(directive)) else {
-			return Ok(None);
-		};
-		// the argument, in brackets when it is an expression, then the modifiers
-		let mut modifiers = Vec::new();
-		let mut arg = None;
-		let after = if let Some((open, close)) = directives.dynamic
-			&& let Some(inner) = rest.strip_prefix(open)
-		{
-			let Some(len) = inner.find(close) else {
-				return self.fail(start, start + name.len() as u32, Code::Expected, Some(close));
-			};
-			let inner_at = rest_at + open.len();
-			arg = Some((&inner[..len], inner_at, inner_at + len, true));
-			&inner[len + close.len()..]
-		} else {
-			let len = rest.find(directives.modifier).unwrap_or(rest.len());
-			if len > 0 {
-				arg = Some((&rest[..len], rest_at, rest_at + len, false));
-			} else if directives.prefix.is_none() {
-				return self.fail(
-					start,
-					start + name.len() as u32,
-					Code::Expected,
-					Some("a directive name"),
-				);
-			}
-			&rest[len..]
-		};
-		for modifier in after.split(directives.modifier) {
-			if !modifier.is_empty() {
-				modifiers.push(modifier);
-			}
-		}
-		let mut all: Vec<&'a str> = base_modifiers.to_vec();
-		all.extend(modifiers);
-		Ok(Some(Directive {
-			rule,
-			name: directive,
-			arg: arg.map(|(text, s, e, dynamic)| (text, start + s as u32, start + e as u32, dynamic)),
-			modifiers: all,
-		}))
+		let arg = (&rest[..len], start + rest_at as u32, start + (rest_at + len) as u32);
+		let modifiers = rest[len..]
+			.split(directives.modifier)
+			.filter(|modifier| !modifier.is_empty())
+			.collect();
+		Ok(Some(Directive { rule, arg, modifiers }))
 	}
 
 	/// One attribute: a plain one, a shorthand, a spread, an attachment or a directive.
@@ -1624,33 +1532,13 @@ impl<'a> Walker<'a> {
 			);
 			return Ok(Some((node, Some((own::Attribute, name_id)))));
 		};
-		let directives = self.grammar.directives.as_ref().unwrap();
 		let rule = directive.rule;
 		let mut fields = self.fields.take();
-		if let Some(field) = rule.kind {
-			let id = self.intern(directive.name);
-			fields.push((field, Value::Str(id)));
-		}
-		if let Some(field) = rule.raw {
-			fields.push((field, Value::Slice(start, name_end)));
-		}
-		let value = match directive.arg {
-			Some((_, arg_start, arg_end, true)) => {
-				let (at, limit) = (self.at, self.limit);
-				self.at = arg_start;
-				self.limit = arg_end;
-				let expression = self.expression("");
-				self.at = at;
-				self.limit = limit;
-				Value::Node(expression?)
-			}
-			Some((text, _, _, false)) => Value::Str(self.intern(text)),
-			None => Value::Null,
-		};
-		fields.push((own::name, value));
-		let declares = rule.declares.as_deref();
-		match &rule.value {
-			&DirectiveValue::Value(field) => {
+		let (arg, arg_start, _) = directive.arg;
+		let arg = self.intern(arg);
+		fields.push((own::name, Value::Str(arg)));
+		match rule.value {
+			DirectiveValue::Value(field) => {
 				let value = if has_value {
 					self.plain_value()?
 				} else {
@@ -1661,12 +1549,12 @@ impl<'a> Walker<'a> {
 				}
 				fields.push((field, value));
 			}
-			&DirectiveValue::Expression {
+			DirectiveValue::Expression {
 				field,
 				optional,
 				name: own_name,
 			}
-			| &DirectiveValue::Pattern {
+			| DirectiveValue::Pattern {
 				field,
 				optional,
 				name: own_name,
@@ -1707,65 +1595,14 @@ impl<'a> Walker<'a> {
 				};
 				let expression = match expression {
 					Some(e) => Value::Node(e),
-					None if own_name => match directive.arg {
-						Some((text, arg_start, _, _)) => {
-							let id = self.intern(text);
-							Value::Node(self.ast().add(NodeKind::Identifier { name: id }, arg_start, end))
-						}
-						None => return self.fail(start, end, Code::Expected, Some("a value")),
-					},
+					None if own_name => Value::Node(self.ast().add(NodeKind::Identifier { name: arg }, arg_start, end)),
 					None if optional => Value::Null,
 					None => return self.fail(start, end, Code::Expected, Some("a value")),
 				};
-				if let (Some([]), Value::Node(pattern)) = (declares, expression) {
+				if let (true, Value::Node(pattern)) = (rule.declares, expression) {
 					self.declared.push(pattern);
 				}
 				fields.push((field, expression));
-			}
-			DirectiveValue::Form(form) => {
-				let mut read = Read {
-					fields: self.fields.take(),
-					body: None,
-				};
-				if has_value {
-					let (value_start, value_end, after) = self.value_range()?;
-					if value_end > value_start {
-						let limit = self.limit;
-						self.at = value_start;
-						self.limit = value_end;
-						let result = self.form(form, &mut read);
-						self.limit = limit;
-						result?;
-						self.space_to(value_end);
-						if self.at != value_end {
-							return self.fail(
-								self.at,
-								value_end,
-								Code::Expected,
-								Some("the end of the attribute value"),
-							);
-						}
-					}
-					self.at = after;
-					end = after;
-				}
-				fill_unread(&form.shape, &mut read.fields);
-				if let Some(names) = declares {
-					for &(field, value) in &read.fields {
-						if !names.contains(&field) {
-							continue;
-						}
-						match value {
-							Value::Node(pattern) => self.declared.push(pattern),
-							Value::Nodes(list) => {
-								let patterns: Vec<NodeId> = self.tree().list(list).iter().flatten().copied().collect();
-								self.declared.extend(patterns);
-							}
-							_ => {}
-						}
-					}
-				}
-				fields.extend(read.fields);
 			}
 		}
 		let from = self.ast().host_strings.len() as u32;
@@ -1780,14 +1617,10 @@ impl<'a> Walker<'a> {
 		}
 		let node = self.host(rule.ty, start, end, &fields);
 		self.fields.give(fields);
-		let key = if directives.unique {
-			Some((own::Attribute, self.intern(name)))
-		} else {
-			match (rule.unique, directive.arg) {
-				(Unique::Kind, Some((text, ..))) => Some((rule.ty, self.intern(text))),
-				(Unique::Attribute, Some((text, ..))) => Some((own::Attribute, self.intern(text))),
-				_ => None,
-			}
+		let key = match rule.unique {
+			Unique::Kind => Some((rule.ty, arg)),
+			Unique::Attribute => Some((own::Attribute, arg)),
+			Unique::No => None,
 		};
 		Ok(Some((node, key)))
 	}
@@ -1811,31 +1644,6 @@ impl<'a> Walker<'a> {
 			return Ok(Value::Nodes(list));
 		}
 		self.attribute_value(entry)
-	}
-
-	/// The span of the attribute value at the cursor, quoted or bare, and where the cursor goes
-	/// after it.
-	fn value_range(&mut self) -> Result<(u32, u32, u32)> {
-		let at = self.at;
-		match self.char() {
-			Some(q @ ('"' | '\'')) => {
-				let Some(len) = self.rest()[1..].find(q) else {
-					return self.fail(at, at, Code::Expected, Some("an attribute value"));
-				};
-				Ok((at + 1, at + 1 + len as u32, at + 2 + len as u32))
-			}
-			_ => {
-				let len = self
-					.rest()
-					.find(|c: char| c == '>' || is_space(c))
-					.unwrap_or(self.rest().len());
-				let len = self.rest()[..len].find("/>").unwrap_or(len);
-				if len == 0 {
-					return self.fail(at, at, Code::Expected, Some("an attribute value"));
-				}
-				Ok((at, at + len as u32, at + len as u32))
-			}
-		}
 	}
 
 	/// A quoted or bare attribute value: text with expressions, or one expression on its own.
@@ -1933,7 +1741,7 @@ impl<'a> Walker<'a> {
 				self.flush_text(chunk_start, at, &mut chunks);
 				return Ok(chunks);
 			}
-			if reads && self.verbatim == 0 && self.construct_starts(self.at as usize) {
+			if reads && self.construct_starts(self.at as usize) {
 				let start = self.at;
 				// what reads one expression here, unless the open of something else reads further
 				let (value, other) = self.value_here(start as usize, here);
@@ -2893,19 +2701,6 @@ impl<'a> Walker<'a> {
 				let roots = self.js(JsEntry::Statement, stops.joined)?;
 				Value::Node(self.first(roots))
 			}
-			Entry::Code => {
-				let (start, end) = (self.at, self.limit);
-				let whole = |host: &mut Self| {
-					host.space_to(end);
-					host.at >= end
-				};
-				if let Some(roots) = self.trial("", whole) {
-					return Ok(Value::Node(self.first(roots)));
-				}
-				let program = self.program(start, end)?;
-				self.at = end;
-				Value::Node(program)
-			}
 			Entry::TypeParameters => {
 				let node = self.js(JsEntry::TypeParameters, stops.joined)?;
 				let node = self.first(node);
@@ -2993,11 +2788,6 @@ impl<'a> Walker<'a> {
 				))
 			}
 		})
-	}
-
-	fn expression(&mut self, stop: &str) -> Result<NodeId> {
-		let roots = self.js(JsEntry::Expression, stop)?;
-		Ok(self.first(roots))
 	}
 
 	/// The JavaScript at the cursor, read by the parser into the same tree up to the limit; the

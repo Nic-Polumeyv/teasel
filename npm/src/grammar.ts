@@ -5,8 +5,8 @@ import { children as builtin, frozen } from './children.ts';
 
 declare const out: unique symbol;
 
-/** Where a source may be read: a form, a block's child list, a directive's attribute value, the document, a `this` attribute, a directive's name, a literal. */
-export type Site = 'form' | 'body' | 'value' | 'document' | 'this' | 'directive' | 'literal';
+/** Where a source may be read: a form, a block's child list, a directive's attribute value, the document, a `this` attribute, a literal. */
+export type Site = 'form' | 'body' | 'value' | 'document' | 'this' | 'literal';
 
 interface Mods {
 	optional: boolean;
@@ -59,8 +59,6 @@ export const js = {
 	identifiers: source<Identifier[], 'form'>('js', 'identifiers'),
 	statement: source<Statement, 'form'>('js', 'statement'),
 	const: source<VariableDeclaration, 'form'>('js', 'const'),
-	/** An expression, or its statements as a program when it is not one. */
-	code: source<Expression | Program, 'form'>('js', 'code'),
 	/** The type parameters' text, without the angle brackets. */
 	typeParameters: source<string, 'form'>('js', 'typeParameters'),
 	/** The text up to the tag's end word, unread. */
@@ -130,17 +128,13 @@ export interface Scope<I extends readonly unknown[]> {
 	readonly scope: I;
 }
 
-type Field<S extends Site, B extends Mods['bind'] = false, O extends boolean = boolean> = Source<any, S, { optional: O; bind: B; orArg: boolean; missing: boolean }>;
-/** A field the site always fills, so `optional` has no meaning on it. */
-type Always<S extends Site> = Field<S, false, false>;
+type Field<S extends Site, B extends Mods['bind'] = false> = Source<any, S, { optional: boolean; bind: B; orArg: boolean; missing: boolean }>;
 /** A form whose fields read what `F` allows, none named as `R`. */
 export type Form<F, R extends string = never> = readonly (string | Fields<F, R> | Opt<Form<F, R>> | OneOf<readonly Form<F, R>[]>)[];
 type Scoped<F, R extends string> = readonly (Fields<F, R> | Scope<Scoped<F, R>>)[];
 
-type DirectiveForm = Form<Field<'form', false | 'inside'> | Field<'value', false | 'inside'> | Source<boolean, 'literal', any> | Always<'directive'>, 'name' | 'modifiers'>;
+type DirectiveForm = Form<Field<'value', false | 'inside'> | Source<boolean, 'literal', any>, 'name' | 'modifiers'>;
 
-/** A sequence kept for reuse in several forms. */
-export const seq = <const I extends readonly Item[]>(...items: I): I => items;
 /** `[ … ]`: read when its first word or reader is there. */
 export const opt = <const I extends readonly [Item, ...Item[]]>(...items: I): Opt<I> => ({ opt: items });
 /** `{ a | b }`: exactly one, chosen by how it starts; wrap in `opt` for at most one. */
@@ -203,16 +197,10 @@ export interface Block {
 /** A tag or a block; the type of the node it makes is the key it is written under. */
 export type Construct = Tag | Block;
 
+/** A directive reads one value, in `opt` when it may be missing, beside its flags. */
 export interface Directive<T extends string = string> extends Node<T, DirectiveForm> {
 	readonly unique?: 'kind' | 'attributes';
 }
-/** What a directive's attribute name holds besides the `name` and `modifiers` every directive node has. */
-export const directive = {
-	/** The directive's own name, for a host whose node types do not say it: `bind` of `v-bind:value`. */
-	kind: source<string, 'directive'>('directive', 'name'),
-	/** The attribute name as written. */
-	raw: source<string, 'directive'>('directive', 'raw'),
-};
 
 export interface Element<T extends string = string> extends Node<T, Form<Field<'this'>, 'name' | 'attributes' | 'fragment'>> {
 	readonly root?: true;
@@ -247,7 +235,6 @@ export interface Definition {
 	readonly autoclose?: true;
 	readonly trim?: true;
 	readonly void?: readonly string[];
-	readonly verbatim?: string;
 	readonly elements?: {
 		/** Prefixes of the host's own tags. A tag that starts with one is read only by a rule of its own in `rules`: with none it is the error `invalid_name`. */
 		readonly reserved?: readonly string[];
@@ -258,15 +245,9 @@ export interface Definition {
 	readonly script?: { readonly element: string; readonly module?: readonly Marker[]; readonly typescript?: readonly Marker[] };
 	readonly style?: string;
 	readonly directives?: {
-		readonly prefix?: string;
 		readonly arg?: string;
 		readonly modifier?: string;
-		/** The brackets around an argument that is an expression, which `name` then holds. */
-		readonly dynamic?: readonly [open: string, close: string];
-		readonly unique?: 'raw';
-		readonly shorthands?: { readonly [token: string]: readonly [name: string, ...modifiers: string[]] };
 		readonly rules?: { readonly [name: string]: Directive };
-		readonly other?: Directive;
 	};
 	/** By the type of the node each makes. */
 	readonly constructs?: { readonly [type: string]: Construct };
@@ -304,27 +285,23 @@ type Step<H, Maybe extends boolean> = H extends string
 type Out<S> = S extends { readonly [out]?: { readonly t: infer T } } ? T : never;
 type ModsOf<S> = S extends { readonly [out]?: { readonly m: infer M extends Mods } } ? M : Plain;
 type Absent<E> = E extends Member<any, infer S> ? (ModsOf<S>['optional'] extends true ? true : never) : never;
-type Nullable<E, Force extends boolean> = E extends Member<any, infer S, infer Maybe>
+type Nullable<E> = E extends Member<any, infer S, infer Maybe>
 	? ModsOf<S>['orArg'] extends true
 		? never
 		: Maybe extends true
 			? true
 			: ModsOf<S>['missing'] extends true
 				? true
-				: Force extends true
-					? S extends Source<any, 'form', any>
-						? true
-						: never
-					: never
+				: never
 	: never;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-type Shape<E extends Member, G extends Definition, Force extends boolean> = Simplify<
+type Shape<E extends Member, G extends Definition> = Simplify<
 	{
 		[K in E['key'] as true extends Absent<Extract<E, { key: K }>> ? never : K]:
 			| Resolve<Out<Extract<E, { key: K }>['source']>, G>
-			| (true extends Nullable<Extract<E, { key: K }>, Force> ? null : never);
+			| (true extends Nullable<Extract<E, { key: K }>> ? null : never);
 	} & {
 		[K in E['key'] as true extends Absent<Extract<E, { key: K }>> ? K : never]?: Resolve<Out<Extract<E, { key: K }>['source']>, G>;
 	}
@@ -344,8 +321,8 @@ type Typed<T extends string, F> = Simplify<{ type: T } & Span & F>;
 
 type FormOf<N> = N extends { readonly form?: infer I } ? (NonNullable<I> extends readonly unknown[] ? NonNullable<I> : readonly []) : readonly [];
 
-type NodeOf<N, G extends Definition, Extra extends Member = never, Force extends boolean = false> = N extends { readonly node: infer T extends string }
-	? Typed<T, Shape<Collect<FormOf<N>, false> | Extra, G, Force>>
+type NodeOf<N, G extends Definition, Extra extends Member = never> = N extends { readonly node: infer T extends string }
+	? Typed<T, Shape<Collect<FormOf<N>, false> | Extra, G>>
 	: never;
 
 type Fixed<K extends string, T> = Member<K, Source<T, 'literal'>, false>;
@@ -357,7 +334,7 @@ type DocumentNode<G extends Definition> = NodeOf<G['document'], G, Fixed<'fragme
 
 type Repeating = { readonly node: string };
 /** The node a repeating branch makes. */
-type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string } ? Typed<N, Shape<Collect<FormOf<B>, false>, G, false>> : never;
+type BranchNode<B, G extends Definition> = B extends { readonly node: infer N extends string } ? Typed<N, Shape<Collect<FormOf<B>, false>, G>> : never;
 /** A branch adds its fields to the construct; a repeating one, its node to `branches`. */
 type BranchMembers<B, G extends Definition> =
 	| Collect<FormOf<Exclude<B, Repeating>>, true>
@@ -368,7 +345,7 @@ type Lists<E> = E extends Member<any, infer S> ? (Out<S> extends Children ? true
 type Single<C, E> = C extends { readonly close: object } ? (true extends Lists<E> ? never : Fixed<'fragment', Children>) : never;
 
 type ConstructNode<T extends string, C, G extends Definition> = C extends { readonly open: { readonly form: infer I } }
-	? Typed<T, Shape<Collect<I, false> | Single<C, Collect<I, false>> | BranchMembers<Branches<C>, G>, G, false>>
+	? Typed<T, Shape<Collect<I, false> | Single<C, Collect<I, false>> | BranchMembers<Branches<C>, G>, G>>
 	: never;
 /** The nodes of every construct's repeating branches. */
 type BranchNodes<G extends Definition> = BranchNode<Branches<Values<G['constructs']>>, G>;
@@ -378,7 +355,7 @@ type Stands<C, P extends Place> = C extends { readonly in: readonly (infer In)[]
 type Constructs<G extends Definition, P extends Place> = {
 	[T in keyof NonNullable<G['constructs']> & string]: Stands<NonNullable<G['constructs']>[T], P> extends true ? ConstructNode<T, NonNullable<G['constructs']>[T], G> : never;
 }[keyof NonNullable<G['constructs']> & string];
-type DirectiveNode<D, G extends Definition> = D extends Directive ? NodeOf<D, G, Fixed<'name', string | Expression | null> | Fixed<'modifiers', string[]>, true> : never;
+type DirectiveNode<D, G extends Definition> = D extends Directive ? NodeOf<D, G, Fixed<'name', string> | Fixed<'modifiers', string[]>> : never;
 type ElementNode<E, G extends Definition> = E extends Element ? NodeOf<E, G, Fixed<'name', string> | Fixed<'attributes', Attributes> | Fixed<'fragment', Children>> : never;
 
 type Values<T> = T extends object ? T[keyof T] : never;
@@ -400,7 +377,7 @@ export type Content<G extends Definition> =
 /** What an element's attributes can hold. */
 export type Attribute<G extends Definition> =
 	| AttributeNode<G>
-	| DirectiveNode<Values<NonNullable<G['directives']>['rules']> | NonNullable<G['directives']>['other'], G>
+	| DirectiveNode<Values<NonNullable<G['directives']>['rules']>, G>
 	| Constructs<G, 'attributes'>;
 
 /** The tree a grammar's parse answers with. */

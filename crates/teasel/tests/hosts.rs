@@ -447,7 +447,6 @@ fn minimal() -> Definition<'static> {
 		autoclose: None,
 		trim: None,
 		void: None,
-		verbatim: None,
 		elements: None,
 		script: None,
 		style: None,
@@ -562,12 +561,8 @@ fn a_definition_is_refused_by_name() {
 	let on = |field: &'static str| {
 		let mut host = minimal();
 		host.directives = Some(definition::Directives {
-			prefix: None,
 			arg: None,
 			modifier: None,
-			dynamic: None,
-			unique: None,
-			shorthands: None,
 			rules: Some(Record(list![(
 				"on",
 				definition::Directive {
@@ -582,7 +577,6 @@ fn a_definition_is_refused_by_name() {
 					unique: None,
 				},
 			)])),
-			other: None,
 		});
 		keep(host.json())
 	};
@@ -632,12 +626,8 @@ fn records_group_freely() {
 
 	let mut host = minimal();
 	host.directives = Some(definition::Directives {
-		prefix: None,
 		arg: None,
 		modifier: None,
-		dynamic: None,
-		unique: None,
-		shorthands: None,
 		rules: Some(Record(list![(
 			"transition",
 			definition::Directive {
@@ -655,7 +645,6 @@ fn records_group_freely() {
 				unique: None,
 			},
 		)])),
-		other: None,
 	});
 	elements(&mut host).other = Some(element("RegularElement"));
 	host.constructs = Some(Record(list![("ExpressionTag", expression("expression"))]));
@@ -927,12 +916,8 @@ fn a_definition_says_only_what_is_read() {
 	let directive = |items: &'static [definition::Item<'static>]| {
 		let mut host = minimal();
 		host.directives = Some(definition::Directives {
-			prefix: None,
 			arg: None,
 			modifier: None,
-			dynamic: None,
-			unique: None,
-			shorthands: None,
 			rules: Some(Record(list![(
 				"on",
 				definition::Directive {
@@ -941,7 +926,6 @@ fn a_definition_says_only_what_is_read() {
 					unique: None,
 				},
 			)])),
-			other: None,
 		});
 		host
 	};
@@ -963,25 +947,15 @@ fn a_definition_says_only_what_is_read() {
 				},
 			),
 		])])]),
-		"a flag, or what the name holds, stands outside groups",
-	);
-	refused(
-		directive(list![definition::Item::Opt(list![fields(list![(
-			"kind",
-			source("directive", "name", false)
-		)])])]),
-		"what the name holds, stands outside groups",
+		"a flag stands outside groups",
 	);
 	refused(
 		directive(list![fields(list![("name", source("value", "expression", false))])]),
 		"OnDirective: name is teasel's",
 	);
 	refused(
-		directive(list![fields(list![
-			("kind", source("directive", "name", false)),
-			("again", source("directive", "name", false)),
-		])]),
-		"OnDirective reads the directive's name twice",
+		directive(list![fields(list![("expression", source("js", "expression", false))])]),
+		"OnDirective: a directive reads one value",
 	);
 
 	let svelte_element = |items: &'static [definition::Item<'static>]| {
@@ -1556,7 +1530,7 @@ fn reads_the_svelte_grammar() {
 			&& matches!(&inner[1], DocField::Scope(last) if matches!(last[..], [DocField::Field { field, holds: RootField::Fragment, omit: false }] if text(field) == "fragment")))
 	);
 	let directives = grammar.directives.as_ref().unwrap();
-	assert_eq!(directives.rule("let").unwrap().declares, Some(vec![]));
+	assert!(directives.rule("let").unwrap().declares);
 	assert!(grammar.shorthand == Some(("{", "}")) && grammar.autoclose && grammar.trim);
 	assert_eq!(construct(&grammar, "HtmlTag").open.marker, ["{", "@html"]);
 	assert!(
@@ -1568,9 +1542,8 @@ fn reads_the_svelte_grammar() {
 	assert_eq!(elements.rules.len(), 15);
 	assert!(elements.tag("textarea").0.unwrap().rcdata);
 	assert_eq!(directives.rules.len(), 10);
-	assert!(directives.other.is_none() && directives.rule("anything").is_none());
+	assert!(directives.rule("anything").is_none());
 	assert_eq!((directives.arg, directives.modifier), (":", "|"));
-	assert_eq!(directives.rule("bind").unwrap().kind, None);
 	assert_eq!(directives.rule("bind").unwrap().unique, Unique::Attribute);
 	let flags: Vec<_> = directives
 		.rule("in")

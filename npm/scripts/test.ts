@@ -842,7 +842,7 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<NodeType<Svelte, 'RegularElement'>['fragment'], Fragment>>();
 	expect<Equal<NodeType<Svelte, 'Text'>['raw'], string>>();
 	expect<Equal<keyof Fragment, 'type' | 'nodes'>>();
-	expect<Equal<NodeType<Svelte, 'OnDirective'>['name'], string | Expression | null>>();
+	expect<Equal<NodeType<Svelte, 'OnDirective'>['name'], string>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['modifiers'], string[]>>();
 	expect<Equal<NodeType<Svelte, 'BindDirective'>['expression'], Expression>>();
 	expect<Equal<NodeType<Svelte, 'OnDirective'>['expression'], Expression | null>>();
@@ -879,8 +879,6 @@ function types(text: string, definition: typeof svelte) {
 	directive({ node: 'D', form: [{ flag: g.literal(null) }] });
 	// @ts-expect-error a directive's argument is its `name`, which teasel names
 	directive({ node: 'D', form: [{ name: g.value.expression }] });
-	// @ts-expect-error what a directive's name holds is never left out
-	directive({ node: 'D', form: [{ kind: g.optional(g.directive.kind) }] });
 	// @ts-expect-error `opt` needs items
 	g.opt();
 	// @ts-expect-error `oneOf` needs alternatives
