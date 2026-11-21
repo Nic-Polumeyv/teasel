@@ -372,6 +372,7 @@ importKind
 import_kind
 imported
 in
+indent
 indexType
 init
 initializer
@@ -400,6 +401,7 @@ lists
 literal
 local
 marks
+markup
 matcher
 maybe
 members
@@ -433,6 +435,7 @@ optstrkey
 othername
 out
 override
+pad
 pair
 param
 parameter

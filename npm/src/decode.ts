@@ -9,6 +9,8 @@ import { SLOT, type Options } from './options.ts';
 export const SCOPE = Symbol('scope');
 export const REFERENCE = Symbol('reference');
 export const PARENT = Symbol('parent');
+// a comment attached once already: a parse of Svelte's that read it again attaches a copy
+const TAKEN = Symbol('taken');
 
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
 type Decoded = Record<string | symbol, any>;
@@ -178,7 +180,7 @@ function records(layout: Layout) {
 	const tag = of('host_vals', 'tag');
 	return {
 		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
-		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end') },
+		comment: { words: words('comments'), block: of('comments', 'block').at, markup: of('comments', 'markup').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end'), indent: word('comments', 'indent.start'), indent_end: word('comments', 'indent.end'), pad: word('comments', 'pad') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
 		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
 		host: { words: words('hosts'), ty: word('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape') },
@@ -345,7 +347,12 @@ function comment(S: State, index: number, parent: Decoded | undefined): Decoded 
 	const c = S.comments, K = S.C.R.comment;
 	const at = index * K.words;
 	const type = byte(c, at * 4 + K.block) === 1 ? 'Block' : 'Line';
-	const n: Decoded = { type, value: S.source.slice(c[at + K.text], c[at + K.text_end]), start: c[at + K.start], end: c[at + K.end] };
+	let value = S.source.slice(c[at + K.text], c[at + K.text_end]);
+	// Svelte's: the indentation of a block comment's first line, off the start of each line
+	const pad = c[at + K.pad], indent = c[at + K.indent], indent_end = c[at + K.indent_end];
+	if (pad !== 0 || indent !== indent_end) value = value.replace(new RegExp(`^${' '.repeat(pad)}${S.source.slice(indent, indent_end)}`, 'gm'), '');
+	// a markup comment Svelte has lead a script's program with, without its place
+	const n: Decoded = byte(c, at * 4 + K.markup) === 1 ? { type, value } : { type, value, start: c[at + K.start], end: c[at + K.end] };
 	n[PARENT] = parent;
 	return n;
 }
@@ -356,7 +363,9 @@ function run_of_comments(S: State, n: Decoded, key: string, start: number, len: 
 	for (let i = 0; i < len; i++) {
 		let c = S.made[start + i];
 		if (c === undefined) S.made[start + i] = c = comment(S, start + i, n);
+		else if (c[TAKEN] === true) c = comment(S, start + i, n);
 		else c[PARENT] = n;
+		c[TAKEN] = true;
 		list[i] = c;
 	}
 	n[key] = list;
@@ -832,8 +841,19 @@ function host(S: State, id: number, index: number, parent: Decoded | undefined):
 	const pending = S.pending;
 	S.pending = null;
 	apply(S, id, n, host_ops(S, index), S.host_vals, from * S.C.R.value.size);
+	if (ty === null) through(n, parent);
 	settle(S, n, id, pending);
 	return n;
+}
+
+// the nodes an object without a type holds are its holder's children
+function through(n: Decoded, parent: Decoded | undefined) {
+	for (const key in n) {
+		const v = n[key];
+		if (Array.isArray(v)) {
+			for (const item of v) if (item !== null && typeof item === 'object' && item[PARENT] === n) item[PARENT] = parent;
+		} else if (v !== null && typeof v === 'object' && v[PARENT] === n) v[PARENT] = parent;
+	}
 }
 
 
@@ -1103,6 +1123,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 	// what the literal has no room for, as for the kinds; a node without a span has only its facts
 	const rare = span ? [RARE] : [];
 	const before: string[] = [], slots: string[] = [], after: string[] = [];
+	if (type === null) after.push('through(n, parent);');
 	if (type !== null) {
 		slots.push('n[PARENT] = parent;');
 		if (!facts) slots.push('n[SCOPE] = undefined;');
@@ -1115,7 +1136,7 @@ function generate_host(C: Compiled, config: number, type: string | null, span: b
 		}
 	}
 	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
-	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
+	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'through', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, through, PARENT, SCOPE);
 }
 
 const generated = (() => {
@@ -1195,7 +1216,11 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 }
 
 function comments(S: State, parent: Decoded | undefined): Decoded[] {
-	const out = new Array<Decoded>(S.made.length);
+	const c = S.comments, K = S.C.R.comment;
+	let count = S.made.length;
+	// the markup comments come last, and are listed nowhere
+	while (count > 0 && byte(c, (count - 1) * K.words * 4 + K.markup) === 1) count--;
+	const out = new Array<Decoded>(count);
 	for (let i = 0; i < out.length; i++) out[i] = S.made[i] ??= comment(S, i, parent);
 	return out;
 }

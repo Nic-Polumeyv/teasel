@@ -2,7 +2,7 @@
 
 use crate::Options;
 use crate::ast::{Ast, List};
-use crate::comments::attach;
+use crate::comments::{attach, attach_parses};
 use crate::handed::Raw;
 use crate::host::{self, Grammar};
 use crate::json::Json;
@@ -386,7 +386,13 @@ pub(crate) fn read<R>(
 		};
 		if let Some(list) = roots {
 			if options.has(Options::COMMENTS) {
-				attach(&mut ast, source, list, offset);
+				match grammar {
+					Some(grammar) if grammar.lists_comments() => {
+						let root = ast.nth(list, 0).unwrap();
+						attach_parses(&mut ast, source, root);
+					}
+					_ => attach(&mut ast, source, list, offset),
+				}
 			}
 			if options.has(Options::SCOPES) {
 				scopes::analyze(&mut ast, entry, list);
@@ -473,7 +479,7 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	(ast.rare, ast.late) = (rare, late);
 	positions.map_values(&mut ast.host_vals);
 	if options.has(Options::COMMENTS) || !ast.host_rows.is_empty() {
-		positions.map_comments(&ast.comments, &mut ast.comment_rows);
+		positions.map_comments(&ast.comments, &ast.indents, &mut ast.comment_rows);
 	}
 }
 

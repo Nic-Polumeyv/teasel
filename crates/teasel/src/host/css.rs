@@ -174,13 +174,17 @@ impl<'a> Walker<'a> {
 		}
 		let end = self.at;
 		let attributes = self.list(&attributes);
+		let comment = match self.frames.first() {
+			Some(Frame::Root { nodes, .. }) => comment_before(self.tree(), self.src, nodes, start),
+			_ => None,
+		};
 		let content = self.host(
 			Name::NONE,
 			content_start,
 			content_end,
 			&[
 				(own::styles, Value::Slice(content_start, content_end)),
-				(own::comment, Value::Null),
+				(own::comment, comment.map_or(Value::Null, Value::Node)),
 			],
 		);
 		Ok(self.host(

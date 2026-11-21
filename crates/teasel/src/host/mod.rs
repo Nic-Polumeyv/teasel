@@ -414,6 +414,45 @@ impl<T> Pool<T> {
 	}
 }
 
+/// The value of a host node's field `key`.
+pub(crate) fn field(ast: &Ast, id: NodeId, key: Name) -> Option<Value> {
+	let NodeKind::Host(index) = ast.node(id).kind else {
+		return None;
+	};
+	ast.host_rows[index as usize]
+		.fields
+		.indices()
+		.find(|&i| ast.host_keys[i as usize] == key.0)
+		.map(|i| ast.host_vals[i as usize])
+}
+
+/// The markup comment a top-level script or style at `start` follows, as Svelte finds it among
+/// the document's `nodes` read before it: past blank text only, the last of them ending at
+/// `start`, or before nothing but blanks where the document's trimmed end took that text.
+pub(crate) fn comment_before(ast: &Ast, src: &str, nodes: &[NodeId], start: u32) -> Option<NodeId> {
+	let before = nodes.partition_point(|&id| ast.node(id).end <= start);
+	let last = ast.node(*nodes[..before].last()?).end;
+	if !src[last as usize..start as usize].chars().all(|c| c.is_whitespace() || c == '\u{feff}') {
+		return None;
+	}
+	for &id in nodes[..before].iter().rev() {
+		let NodeKind::Host(index) = ast.node(id).kind else { return None };
+		let ty = Name(ast.host_rows[index as usize].ty);
+		if ty == own::Comment {
+			return Some(id);
+		}
+		let data = match field(ast, id, own::data) {
+			Some(Value::Slice(a, b)) if ty == own::Text => &src[a as usize..b as usize],
+			Some(Value::Str(s)) if ty == own::Text => ast.str(s),
+			_ => return None,
+		};
+		if !data.chars().all(|c| c.is_whitespace() || c == '\u{feff}') {
+			return None;
+		}
+	}
+	None
+}
+
 /// Every type of node a stylesheet holds, each with the fields that hold nodes.
 pub fn stylesheet_children() -> Vec<(&'static str, Vec<&'static str>)> {
 	css::children(false)

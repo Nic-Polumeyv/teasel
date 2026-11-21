@@ -2496,6 +2496,18 @@ impl Grammar {
 }
 
 impl Grammar {
+	/// Whether the document's root lists every comment read, as Svelte's does: its parses then
+	/// share that list, and comments are attached as each of them attaches its own.
+	pub fn lists_comments(&self) -> bool {
+		fn lists(fields: &[DocField]) -> bool {
+			fields.iter().any(|field| match field {
+				DocField::Field { holds, .. } => matches!(holds, RootField::Comments),
+				DocField::Scope(inner) => lists(inner),
+			})
+		}
+		lists(&self.document.fields)
+	}
+
 	/// Every type of node a document of this grammar holds, each with the fields that hold nodes or
 	/// lists of them: what a walk over a document follows. The attribute, script and stylesheet
 	/// nodes are the walker's own; their fields are named here beside the grammar's.

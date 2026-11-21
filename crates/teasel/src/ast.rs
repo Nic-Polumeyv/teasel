@@ -20,6 +20,9 @@ pub enum CommentKind {
 	Hashbang,
 	HtmlOpen,
 	HtmlClose,
+	/// A markup comment `<!--`..`-->` that Svelte has lead a script's program as a line comment,
+	/// without its place: listed after every comment read, and in no document's list of them.
+	Markup,
 }
 
 impl Comment {
@@ -34,6 +37,7 @@ impl Comment {
 			CommentKind::Block => (2, 2),
 			CommentKind::HtmlOpen => (4, 0),
 			CommentKind::HtmlClose => (3, 0),
+			CommentKind::Markup => (4, 3),
 		};
 		self.start as usize + prefix..self.end as usize - suffix
 	}
@@ -299,9 +303,50 @@ crate::layout::record! {
 	#[derive(Clone, Copy, Debug)]
 	pub struct CommentRow {
 		pub block: bool,
+		/// A markup comment standing as a line comment: its text alone, without its place.
+		pub markup: bool,
 		/// Its text, without its delimiters.
 		pub text: Span,
 		pub span: Span,
+		/// What its value loses at the start of every line, `pad` spaces then this text: Svelte's
+		/// for a block comment over lines; empty otherwise.
+		pub indent: Span,
+		pub pad: u32,
+	}
+}
+
+/// The indentation Svelte takes off each line of the block comment `comment`: `pad` spaces,
+/// standing for the markup a script's source blanks before it on its line, then `from..to`.
+#[derive(Clone, Copy, Debug)]
+pub struct Indent {
+	pub comment: u32,
+	pub pad: u32,
+	pub from: u32,
+	pub to: u32,
+}
+
+impl Indent {
+	/// `value` with the indentation taken off the start of each of its lines, as JavaScript's
+	/// `replace(/^indent/gm, '')` would: a line starts after `\n`, `\r`, U+2028 and U+2029.
+	pub fn strip(&self, source: &str, value: &str) -> String {
+		let raw = &source[self.from as usize..self.to as usize];
+		let indent = " ".repeat(self.pad as usize) + raw;
+		let mut out = String::with_capacity(value.len());
+		let mut rest = value;
+		loop {
+			rest = rest.strip_prefix(indent.as_str()).unwrap_or(rest);
+			match rest.find(['\n', '\r', '\u{2028}', '\u{2029}']) {
+				Some(i) => {
+					let next = i + rest[i..].chars().next().unwrap().len_utf8();
+					out.push_str(&rest[..next]);
+					rest = &rest[next..];
+				}
+				None => {
+					out.push_str(rest);
+					return out;
+				}
+			}
+		}
 	}
 }
 
@@ -341,6 +386,8 @@ pub struct Ast {
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
+	/// The block comments Svelte takes indentation off, by comment.
+	pub indents: Vec<Indent>,
 	pub comment_rows: Handed<CommentRow>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: Slots<Attached>,
@@ -434,6 +481,7 @@ impl Ast {
 		self.lists.clear();
 		self.strings.clear();
 		self.comments.clear();
+		self.indents.clear();
 		self.attached.clear();
 		if let Some(scopes) = &mut self.scopes {
 			scopes.clear(0);
@@ -451,6 +499,12 @@ impl Ast {
 		self.host_keys.clear();
 		self.host_vals.clear();
 		self.extras.clear();
+	}
+
+	/// The comments read, past the markup ones only Svelte's attachment adds.
+	pub fn listed_comments(&self) -> u32 {
+		let markup = self.comments.iter().rev().take_while(|c| c.kind == CommentKind::Markup).count();
+		(self.comments.len() - markup) as u32
 	}
 
 	pub(crate) fn mark(&self) -> Mark {

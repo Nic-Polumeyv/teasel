@@ -230,8 +230,17 @@ impl<'a> Writer<'a> {
 			self.json.begin(if comment.is_block() { "Block" } else { "Line" });
 			self.key("value");
 			let range = comment.text_range();
-			self.slice(range.start as u32, range.end as u32);
-			self.span(comment.start, comment.end);
+			let indents = &self.ast.indents;
+			match indents.binary_search_by_key(&index, |indent| indent.comment) {
+				Ok(at) => {
+					let value = indents[at].strip(self.source, &self.source[range]);
+					self.json.text(&value);
+				}
+				Err(_) => self.slice(range.start as u32, range.end as u32),
+			}
+			if comment.kind != crate::ast::CommentKind::Markup {
+				self.span(comment.start, comment.end);
+			}
 			self.json.end();
 		}
 		self.json.end();
@@ -274,7 +283,7 @@ impl<'a> Writer<'a> {
 		}
 		if self.options.has(Options::COMMENTS) {
 			self.key("comments");
-			self.comment_list(0..self.ast.comments.len() as u32);
+			self.comment_list(0..self.ast.listed_comments());
 		}
 		if self.options.has(Options::ERROR_RECOVERY) {
 			self.errors();
@@ -573,7 +582,7 @@ impl<'a> Writer<'a> {
 						Value::Bool(value) => self.json.bool(value),
 						Value::Int(value) => self.json.int(value),
 						Value::Null => self.json.null(),
-						Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
+						Value::Comments => self.comment_list(0..self.ast.listed_comments()),
 					}
 				}
 			}

@@ -132,19 +132,36 @@ impl Positions {
 	}
 
 	/// Each comment's row.
-	pub(crate) fn map_comments(&self, comments: &[crate::ast::Comment], out: &mut Handed<CommentRow>) {
+	pub(crate) fn map_comments(
+		&self,
+		comments: &[crate::ast::Comment],
+		indents: &[crate::ast::Indent],
+		out: &mut Handed<CommentRow>,
+	) {
 		out.clear();
 		let mut cursor = Cursor::default();
-		for comment in comments {
+		let mut indents = indents.iter().peekable();
+		for (index, comment) in comments.iter().enumerate() {
 			let text = comment.text_range();
 			let start = self.offset(&mut cursor, comment.start);
 			let from = self.offset(&mut cursor, text.start as u32);
 			let to = self.offset(&mut cursor, text.end as u32);
 			let end = self.offset(&mut cursor, comment.end);
+			let (indent, pad) = match indents.next_if(|indent| indent.comment == index as u32) {
+				Some(indent) => {
+					let a = self.offset(&mut Cursor::default(), indent.from);
+					let b = self.offset(&mut Cursor::default(), indent.to);
+					(Span { start: a, end: b }, indent.pad)
+				}
+				None => (Span::default(), 0),
+			};
 			out.push(CommentRow {
 				block: comment.is_block(),
+				markup: comment.kind == crate::ast::CommentKind::Markup,
 				text: Span { start: from, end: to },
 				span: Span { start, end },
+				indent,
+				pad,
 			});
 		}
 	}
