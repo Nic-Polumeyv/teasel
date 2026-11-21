@@ -104,13 +104,21 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	// computed for the ids asked about alone: filling every id below the one asked computed them for
+	// each string and property name too, and app scripts parsed 2% slower in WebAssembly
 	pub(crate) fn word_flags(&mut self, id: StrId) -> u8 {
 		let i = id.index() as usize;
-		while self.strings.word_flags.len() <= i {
-			let flags = token::word::flags(self.strings.get(StrId::at(self.strings.word_flags.len() as u32)));
-			self.strings.word_flags.push(flags);
+		let known = &mut self.strings.word_flags;
+		if known.len() <= i {
+			known.resize(i + 1, token::word::UNKNOWN);
 		}
-		self.strings.word_flags[i]
+		let flags = known[i];
+		if flags != token::word::UNKNOWN {
+			return flags;
+		}
+		let flags = token::word::flags(self.strings.get(id));
+		self.strings.word_flags[i] = flags;
+		flags
 	}
 
 	pub(crate) fn source(&self) -> &'a str {
