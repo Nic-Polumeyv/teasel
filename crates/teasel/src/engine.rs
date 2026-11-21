@@ -165,11 +165,11 @@ pub fn layout_json() -> String {
 	w.end();
 	// the names the hosts' rows number, a stylesheet's and a Svelte component's alike
 	w.key("names");
-	texts(&mut w, svelte::walker::NAMES.iter().copied());
+	texts(&mut w, svelte::NAMES.iter().copied());
 	w.key("stylesheet");
 	children_table(&mut w, svelte::stylesheet_children());
 	w.key("svelte");
-	children_table(&mut w, svelte::walker::children());
+	children_table(&mut w, svelte::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -305,7 +305,7 @@ pub(crate) fn read<R>(
 	offset: u32,
 	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
 ) -> R {
-	let says = entry == Entry::Svelte && svelte::walker::typescript(source);
+	let says = entry == Entry::Svelte && svelte::typescript(source);
 	let options = if !options.typescript() && says {
 		options.with(Options::TYPESCRIPT)
 	} else {

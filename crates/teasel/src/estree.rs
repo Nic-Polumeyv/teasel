@@ -515,7 +515,7 @@ impl<'a> Writer<'a> {
 		match *kind {
 			Host(index) => {
 				let host = self.ast.host_rows[index as usize];
-				match svelte::walker::NAMES.get(host.ty as usize).copied() {
+				match svelte::NAMES.get(host.ty as usize).copied() {
 					None => {
 						// an object of the host's without a type, positions and all
 						let node = self.ast.node(id);
@@ -529,7 +529,7 @@ impl<'a> Writer<'a> {
 					}
 				}
 				for i in host.fields.indices() {
-					self.json.key(svelte::walker::NAMES[self.ast.host_keys[i as usize] as usize]);
+					self.json.key(svelte::NAMES[self.ast.host_keys[i as usize] as usize]);
 					match self.ast.host_vals[i as usize] {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),

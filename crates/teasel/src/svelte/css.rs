@@ -1,7 +1,9 @@
 //! The CSS of a style element: rules, at-rules and declarations as host nodes, selectors in
 //! full, values as text with their comments listed.
 
-use super::walker::{Name, Walker, closing_tag, n};
+use super::Walker;
+use super::markup::closing_tag;
+use super::nodes::{Name, n};
 use crate::ast::{List, NodeId, Value};
 use crate::error::Code;
 use crate::lexer::scan::is_space;
