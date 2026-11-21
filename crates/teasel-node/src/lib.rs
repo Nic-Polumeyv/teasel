@@ -69,26 +69,6 @@ fn bytes<'a>(env: Env, value: Value) -> Result<&'a [u8]> {
 	Ok(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), length) })
 }
 
-fn string(env: Env, value: Value) -> Result<String> {
-	let mut length = 0;
-	check(
-		unsafe { node_api::napi_get_value_string_utf8(env, value, null_mut(), 0, &mut length) },
-		"a string",
-	)?;
-	if length == 0 {
-		return Ok(String::new());
-	}
-	let mut buffer = vec![0u8; length + 1];
-	check(
-		unsafe {
-			node_api::napi_get_value_string_utf8(env, value, buffer.as_mut_ptr().cast(), length + 1, &mut length)
-		},
-		"a string",
-	)?;
-	buffer.truncate(length);
-	String::from_utf8(buffer).map_err(|_| "a string expected".into())
-}
-
 fn source_text<'a>(env: Env, value: Value) -> Result<&'a str> {
 	std::str::from_utf8(bytes(env, value)?).map_err(|_| "the source is not UTF-8".into())
 }
@@ -111,29 +91,13 @@ fn undefined(env: Env) -> Result<Value> {
 	})
 }
 
-unsafe extern "C" fn grammar(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [definition] = args::<1>(env, info)?;
-		uint32(env, engine::grammar(&string(env, definition)?)?)
-	})
-}
-
-unsafe extern "C" fn about(env: Env, info: CallbackInfo) -> Value {
-	guard(env, || {
-		let [grammar] = args::<1>(env, info)?;
-		let grammar = engine::grammar_at(number(env, grammar)? as u32).ok_or("a grammar expected")?;
-		text(env, &engine::about(grammar))
-	})
-}
-
 unsafe extern "C" fn parse(env: Env, info: CallbackInfo) -> Value {
 	guard(env, || {
-		let [source, flags, entry, offset, stop, grammar] = args::<6>(env, info)?;
+		let [source, flags, language] = args::<3>(env, info)?;
 		let (source, options) = (source_text(env, source)?, Options(number(env, flags)? as u32));
-		let (entry, offset) = (engine::entry(number(env, entry)?)?, number(env, offset)?);
-		let (stop, grammar) = (string(env, stop)?, engine::grammar_at(number(env, grammar)? as u32));
+		let entry = engine::entry(number(env, language)?)?;
 		in_env(env, || {
-			engine::parse(source, options, entry, offset, &stop, grammar)?;
+			engine::parse(source, options, entry);
 			view(env)
 		})
 	})
@@ -387,8 +351,6 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		)?;
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
-			(c"grammar", grammar),
-			(c"about", about),
 			(c"tree", tree),
 			(c"layout", layout),
 		] {

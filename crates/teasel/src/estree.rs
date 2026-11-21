@@ -3,7 +3,7 @@
 use crate::Options;
 use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
 use crate::engine;
-use crate::host::{self, Grammar};
+use crate::host;
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -18,39 +18,15 @@ pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> Strin
 		source.is_char_boundary(offset as usize),
 		"offset {offset} is not a character boundary"
 	);
-	written(source, entry, offset, options, None)
-}
-
-/// A whole document of a host language by its grammar, as JSON; see `host::parse_document`.
-pub fn parse_document(source: &str, grammar: &str, options: Options) -> String {
-	let grammar = engine::grammar(grammar).unwrap_or_else(|why| panic!("{why}"));
-	written(source, Entry::Program, 0, options, engine::grammar_at(grammar))
-}
-
-fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: Option<&Grammar>) -> String {
 	let positions = Positions::new(source);
-	engine::read(
-		source,
-		options,
-		entry,
-		offset,
-		"",
-		grammar,
-		|ast, roots, end, options, _| {
-			let names = match grammar {
-				Some(grammar) => &grammar.names[..],
-				None if entry == Entry::Svelte => &host::svelte::NAMES[..],
-				None => host::grammar::own::NAMES,
-			};
-			Writer::new(ast, source, &positions, names, options).answer(entry, roots, end)
-		},
-	)
+	engine::read(source, options, entry, offset, |ast, roots, end, options, _| {
+		Writer::new(ast, source, &positions, options).answer(entry, roots, end)
+	})
 }
 
 pub struct Writer<'a> {
 	ast: &'a Ast,
 	source: &'a str,
-	names: &'a [&'static str],
 	pub(crate) json: Json,
 	positions: &'a Positions,
 	cursor: Cursor,
@@ -64,18 +40,10 @@ pub struct Writer<'a> {
 }
 
 impl<'a> Writer<'a> {
-	/// `names` are the grammar's, which the hosts' rows number.
-	pub(crate) fn new(
-		ast: &'a Ast,
-		source: &'a str,
-		positions: &'a Positions,
-		names: &'a [&'static str],
-		options: Options,
-	) -> Self {
+	pub(crate) fn new(ast: &'a Ast, source: &'a str, positions: &'a Positions, options: Options) -> Self {
 		Self {
 			ast,
 			source,
-			names,
 			json: Json::default(),
 			positions,
 			cursor: Cursor::default(),
@@ -547,7 +515,7 @@ impl<'a> Writer<'a> {
 		match *kind {
 			Host(index) => {
 				let host = self.ast.host_rows[index as usize];
-				match self.names.get(host.ty as usize).copied() {
+				match host::svelte::NAMES.get(host.ty as usize).copied() {
 					None => {
 						// an object of the host's without a type, positions and all
 						let node = self.ast.node(id);
@@ -561,7 +529,7 @@ impl<'a> Writer<'a> {
 					}
 				}
 				for i in host.fields.indices() {
-					self.json.key(self.names[self.ast.host_keys[i as usize] as usize]);
+					self.json.key(host::svelte::NAMES[self.ast.host_keys[i as usize] as usize]);
 					match self.ast.host_vals[i as usize] {
 						Value::Node(child) => self.node(child),
 						Value::Nodes(children) => self.items(children),

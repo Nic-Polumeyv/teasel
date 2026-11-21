@@ -1,7 +1,11 @@
 //! The CSS of a style element: rules, at-rules and declarations as host nodes, selectors in
 //! full, values as text with their comments listed.
 
-use super::*;
+use super::core::{Core, Name, closing_tag, own};
+use crate::ast::{List, NodeId, Value};
+use crate::error::Code;
+use crate::lexer::scan::is_space;
+use crate::parser::Result;
 
 /// Every type of node a stylesheet holds, each with the fields that hold nodes, as `host` below
 /// writes them.

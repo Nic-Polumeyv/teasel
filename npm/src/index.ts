@@ -1,22 +1,24 @@
-import type { Comment, Expression, Node, Pattern, Program, Statement } from 'estree';
+import type { Comment, Node, Program } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { LANGUAGE, PIECE, type answers, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
+import { LANGUAGE, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
 import { flags, type Options } from './options.ts';
 import { engine } from '#engine';
-import { children, extras, stylesheet } from './children.ts';
+import { children, extras, stylesheet, svelte as own } from './children.ts';
+import type { Root, SvelteNode } from './svelte.ts';
 
 export type { Options } from './options.ts';
-export type { Arguments, Binding, Code, Comment, Declared, HostNode, Kept, Language, Parsed, Recovered, Reference, Root, Scope, Span } from './types.ts';
+export type { Arguments, Binding, Code, Comment, Declared, HostNode, JsRoot, Kept, Language, Parsed, Recovered, Reference, Scope, Span } from './types.ts';
+export type * as AST from './svelte.ts';
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
-/** The node `node` is a child of: for a comment, the node it is attached to, else the host node that lists it; undefined for the root of an answer and for a comment no node holds. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | HostNode | Comment | null | undefined): Node | HostNode | undefined {
+/** The node `node` is a child of: for a comment, the node it is attached to, else the node that lists it; undefined for the root of an answer and for a comment no node holds. A literal's `regex` and a template element's `value` are not nodes and have none. */
+export function parentOf(node: Node | SvelteNode | HostNode | Comment | null | undefined): Node | SvelteNode | HostNode | undefined {
 	return slot(node, PARENT);
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | HostNode | null | undefined): Scope | undefined {
+export function scopeOf(node: Node | SvelteNode | HostNode | null | undefined): Scope | undefined {
 	return slot(node, SCOPE);
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
@@ -24,105 +26,40 @@ export function referenceOf(node: Node | null | undefined): Reference | undefine
 	return slot(node, REFERENCE);
 }
 
-/** One piece of JavaScript, what `parseAt` reads. A piece is built once and read in any text. `T` is what its parse answers with. */
-export interface Piece<T> {
-	// `T` is read nowhere else, so without this any piece would pass for any other
-	readonly [answers]?: T;
-	readonly [PIECE]: { readonly entry: number; readonly stop: string };
-	/**
-	 * The same piece, ended where one of the host's own tokens, words or punctuators, follows.
-	 * One read outside every bracket the parse opened, where the expression could end, ends it:
-	 * `,` ends an expression before a sequence would, and `/>` is never a division. A `then`
-	 * after `.` is a property name. A TypeScript `as` is the host's unless another `as` follows
-	 * the assertion, so `xs as T[] as item` ends after the type. A program reads to the end of
-	 * the text and takes no tokens.
-	 */
-	until(...tokens: string[]): Piece<T>;
-}
+/** A Svelte component: a parse of it answers with its `Root`, the markup's nodes around ESTree's for the JavaScript inside. The default language of `parse`. */
+export const svelte: Language<Root> = Object.freeze({ [LANGUAGE]: 2, children: own });
 
-// `Entry` of parser/mod.rs by index; the program is 0
-const piece = <T>(entry: number, stop = ''): Piece<T> =>
-	Object.freeze({
-		[PIECE]: Object.freeze({ entry, stop }),
-		until(...tokens: string[]) {
-			if (entry === 0) throw new TypeError('a program reads to the end of the text');
-			if (tokens.length === 0 || !tokens.every((token) => typeof token === 'string' && token !== '' && !/\s/.test(token))) {
-				throw new TypeError('until takes words and punctuators');
-			}
-			return piece<T>(entry, stop === '' ? tokens.join(' ') : `${stop} ${tokens.join(' ')}`);
-		},
-	});
-
-/** JavaScript: a parse of it reads the whole text as a program. Its members are pieces for `parseAt`. */
+/** JavaScript: a parse of it reads the whole text as a program. */
 export const js: Language<Program> & {
-	/** A program from the offset `parseAt` is given to the end of the text. */
-	readonly program: Piece<Program>;
-	readonly expression: Piece<Expression>;
-	/** An assignment target: an identifier or a destructuring pattern. */
-	readonly pattern: Piece<Pattern>;
-	/** A parenthesized parameter list, as an arrow function's is read. */
-	readonly params: Piece<Pattern[]>;
-	readonly statement: Piece<Statement>;
-	/** A `TSTypeParameterDeclaration`; TypeScript only, `not_typescript` otherwise. */
-	readonly typeParameters: Piece<Node>;
 	/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
 	readonly extras: readonly string[];
-} = Object.freeze({
-	[LANGUAGE]: Object.freeze({ entry: 0 }),
-	children,
-	extras,
-	program: piece<Program>(0),
-	expression: piece<Expression>(1),
-	pattern: piece<Pattern>(2),
-	params: piece<Pattern[]>(3),
-	statement: piece<Statement>(4),
-	typeParameters: piece<Node>(5),
-});
+} = Object.freeze({ [LANGUAGE]: 0, children, extras });
 
 /** CSS: a parse of it reads the whole text as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: Object.freeze({ entry: 6 }), children: stylesheet });
+export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: 1, children: stylesheet });
 
 /**
- * The whole of `text`, as `language` reads it: `js` by default, a program. `css` reads it as a
- * stylesheet, and a grammar from `@teasel/parser/grammar` as a document of its host language: the
- * host's own nodes around the JavaScript ones, in one tree, in TypeScript when the grammar says so
- * of a script tag. Positions are UTF-16 offsets. A lone surrogate in the text reaches the parser as
- * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
- * regex patterns carry U+FFFD there while spans and `locate` are right.
+ * The whole of `text`, as `language` reads it: `svelte` by default, a component, its markup's
+ * nodes and the JavaScript inside them in one tree, in TypeScript when a script tag says
+ * `lang="ts"`. `js` reads it as a program, `css` as a stylesheet. Positions are UTF-16 offsets. A
+ * lone surrogate in the text reaches the parser as U+FFFD, the way `TextEncoder` encodes it, so
+ * string values, template cooked and raw text and regex patterns carry U+FFFD there while spans
+ * and `locate` are right.
  */
-export function parse<T = Program>(text: string, options?: Options, language: Language<T> = js as Language<never>): Parsed<T> {
+export function parse<T = Root>(text: string, options?: Options, language: Language<T> = svelte as Language<never>): Parsed<T> {
 	const read = language?.[LANGUAGE];
-	if (read === undefined) throw new TypeError('parse takes `js`, `css`, or a grammar made by this copy of @teasel/parser/grammar; a piece goes to parseAt');
-	return answer(text, options, read.entry, 0, '', read.grammar, read.names);
-}
-
-/**
- * `piece` read from `text` at `at`, a UTF-16 offset, with positions of the whole text; a piece
- * inside a range is read from the text cut at the range's end, as
- * `parseAt(text.slice(0, end), js.program, start)`, where `end` splits neither a `\r\n` nor a
- * surrogate pair. Every call copies the text into the parser, however small the piece, so reading
- * one file piece by piece costs a copy of the file per piece. For a document of a host language,
- * describe it as a grammar and `parse` it once.
- */
-export function parseAt<P extends Piece<unknown>>(text: string, piece: P, at: number, options?: Options): Parsed<P extends Piece<infer T> ? T : never> {
-	const read = piece?.[PIECE];
-	if (read === undefined) throw new TypeError('parseAt takes a piece of `js`, such as js.program or js.expression');
-	return answer(text, options, read.entry, at, read.stop, undefined, undefined);
-}
-
-function answer<T>(text: string, options: Options | undefined, entry: number, offset: number, stop: string, grammar: object | undefined, names: readonly string[] | undefined): Parsed<T> {
+	if (typeof read !== 'number') throw new TypeError('parse takes `svelte`, `js` or `css`');
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
-	if (!Number.isInteger(offset) || offset < 0 || offset > text.length || (offset > 0 && text.codePointAt(offset - 1)! > 0xffff)) throw new RangeError(`${String(offset)} is no offset between characters of the text`);
-	const words = engine.parse(text, flags(options), entry, offset, stop, grammar);
+	const words = engine.parse(text, flags(options), read);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine, entry === 3, names) as Parsed<T>;
+		const parsed = decode(words, text, engine) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {
 		// a tree deeper than the caller's stack has room for overflowed the decoder
 		if (!(thrown instanceof RangeError)) throw thrown;
-		error = { code: 'nesting_depth', args: [], pos: offset, end: offset };
+		error = { code: 'nesting_depth', args: [], pos: 0, end: 0 };
 	}
 	throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
 }

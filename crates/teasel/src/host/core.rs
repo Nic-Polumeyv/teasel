@@ -1,16 +1,92 @@
-//! What every walker over a template shares: the cursor over the source, the host's nodes as
-//! rows, HTML's own rules, and the JavaScript read into the same tree.
+//! What the Svelte walker and the stylesheets share: the cursor over the source, the host's
+//! nodes as rows, HTML's own rules, and the JavaScript read into the same tree.
 
 use std::borrow::Cow;
 
 use super::entities;
-use super::grammar::{Name, Shapes, own};
 use crate::ast::{Ast, CommentKind, HostGroup, HostRow, List, NodeId, NodeKind, Opens, Run, Value};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::{find, find_pair, is_space};
 use crate::lexer::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Options, Parser, Result};
+
+/// A name a node type or a field has, by its number in `svelte::NAMES`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Name(pub(crate) u32);
+
+impl Name {
+	/// No name: a node of the host's without a type, a block whose body is not filed.
+	pub(crate) const NONE: Name = Name(u32::MAX);
+}
+
+/// The names `core` and the stylesheet write, spelled as they are written: the first of `svelte::NAMES`.
+#[allow(non_upper_case_globals)]
+pub(crate) mod own {
+	macro_rules! own {
+		($($name:ident)*) => {
+			#[allow(non_camel_case_types)]
+			#[repr(u32)]
+			enum Number {
+				$($name),*
+			}
+			$(pub(crate) const $name: super::Name = super::Name(Number::$name as u32);)*
+			pub(crate) const NAMES: &[&str] = &[$(stringify!($name)),*];
+		};
+	}
+	own! {
+		Fragment nodes Text raw data Comment Attribute name value attributes fragment expression modifiers
+		Script context content StyleSheet children comments styles comment CSSComment position Atrule
+		prelude block Rule SelectorList ComplexSelector RelativeSelector combinator selectors Combinator
+		TypeSelector namespace IdSelector ClassSelector NestingSelector PseudoClassSelector
+		PseudoElementSelector args AttributeSelector matcher flags Nth Percentage Block Declaration property
+		branches
+	}
+}
+
+/// The shapes of the host's nodes, numbered for good as the walker meets them: a node's
+/// type and each field's name and kind of value. The decoder builds the
+/// nodes of one shape by one literal.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Shapes {
+	/// Each type's shapes, by the type's number after the one of nodes without a type.
+	// tried a table by hash with each type's last shape held in place: 0.3 ms slower a pass over Svelte's tests
+	of: Vec<Vec<Shape>>,
+	count: u32,
+}
+
+#[derive(Clone, Debug)]
+struct Shape {
+	id: u32,
+	fields: Vec<u64>,
+}
+
+impl Shapes {
+	pub(crate) fn of(&mut self, ty: Name, keys: &[u32], values: &[Value]) -> u32 {
+		let at = ty.0.wrapping_add(1) as usize;
+		if self.of.len() <= at {
+			self.of.resize_with(at + 1, Vec::new);
+		}
+		let fields = keys
+			.iter()
+			.zip(values)
+			.map(|(&key, value)| (key as u64) << 8 | crate::layout::tag(std::ptr::from_ref(value).cast()) as u64);
+		let shapes = &mut self.of[at];
+		if let Some(shape) = shapes
+			.iter()
+			.find(|shape| shape.fields.iter().copied().eq(fields.clone()))
+		{
+			return shape.id;
+		}
+		let id = self.count;
+		self.count += 1;
+		shapes.push(Shape {
+			id,
+			fields: fields.collect(),
+		});
+		id
+	}
+}
 
 /// Whether the browser closes `current` when `next` opens inside it.
 pub(crate) fn closes(current: &str, next: &str) -> bool {
@@ -466,16 +542,6 @@ impl<'a> Core<'a> {
 		}
 	}
 
-	/// Skips whitespace up to `limit`.
-	pub(crate) fn space_to(&mut self, limit: u32) {
-		while self.at < limit {
-			match self.char() {
-				Some(c) if is_space(c) => self.at += c.len_utf8() as u32,
-				_ => break,
-			}
-		}
-	}
-
 	pub(crate) fn intern(&mut self, s: &str) -> StrId {
 		self.ast().strings.intern(s)
 	}
@@ -763,11 +829,6 @@ impl<'a> Core<'a> {
 		let end = self.at;
 		self.ast().comments.push(crate::ast::Comment { kind, start, end });
 		true
-	}
-
-	pub(crate) fn expression(&mut self, stop: &str) -> Result<NodeId> {
-		let roots = self.js(JsEntry::Expression, stop)?;
-		Ok(self.first(roots))
 	}
 
 	/// One expression read strictly, so that recovery cannot stand in for what is not one, and

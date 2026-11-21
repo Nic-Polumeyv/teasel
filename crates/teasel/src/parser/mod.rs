@@ -102,24 +102,8 @@ pub enum Entry {
 	TypeParameters,
 	/// A CSS stylesheet on its own, the whole source.
 	StyleSheet,
-	/// A Svelte document, the whole source, read by the walker written for Svelte.
+	/// A Svelte component, the whole source.
 	Svelte,
-}
-
-impl Entry {
-	pub fn from_index(index: u32) -> Option<Entry> {
-		Some(match index {
-			0 => Entry::Program,
-			1 => Entry::Expression,
-			2 => Entry::Pattern,
-			3 => Entry::Params,
-			4 => Entry::Statement,
-			5 => Entry::TypeParameters,
-			6 => Entry::StyleSheet,
-			8 => Entry::Svelte,
-			_ => return None,
-		})
-	}
 }
 
 /// Parses one `entry` starting at `start` of a source, with positions of the whole: a program, a

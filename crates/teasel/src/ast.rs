@@ -266,15 +266,15 @@ pub const VALUE_FIELDS: &[Field] = &[
 ];
 
 crate::layout::record! {
-	/// A node of a host's grammar, its type and its fields named by their numbers in the grammar's
-	/// names.
+	/// A node of the host's, a component's or a stylesheet's, its type and its fields named by
+	/// their numbers in `svelte::NAMES`.
 	#[derive(Clone, Copy, Debug)]
 	pub struct HostRow {
 		/// Its type, `Name::NONE` for an object of the host's without one.
 		pub ty: u32,
 		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
 		pub fields: Run,
-		/// The number of its shape in the grammar's `Shapes`.
+		/// The number of its shape in `Shapes`.
 		pub shape: u32,
 	}
 }
@@ -282,7 +282,7 @@ crate::layout::record! {
 impl HostRow {
 	/// A fragment has no span, and only teasel makes one.
 	pub fn spanned(&self) -> bool {
-		self.ty != crate::host::grammar::own::Fragment.0
+		self.ty != crate::host::own::Fragment.0
 	}
 }
 
@@ -944,7 +944,7 @@ crate::layout::kinds! {
 			source: NodeId,
 			attributes: List,
 		},
-		/// A node of the host's grammar, indexed into `Ast::hosts`.
+		/// A node of the host's, indexed into `Ast::hosts`.
 		Host(u32),
 
 		// Types

@@ -87,7 +87,6 @@ api! {
 	fn napi_set_named_property(env: Env, object: Value, name: *const c_char, value: Value) -> Status;
 	fn napi_get_cb_info(env: Env, info: CallbackInfo, argc: *mut usize, argv: *mut Value, this: *mut Value, data: *mut *mut c_void) -> Status;
 	fn napi_get_typedarray_info(env: Env, array: Value, kind: *mut i32, length: *mut usize, data: *mut *mut c_void, buffer: *mut Value, offset: *mut usize) -> Status;
-	fn napi_get_value_string_utf8(env: Env, value: Value, buffer: *mut c_char, size: usize, length: *mut usize) -> Status;
 	fn napi_get_value_double(env: Env, value: Value, result: *mut f64) -> Status;
 	fn napi_create_buffer(env: Env, bytes: usize, data: *mut *mut c_void, result: *mut Value) -> Status;
 	fn napi_add_env_cleanup_hook(env: Env, hook: unsafe extern "C" fn(*mut c_void), data: *mut c_void) -> Status;

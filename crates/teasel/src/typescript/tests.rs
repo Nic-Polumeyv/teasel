@@ -190,9 +190,6 @@ fn program_at_an_offset_of_a_cut_text() {
 	.unwrap();
 	assert_eq!((ast.node(root).start, ast.node(root).end), (8, 26));
 	assert_eq!(ast.comments.len(), 0);
-	let options = Options(Options::MODULE | Options::TYPESCRIPT);
-	crate::engine::parse(&src[..26], options, Entry::Program, 8.0, "", None).unwrap();
-	assert_eq!(crate::engine::words(|words| words[0]), 26);
 }
 
 /// A host's own syntax may carry a type parameter list, as a generic snippet does.

@@ -28,8 +28,8 @@ export interface Options {
 	/**
 	 * List syntax errors on the answer as `errors` instead of throwing the first: a missing
 	 * operand, name or pattern is an `Identifier` named `''` of no width where it was expected,
-	 * and a statement or entry that cannot be read is skipped to the next stop token or
-	 * unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
+	 * and a statement, or an expression of a component's markup, that cannot be read is skipped
+	 * to where it must end or to an unmatched closing bracket, an empty identifier standing for it. Placeholders are neither
 	 * bindings nor references.
 	 */
 	errorRecovery?: boolean;
