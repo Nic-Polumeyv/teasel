@@ -17,7 +17,6 @@ if (name === 'web') registerHooks({ resolve: (specifier, context, next) => (spec
 const g = await import('../src/grammar.ts');
 const { generate } = await import('./children.ts');
 const { default: svelte } = await import('./hosts/svelte.ts');
-const { default: vue } = await import('./hosts/vue.ts');
 const { load } = await import('../dist/engine/addon.js');
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, host nodes included, past what the types say
@@ -467,18 +466,15 @@ const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'pa
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(read(text, { errorRecovery: true, comments: true, scopes: true }, svelte).node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => read('<a @x="@"/>', {}, vue), (e: Any) => e instanceof SyntaxError, `${name}`);
-	assert.throws(() => readAt('<a/>', vue, 0), TypeError, `${name}`);
-	const handler = read('<button @click="let x = 1"/>', { errorRecovery: true }, vue);
-	assert.equal(handler.node.fragment.nodes[0].attributes[0].handler.type, 'Program', name);
-	assert.deepEqual(handler.errors, [], name);
+	assert.throws(() => read('<a on:x={@}/>', {}, svelte), (e: Any) => e instanceof SyntaxError, `${name}`);
+	assert.throws(() => readAt('<a/>', svelte, 0), TypeError, `${name}`);
 }
 // the grammar the Rust tests read is the typed definition as it crosses, pinned beside its documents
-for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
-	const pin = new URL(`../../crates/teasel/tests/hosts/${host}/host.json`, import.meta.url);
-	const json = JSON.stringify(definition.definition);
+{
+	const pin = new URL('../../crates/teasel/tests/hosts/svelte/host.json', import.meta.url);
+	const json = JSON.stringify(svelte.definition);
 	if (process.env.UPDATE) writeFileSync(pin, json);
-	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} ${host}/host.json changed; run with UPDATE=1 once the change is meant`);
+	else assert.ok(readFileSync(pin, 'utf8') === json, `${name} svelte/host.json changed; run with UPDATE=1 once the change is meant`);
 }
 // every node's parent is the node it sits in, objects without a type passed through, and a listed
 // comment's the node it is attached to; a list born at its size has no holes
@@ -501,11 +497,9 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
 	for (const typescript of [true, 'erase'] as const) walk(undefined, read(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }).node);
 	walk(undefined, read('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).node);
-	for (const [host, grammar] of [['svelte', svelte], ['vue', vue]] as const) {
-		const dir = new URL(`../../crates/teasel/tests/hosts/${host}/`, import.meta.url);
-		for (const file of readdirSync(dir).filter((f) => !f.endsWith('.json'))) {
-			walk(undefined, read(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }, grammar).node);
-		}
+	const dir = new URL('../../crates/teasel/tests/hosts/svelte/', import.meta.url);
+	for (const file of readdirSync(dir).filter((f) => !f.endsWith('.json'))) {
+		walk(undefined, read(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }, svelte).node);
 	}
 	assert.deepEqual(wrong, [], `${name} parents`);
 }
@@ -523,7 +517,6 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 	const texts: [string, Any][] = [
 		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
 		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
-		['<ul :class="{ on }">\r\n\t<li v-for="(item, i) in items">{{ item.name /* 𝒳 */ }}\u2029</li>\r</ul>', vue],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
 		['a\nb\nc\nd\ne', js],
 	];
@@ -553,36 +546,10 @@ for (const [host, definition] of [['svelte', svelte], ['vue', vue]] as const) {
 
 // no definition is refused as any other text the engine cannot read is
 assert.throws(() => g.grammar(undefined as Any), /the grammar ends early/);
-// a tag under a prefix the grammar reserves needs a rule of its own; a grammar that reserves none reads it as any other
+// a tag under a prefix the grammar reserves needs a rule of its own; under a prefix it does not reserve it reads as any other
 assert.throws(() => read('<svelte:foo></svelte:foo>', {}, svelte), (e: Any) => e.code === 'invalid_name' && e.pos === 1);
 assert.equal(read('<svelte:head></svelte:head>', {}, svelte).node.fragment.nodes[0].type, 'SvelteHead');
-assert.equal(read('<vue:foo></vue:foo>', {}, vue).node.fragment.nodes[0].type, 'Element');
-
-// a second host: the same walker, Vue's grammar
-{
-	const source = '<ul :class="{ on }">\n\t<li v-for="(item, i) in items" :key="item.id" @click.stop="select(item)">{{ item.name }} #{{ i }}</li>\n</ul>\n';
-	const root = read(source, { sourceType: 'module' }, vue).node;
-	assert.equal(root.type, 'Root');
-	const ul = root.fragment.nodes[0];
-	assert.equal(ul.name, 'ul');
-	assert.deepEqual(ul.attributes[0], { ...ul.attributes[0], type: 'Directive', kind: 'bind', rawName: ':class', name: 'class', modifiers: [] });
-	assert.equal(ul.attributes[0].exp.type, 'ObjectExpression');
-	const li = ul.fragment.nodes[1];
-	const [each, key, click] = li.attributes;
-	assert.equal(each.kind, 'for');
-	assert.equal(each.value.name, 'item');
-	assert.equal(each.key.name, 'i');
-	assert.equal(each.source.name, 'items');
-	assert.equal(key.exp.type, 'MemberExpression');
-	assert.deepEqual(click.modifiers, ['stop']);
-	assert.equal(click.handler.type, 'CallExpression');
-	const [interpolation, text, index] = li.fragment.nodes;
-	assert.equal(interpolation.type, 'Interpolation');
-	assert.equal(interpolation.content.property.name, 'name');
-	assert.deepEqual([text.type, text.data, text.raw], ['Text', ' #', ' #']);
-	assert.equal(parentOf(index.content), index);
-	assert.throws(() => read('<div v-for="x items">', {}, vue), { code: 'expected', args: ['in or of'], message: "expected 'in or of'" });
-}
+assert.equal(read('<x:foo></x:foo>', {}, svelte).node.fragment.nodes[0].type, 'RegularElement');
 
 // a lone surrogate escape is the code unit it names, as JavaScript keeps it
 {
@@ -705,17 +672,14 @@ if (name !== 'native') {
 	check(js.children, 'js fixtures');
 	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
 	check(js.children, 'ts fixtures');
-	for (const [host, ext] of [['svelte', '.svelte'], ['vue', '.html']] as const) {
-		const language = { svelte, vue }[host];
-		for (const text of files(`hosts/${host}/`, ext)) {
-			try {
-				observe(read(text, { comments: true, scopes: true, errorRecovery: true }, language).node);
-			} catch (e) {
-				if (!(e instanceof SyntaxError)) throw e;
-			}
+	for (const text of files('hosts/svelte/', '.svelte')) {
+		try {
+			observe(read(text, { comments: true, scopes: true, errorRecovery: true }, svelte).node);
+		} catch (e) {
+			if (!(e instanceof SyntaxError)) throw e;
 		}
-		check(language.children, `${host} fixtures`, true);
 	}
+	check(svelte.children, 'svelte fixtures', true);
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
 			observe(read(text, { comments: true }, css).node);
@@ -886,14 +850,6 @@ function types(text: string, definition: typeof svelte) {
 	expect<Equal<NodeType<Svelte, 'StyleDirective'>['value'], NodeType<Svelte, 'Attribute'>['value']>>();
 	expect<Equal<Infer<Svelte>['instance'], NodeType<Svelte, 'Script'> | undefined>>();
 	expect<Equal<Infer<Svelte>['fragment'], Fragment>>();
-
-	type Vue = typeof vue;
-	const f = {} as Extract<NodeType<Vue, 'Directive'>, { source: unknown }>;
-	expect<Equal<typeof f.source, Expression | null>>();
-	expect<Equal<typeof f.value, Pattern | undefined>>();
-	expect<Equal<typeof f.name, string | Expression | null>>();
-	expect<Equal<typeof f.kind, string>>();
-	expect<Equal<Infer<Vue>['fragment']['nodes'][number]['type'], 'Element' | 'Text' | 'Comment' | 'Interpolation' | 'Slot' | 'Template' | 'Component'>>();
 
 	// @ts-expect-error a field may not be named type
 	g.opt({ type: g.js.expression });
