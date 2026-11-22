@@ -239,6 +239,21 @@ impl<'a> Walker<'a> {
 
 	// ── markers
 
+	/// A word of Svelte's, followed by nothing that continues an identifier.
+	fn word(&self, s: &str) -> bool {
+		self.matches(s) && !self.rest()[s.len()..].starts_with(is_id_continue)
+	}
+
+	fn require_space(&mut self) -> Result<()> {
+		match self.char() {
+			Some(c) if is_space(c) => {
+				self.space();
+				Ok(())
+			}
+			_ => self.fail(self.at, self.at, Code::Expected, Some("whitespace")),
+		}
+	}
+
 	/// Whitespace and comments from `i` on: what may stand between a marker's parts.
 	fn trivia(&self, mut i: usize) -> usize {
 		let len = self.src.len();
