@@ -37,7 +37,11 @@ fn written(source: &str, entry: Entry, offset: u32, options: Options, grammar: O
 		"",
 		grammar,
 		|ast, roots, end, options, _| {
-			let names = grammar.map_or(host::grammar::own::NAMES, |grammar| &grammar.names);
+			let names = match grammar {
+				Some(grammar) => &grammar.names[..],
+				None if entry == Entry::Svelte => &host::svelte::NAMES[..],
+				None => host::grammar::own::NAMES,
+			};
 			Writer::new(ast, source, &positions, names, options).answer(entry, roots, end)
 		},
 	)

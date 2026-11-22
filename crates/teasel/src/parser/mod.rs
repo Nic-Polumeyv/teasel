@@ -102,6 +102,8 @@ pub enum Entry {
 	TypeParameters,
 	/// A CSS stylesheet on its own, the whole source.
 	StyleSheet,
+	/// A Svelte document, the whole source, read by the walker written for Svelte.
+	Svelte,
 }
 
 impl Entry {
@@ -114,6 +116,7 @@ impl Entry {
 			4 => Entry::Statement,
 			5 => Entry::TypeParameters,
 			6 => Entry::StyleSheet,
+			8 => Entry::Svelte,
 			_ => return None,
 		})
 	}
@@ -139,6 +142,11 @@ pub(crate) fn parse_at(
 ) -> (Box<Ast>, Result<(List, u32)>) {
 	if entry == Entry::StyleSheet {
 		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
+		return (ast, parsed);
+	}
+	if entry == Entry::Svelte {
+		let (mut ast, root) = crate::host::svelte::parse_document(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
@@ -651,7 +659,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
 			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
-			Entry::Program | Entry::StyleSheet => unreachable!(),
+			Entry::Program | Entry::StyleSheet | Entry::Svelte => unreachable!(),
 		};
 		Ok(self.list_of(&[root]))
 	}

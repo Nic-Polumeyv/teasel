@@ -52,7 +52,7 @@ fn batch_headers() {
 	assert!(ok && answers == 2);
 	for (input, grammar, error) in [
 		("1 0 1 1\na0 0 1 2 5\na;", false, "malformed header"),
-		("1 0 1 1\na8 0 1 2\na;", true, "entry 8 needs --host or is no entry"),
+		("1 0 1 1\na9 0 1 2\na;", true, "entry 9 needs --host or is no entry"),
 		("1 0 1 1\na7 0 1 2\na;", false, "entry 7 needs --host or is no entry"),
 	] {
 		let (ok, answers, stderr) = batch(input, grammar);

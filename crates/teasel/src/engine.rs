@@ -167,6 +167,14 @@ pub fn layout_json() -> String {
 	texts(&mut w, host::grammar::own::NAMES.iter().copied());
 	w.key("stylesheet");
 	children_table(&mut w, host::stylesheet_children());
+	// what the walker written for Svelte answers with, as `about` tells of a grammar
+	w.key("svelte");
+	w.object();
+	w.key("children");
+	children_table(&mut w, host::svelte::children());
+	w.key("names");
+	texts(&mut w, host::svelte::NAMES.iter().copied());
+	w.end();
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -359,7 +367,11 @@ pub(crate) fn read<R>(
 	grammar: Option<&Grammar>,
 	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
 ) -> R {
-	let options = if !options.typescript() && grammar.is_some_and(|grammar| host::typescript(source, grammar)) {
+	let says = match grammar {
+		Some(grammar) => host::typescript(source, grammar),
+		None => entry == Entry::Svelte && host::svelte::typescript(source),
+	};
+	let options = if !options.typescript() && says {
 		options.with(Options::TYPESCRIPT)
 	} else {
 		options

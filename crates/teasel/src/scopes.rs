@@ -516,7 +516,7 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 pub fn analyze(ast: &mut Ast, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
-		Entry::Program => {
+		Entry::Program | Entry::Svelte => {
 			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
 				return analyze_with(ast, ScopeKind::Module, root, |b| {
 					b.visit(root.unwrap(), Mode::Expression)

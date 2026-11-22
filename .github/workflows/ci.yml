@@ -27,10 +27,14 @@ jobs:
       - run: npm install -g binaryen
       - run: git clone --depth 1 https://github.com/tc39/test262-parser-tests crates/teasel/tests/test262-parser-tests
       - run: git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/TypeScript crates/teasel/tests/TypeScript && git -C crates/teasel/tests/TypeScript sparse-checkout set --no-cone '/tsc/testdata/tests/cases/conformance/**' '/tsc/testdata/baselines/reference/conformance/*.errors.txt'
+      - run: git clone --depth 1 --branch svelte@5.59.1 --filter=blob:none --sparse https://github.com/sveltejs/svelte crates/teasel/tests/svelte && git -C crates/teasel/tests/svelte sparse-checkout set --no-cone '/packages/svelte/tests/**/*.svelte'
       - run: cargo test --release
       - run: npm ci
         working-directory: npm
       - run: npm run build && npm run types && npm run build:wasm && npm run test && node scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures && node --disallow-code-generation-from-strings scripts/check.ts ../crates/teasel/tests/test262-parser-tests/pass ../crates/teasel/tests/test262-parser-tests/pass-explicit ../crates/teasel/tests/fixtures
+        working-directory: npm
+      # the walker written for Svelte against the Svelte grammar's, answer for answer
+      - run: node scripts/walkers.ts
         working-directory: npm
       - run: node scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte && node --disallow-code-generation-from-strings scripts/check.ts --host ../crates/teasel/tests/hosts/svelte/host.json .svelte ../crates/teasel/tests/hosts/svelte
         working-directory: npm
