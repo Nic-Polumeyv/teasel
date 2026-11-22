@@ -479,8 +479,9 @@ interface Spelling<E, St> {
 	items(start: E, len: E, params: boolean): E;
 	/** The word of a list's item by its place: a node's id plus one, zero for none. */
 	item(start: E, place: number): E;
-	/** The source a slice of the tree's names. */
+	/** The source a slice of the tree's names, and where the slice starts or ends. */
 	span(id: E): E;
+	edge(id: E, end: boolean): E;
 	pair(a: E, b: E): E;
 	object(fields: [string, E][]): E;
 	/** The node's own text, `front` characters past its start and `back` short of its end; and the source between two offsets. */
@@ -522,7 +523,7 @@ export const holds_nodes = (op: Op) =>
 	op.op === 'comments' ||
 	op.op === 'params' ||
 	op.op === 'othername' ||
-	(op.op === 'opt' && op.ty !== '?str' && op.ty !== '?u32') ||
+	(op.op === 'opt' && op.ty === '?node') ||
 	((op.op === 'maybe' || op.op === 'extra') && op.ty !== '?enum') ||
 	(op.op === 'host' && host_holds(op.value)) ||
 	(op.op === 'object' && op.inner.some(holds_nodes));
@@ -537,6 +538,10 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 				const which = op.ty === '?str' ? none.str : none.int;
 				const [tag, from] = tagged(which, op.at);
 				return B.pick(B.eq(B.word(tag), B.lit(which.missing)), B.lit(null), op.ty === '?str' ? B.strings(B.word(from)) : B.word(from));
+			}
+			if (op.ty === '?slice') {
+				const w = B.hold(B.word(op.at));
+				return B.pick(B.eq(w, B.lit(0)), B.lit(null), B.span(w));
 			}
 			return child(B, B.word(op.at));
 		}
@@ -565,6 +570,8 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return child(B, B.item(B.word(op.at), op.at2));
 		case 'slice':
 			return B.span(B.word(op.at));
+		case 'edge':
+			return B.edge(B.word(op.at), op.value === true);
 		case 'comments':
 			return B.comments();
 		case 'list':
@@ -715,6 +722,7 @@ class Closures implements Spelling<Value, Stmt> {
 		const at = (id(S, V, b, n, L) - 1) * 2;
 		return S.source.slice(S.slices[at], S.slices[at + 1]);
 	};
+	edge = (id: Value, end: boolean): Value => (S, V, b, n, L) => S.slices[(id(S, V, b, n, L) - 1) * 2 + (end ? 1 : 0)];
 	pair = (a: Value, c: Value): Value => (S, V, b, n, L) => [a(S, V, b, n, L), c(S, V, b, n, L)];
 	object = (fields: [string, Value][]): Value => (S, V, b, n, L) => {
 		const o: Decoded = {};
@@ -782,6 +790,16 @@ function program(ops: Op[], none: Missing, typescript: boolean): Program {
 	let size = 0;
 	for (const op of ops) {
 		if (op.op === 'type' || op.op === 'bare' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
+		if (op.op === 'splice') {
+			// the node held there goes on with this one's keys
+			const at = op.at;
+			body.push((S, V, b, n) => {
+				const held = V[(b + at) >> 2] - 1;
+				const ops = recipe(S.G, S.N[held * S.C.words + (S.C.kind >> 2)]);
+				fill(S, held, n, program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase), S.N, held * S.C.words * 4 + S.C.kind);
+			});
+			continue;
+		}
 		if (op.op !== 'keepif') size++;
 		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
@@ -972,6 +990,7 @@ class Source implements Spelling<string, string> {
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
 	item = (start: string, place: number) => `S.L[${start} + ${place}]`;
 	span = (id: string) => `S.source.slice(S.slices[(${id} - 1) * 2], S.slices[(${id} - 1) * 2 + 1])`;
+	edge = (id: string, end: boolean) => `S.slices[(${id} - 1) * 2${end ? ' + 1' : ''}]`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
 	/** Whether the kind spells its whole text under two keys, a Text's `raw` and `data`: one string then. */
@@ -1029,7 +1048,7 @@ const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[]): Builder {
 	const slow: Builder = (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	const facts = (config & FACTS) !== 0, erase = (config & ERASE) !== 0;
-	if (ops.length === 0) return slow;
+	if (ops.length === 0 || ops.some((op) => op.op === 'splice')) return slow;
 	const word = (at: number) => `N[b + ${(C.kind + at) >> 2}]`;
 	const byte = (at: number) => `(${word(at)} >>> ${((C.kind + at) & 3) << 3} & 255)`;
 	const B = new Source(word, byte, facts, C.words, C.kind);

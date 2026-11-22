@@ -1324,6 +1324,27 @@ impl<'a> Binder<'a> {
 			Host(index) => self.host(id, index),
 			Fragment { nodes: held } | DebugTag { identifiers: held } => self.held_all(held),
 			Text | TextDecoded { .. } | MarkupComment => {}
+			// a stylesheet holds no JavaScript
+			StyleElement { .. }
+			| StyleSheet { .. }
+			| CssComment
+			| CssCommentAt { .. }
+			| Atrule { .. }
+			| CssRule { .. }
+			| SelectorList { .. }
+			| ComplexSelector { .. }
+			| RelativeSelector { .. }
+			| NamedSelector { .. }
+			| TypeSelector { .. }
+			| TypeSelectorIn { .. }
+			| PseudoClassSelector { .. }
+			| PseudoElementSelector { .. }
+			| PseudoElementSelectorOf { .. }
+			| AttributeSelector { .. }
+			| Nth
+			| Percentage
+			| CssBlock { .. }
+			| Declaration { .. } => {}
 			ExpressionTag { expression: held }
 			| HtmlTag { expression: held }
 			| RenderTag { expression: held }

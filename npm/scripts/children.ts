@@ -32,7 +32,8 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 		const add = adds.find(([op, , at]) => op === 'maybe' && at === field.at);
 		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
 	}
-	return { children, extras, stylesheet: layout.stylesheet, svelte };
+	const stylesheet = { ...layout.stylesheet, ...table(layout.recipes.kinds.slice(layout.kinds.indexOf('StyleSheet'))) };
+	return { children, extras, stylesheet, svelte };
 }
 
 if (import.meta.main) {

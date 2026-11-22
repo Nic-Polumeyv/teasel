@@ -3,8 +3,7 @@
 
 use super::Walker;
 use super::markup::closing_tag;
-use super::nodes::{Name, n};
-use crate::ast::{List, NodeId, Value};
+use crate::ast::{List, NodeId, NodeKind, SelectorType};
 use crate::error::Code;
 use crate::lexer::scan::is_space;
 use crate::parser::Result;
@@ -180,25 +179,18 @@ impl Walker<'_> {
 		}
 		let end = self.at;
 		let attributes = self.list(&attributes);
-		let content = self.host(
-			Name::NONE,
-			content_start,
-			content_end,
-			&[
-				(n::styles, Value::Slice(content_start, content_end)),
-				(n::comment, Value::Null),
-			],
-		);
-		Ok(self.host(
-			n::StyleSheet,
+		let content = self.ast().slice(content_start, content_end);
+		let sheet = self
+			.ast()
+			.add(NodeKind::StyleSheet { children, comments }, content_start, content_end);
+		Ok(self.ast().add(
+			NodeKind::StyleElement {
+				attributes,
+				sheet,
+				content,
+			},
 			start,
 			end,
-			&[
-				(n::attributes, Value::Nodes(attributes)),
-				(n::children, Value::Nodes(children)),
-				(n::comments, Value::Nodes(comments)),
-				(n::content, Value::Node(content)),
-			],
 		))
 	}
 
@@ -209,15 +201,8 @@ impl Walker<'_> {
 			self.report(error)?;
 			self.at = self.len();
 		}
-		Ok(self.host(
-			n::StyleSheet,
-			0,
-			self.len(),
-			&[
-				(n::children, Value::Nodes(children)),
-				(n::comments, Value::Nodes(comments)),
-			],
-		))
+		let end = self.len();
+		Ok(self.ast().add(NodeKind::StyleSheet { children, comments }, 0, end))
 	}
 
 	/// The rules up to the closing tag of `name` or the end, and the comments among them, as lists,
@@ -230,16 +215,11 @@ impl Walker<'_> {
 		let comments: Vec<NodeId> = comments
 			.into_iter()
 			.map(|comment| {
-				let value = (n::value, Value::Slice(comment.start + 2, comment.end - 2));
-				match comment.position {
-					Some(position) => self.host(
-						n::CSSComment,
-						comment.start,
-						comment.end,
-						&[value, (n::position, Value::Int(position))],
-					),
-					None => self.host(n::CSSComment, comment.start, comment.end, &[value]),
-				}
+				let kind = match comment.position {
+					Some(position) => NodeKind::CssCommentAt { position },
+					None => NodeKind::CssComment,
+				};
+				self.ast().add(kind, comment.start, comment.end)
 			})
 			.collect();
 		(self.list(&children), self.list(&comments), read)
@@ -300,35 +280,23 @@ impl Walker<'_> {
 		let name = self.css_identifier()?;
 		let prelude = self.css_value(comments, true)?;
 		let block = if self.matches("{") {
-			Value::Node(self.css_block(comments)?)
+			Some(self.css_block(comments)?)
 		} else {
 			self.expect(";")?;
-			Value::Null
+			None
 		};
 		let name = self.intern(&name);
 		let prelude = self.intern(&prelude);
-		Ok(self.host(
-			n::Atrule,
-			start,
-			self.at,
-			&[
-				(n::name, Value::Str(name)),
-				(n::prelude, Value::Str(prelude)),
-				(n::block, block),
-			],
-		))
+		let end = self.at;
+		Ok(self.ast().add(NodeKind::Atrule { name, prelude, block }, start, end))
 	}
 
 	fn rule(&mut self, comments: &mut Vec<CssComment>) -> Result<NodeId> {
 		let start = self.at;
 		let prelude = self.selector_list(comments, false)?;
 		let block = self.css_block(comments)?;
-		Ok(self.host(
-			n::Rule,
-			start,
-			self.at,
-			&[(n::prelude, Value::Node(prelude)), (n::block, Value::Node(block))],
-		))
+		let end = self.at;
+		Ok(self.ast().add(NodeKind::CssRule { prelude, block }, start, end))
 	}
 
 	/// The selectors between the `(` just read and its `)`.
@@ -350,12 +318,7 @@ impl Walker<'_> {
 			self.css_space(comments, true)?;
 			if self.matches(if inside_pseudo { ")" } else { "{" }) {
 				let children = self.list(&children);
-				return Ok(self.host(
-					n::SelectorList,
-					start,
-					end,
-					&[(n::children, Value::Nodes(children))],
-				));
+				return Ok(self.ast().add(NodeKind::SelectorList { children }, start, end));
 			}
 			self.expect(",")?;
 			self.css_space(comments, true)?;
@@ -374,13 +337,12 @@ impl Walker<'_> {
 			let start = self.at;
 			if self.eat("&") {
 				let name = self.intern("&");
-				selectors.push(self.host(n::NestingSelector, start, self.at, &[(n::name, Value::Str(name))]));
+				selectors.push(self.named(SelectorType::Nesting, name, start));
 			} else if self.eat("*") {
-				let mut fields = Vec::new();
+				let mut namespace = None;
 				let mut name = String::from("*");
 				if self.eat("|") {
-					let namespace = self.intern("*");
-					fields.push((n::namespace, Value::Str(namespace)));
+					namespace = Some(self.intern("*"));
 					name = if self.eat("*") {
 						String::from("*")
 					} else {
@@ -388,47 +350,36 @@ impl Walker<'_> {
 					};
 				}
 				let name = self.intern(&name);
-				fields.insert(0, (n::name, Value::Str(name)));
-				selectors.push(self.host(n::TypeSelector, start, self.at, &fields));
+				selectors.push(self.type_selector(name, namespace, start));
 			} else if self.eat("#") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(n::IdSelector, start, self.at, &[(n::name, Value::Str(name))]));
+				selectors.push(self.named(SelectorType::Id, name, start));
 			} else if self.eat(".") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				selectors.push(self.host(n::ClassSelector, start, self.at, &[(n::name, Value::Str(name))]));
+				selectors.push(self.named(SelectorType::Class, name, start));
 			} else if self.eat("::") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
-				let name = (n::name, Value::Str(name));
-				let node = if self.eat("(") {
+				let kind = if self.eat("(") {
 					let args = self.css_args(comments)?;
-					self.host(
-						n::PseudoElementSelector,
-						start,
-						self.at,
-						&[name, (n::args, Value::Node(args))],
-					)
+					NodeKind::PseudoElementSelectorOf { name, args }
 				} else {
-					self.host(n::PseudoElementSelector, start, self.at, &[name])
+					NodeKind::PseudoElementSelector { name }
 				};
-				selectors.push(node);
+				let end = self.at;
+				selectors.push(self.ast().add(kind, start, end));
 			} else if self.eat(":") {
 				let name = self.css_identifier()?;
 				let name = self.intern(&name);
 				let args = if self.eat("(") {
-					let args = self.css_args(comments)?;
-					Value::Node(args)
+					Some(self.css_args(comments)?)
 				} else {
-					Value::Null
+					None
 				};
-				selectors.push(self.host(
-					n::PseudoClassSelector,
-					start,
-					self.at,
-					&[(n::name, Value::Str(name)), (n::args, args)],
-				));
+				let end = self.at;
+				selectors.push(self.ast().add(NodeKind::PseudoClassSelector { name, args }, start, end));
 			} else if self.eat("[") {
 				self.space();
 				let name = self.css_identifier()?;
@@ -442,9 +393,9 @@ impl Walker<'_> {
 					} else {
 						0
 					};
-					let matcher = &rest[..len];
-					self.at += len as u32;
-					(len > 0).then_some(matcher)
+					let at = self.at;
+					self.at += len;
+					(len > 0).then_some((at, at + len))
 				};
 				let mut value = None;
 				if matcher.is_some() {
@@ -453,45 +404,41 @@ impl Walker<'_> {
 				}
 				self.space();
 				let flags = {
-					let len = self.rest().bytes().take_while(|b| b.is_ascii_alphabetic()).count();
-					let flags = &self.rest()[..len];
-					self.at += len as u32;
-					(len > 0).then_some(flags)
+					let len = self.rest().bytes().take_while(|b| b.is_ascii_alphabetic()).count() as u32;
+					let at = self.at;
+					self.at += len;
+					(len > 0).then_some((at, at + len))
 				};
 				self.space();
 				self.expect("]")?;
 				let name = self.intern(&name);
-				let matcher = matcher.map_or(Value::Null, |m| Value::Str(self.intern(m)));
-				let value = value.map_or(Value::Null, |v| Value::Str(self.intern(&v)));
-				let flags = flags.map_or(Value::Null, |f| Value::Str(self.intern(f)));
-				selectors.push(self.host(
-					n::AttributeSelector,
+				let matcher = matcher.map(|(from, to)| self.ast().slice(from, to));
+				let value = value.map(|value| self.intern(&value));
+				let flags = flags.map(|(from, to)| self.ast().slice(from, to));
+				let end = self.at;
+				selectors.push(self.ast().add(
+					NodeKind::AttributeSelector {
+						name,
+						matcher,
+						value,
+						flags,
+					},
 					start,
-					self.at,
-					&[
-						(n::name, Value::Str(name)),
-						(n::matcher, matcher),
-						(n::value, value),
-						(n::flags, flags),
-					],
+					end,
 				));
 			} else if let Some(len) = nth_of(self.rest()).filter(|_| inside_pseudo) {
 				self.at += len as u32;
-				selectors.push(self.host(n::Nth, start, self.at, &[(n::value, Value::Slice(start, self.at))]));
+				let end = self.at;
+				selectors.push(self.ast().add(NodeKind::Nth, start, end));
 			} else if let Some(len) = percentage(self.rest()) {
 				self.at += len as u32;
-				selectors.push(self.host(
-					n::Percentage,
-					start,
-					self.at,
-					&[(n::value, Value::Slice(start, self.at))],
-				));
+				let end = self.at;
+				selectors.push(self.ast().add(NodeKind::Percentage, start, end));
 			} else if combinator(self.rest()).is_none() {
 				let mut name = self.css_identifier()?;
-				let mut fields = Vec::new();
+				let mut namespace = None;
 				if self.eat("|") {
-					let namespace = self.intern(&name);
-					fields.push((n::namespace, Value::Str(namespace)));
+					namespace = Some(self.intern(&name));
 					name = if self.eat("*") {
 						String::from("*")
 					} else {
@@ -499,8 +446,7 @@ impl Walker<'_> {
 					};
 				}
 				let name = self.intern(&name);
-				fields.insert(0, (n::name, Value::Str(name)));
-				selectors.push(self.host(n::TypeSelector, start, self.at, &fields));
+				selectors.push(self.type_selector(name, namespace, start));
 			}
 			let index = self.at;
 			self.css_space(comments, false)?;
@@ -509,12 +455,9 @@ impl Walker<'_> {
 				let relative = self.relative_selector(combinator_node, &selectors, relative_start, index);
 				children.push(relative);
 				let children = self.list(&children);
-				return Ok(self.host(
-					n::ComplexSelector,
-					list_start,
-					index,
-					&[(n::children, Value::Nodes(children))],
-				));
+				return Ok(self
+					.ast()
+					.add(NodeKind::ComplexSelector { children }, list_start, index));
 			}
 			self.at = index;
 			if let Some(next) = self.css_combinator()? {
@@ -536,15 +479,28 @@ impl Walker<'_> {
 
 	fn relative_selector(&mut self, combinator: Option<NodeId>, selectors: &[NodeId], start: u32, end: u32) -> NodeId {
 		let selectors = self.list(selectors);
-		self.host(
-			n::RelativeSelector,
-			start,
-			end,
-			&[
-				(n::combinator, combinator.map_or(Value::Null, Value::Node)),
-				(n::selectors, Value::Nodes(selectors)),
-			],
-		)
+		self.ast()
+			.add(NodeKind::RelativeSelector { combinator, selectors }, start, end)
+	}
+
+	/// A selector that is its name and no more, from `start` to the cursor.
+	fn named(&mut self, ty: SelectorType, name: crate::interner::StrId, start: u32) -> NodeId {
+		let end = self.at;
+		self.ast().add(NodeKind::NamedSelector { name, ty }, start, end)
+	}
+
+	fn type_selector(
+		&mut self,
+		name: crate::interner::StrId,
+		namespace: Option<crate::interner::StrId>,
+		start: u32,
+	) -> NodeId {
+		let end = self.at;
+		let kind = match namespace {
+			Some(namespace) => NodeKind::TypeSelectorIn { name, namespace },
+			None => NodeKind::TypeSelector { name },
+		};
+		self.ast().add(kind, start, end)
 	}
 
 	fn css_combinator(&mut self) -> Result<Option<NodeId>> {
@@ -556,21 +512,18 @@ impl Walker<'_> {
 			let end = self.at;
 			self.space();
 			let name = self.intern(name);
-			return Ok(Some(self.host(
-				n::Combinator,
+			return Ok(Some(self.ast().add(
+				NodeKind::NamedSelector {
+					name,
+					ty: SelectorType::Combinator,
+				},
 				index,
 				end,
-				&[(n::name, Value::Str(name))],
 			)));
 		}
 		if self.at != start {
 			let name = self.intern(" ");
-			return Ok(Some(self.host(
-				n::Combinator,
-				start,
-				self.at,
-				&[(n::name, Value::Str(name))],
-			)));
+			return Ok(Some(self.named(SelectorType::Combinator, name, start)));
 		}
 		Ok(None)
 	}
@@ -599,7 +552,8 @@ impl Walker<'_> {
 		self.expect("}")?;
 		self.nesting -= 1;
 		let children = self.list(&children);
-		Ok(self.host(n::Block, start, self.at, &[(n::children, Value::Nodes(children))]))
+		let end = self.at;
+		Ok(self.ast().add(NodeKind::CssBlock { children }, start, end))
 	}
 
 	/// A declaration, a rule or an at-rule: a look ahead to the next `{` or `;` tells which.
@@ -639,15 +593,8 @@ impl Walker<'_> {
 			self.expect(";")?;
 		}
 		let value = self.intern(&value);
-		Ok(self.host(
-			n::Declaration,
-			start,
-			end,
-			&[
-				(n::property, Value::Slice(start, start + len as u32)),
-				(n::value, Value::Str(value)),
-			],
-		))
+		let property = self.ast().slice(start, start + len as u32);
+		Ok(self.ast().add(NodeKind::Declaration { property, value }, start, end))
 	}
 
 	/// Text up to a `;`, `{` or `}` outside quotes and `url(...)`, its comments taken out.

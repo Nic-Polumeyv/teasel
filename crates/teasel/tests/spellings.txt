@@ -85,6 +85,10 @@ ConstTag
 ConstructSignatureDeclaration
 ConstructorType
 ContinueStatement
+CssBlock
+CssComment
+CssCommentAt
+CssRule
 DebugTag
 DebuggerStatement
 Declaration
@@ -153,6 +157,7 @@ MethodDefinition
 MethodSignature
 ModuleBlock
 ModuleDeclaration
+NamedSelector
 NamedTupleMember
 NamespaceExportDeclaration
 NestingSelector
@@ -175,6 +180,7 @@ PropertyDefinition
 PropertySignature
 PseudoClassSelector
 PseudoElementSelector
+PseudoElementSelectorOf
 QualifiedName
 RegExpLiteral
 RegularElement
@@ -198,6 +204,7 @@ StringLiteral
 StyleDirective
 StyleDirectiveFlag
 StyleDirectiveTag
+StyleElement
 StyleSheet
 Super
 SvelteBody
@@ -302,6 +309,7 @@ TypePredicate
 TypeQuery
 TypeReference
 TypeSelector
+TypeSelectorIn
 UnaryExpression
 UnionType
 UpdateExpression
@@ -374,6 +382,7 @@ delegate
 delete
 directive
 discriminant
+edge
 elementType
 elementTypes
 elements
@@ -545,6 +554,7 @@ sourceType
 span
 spans
 specifiers
+splice
 start
 starts
 static

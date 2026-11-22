@@ -56,6 +56,10 @@ pub enum Op {
 	SliceKey(&'static str, Slot),
 	/// Every comment read, as the answer lists them.
 	Comments(&'static str),
+	/// Where a slice of the source starts, or ends when the flag says so.
+	Edge(&'static str, Slot, bool),
+	/// The keys of the node there, after its type and span: a record continued in another node.
+	Splice(Slot),
 	/// A number literal's value: the float, or null when not finite.
 	Float(&'static str, Slot),
 	/// `raw`: the node's source text.
@@ -146,6 +150,8 @@ impl Op {
 			Slice(k, f) => ("slice", k, Some(f), Rest::Nothing),
 			SliceKey(k, f) => ("slicekey", k, Some(f), Rest::Nothing),
 			Comments(k) => ("comments", k, None, Rest::Nothing),
+			Edge(k, f, end) => ("edge", k, Some(f), Rest::Bool(end)),
+			Splice(f) => ("splice", "", Some(f), Rest::Nothing),
 			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
 			Raw => ("raw", "", None, Rest::Nothing),
 			BigInt => ("bigint", "", None, Rest::Nothing),
@@ -208,12 +214,12 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 		let fits = match ops[i] {
 			Type(_) | Bare(_) | Inner(..) | Comments(_) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_)
 			| EmptyList(_) | Keep(_) => true,
-			Node(_, slot) | Through(slot) => matches!(slot.ty, Ty::Node),
+			Node(_, slot) | Through(slot) | Splice(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
-			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32),
+			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32 | Ty::OptSlice),
 			Maybe(_, slot) | Extra(_, ExtraSlot(slot)) => matches!(slot.ty, Ty::OptNode | Ty::OptList | Ty::OptEnum(_)),
 			List(_, slot) | Params(_, slot) | Item(_, slot, _) | ItemKey(_, slot, _) => matches!(slot.ty, Ty::List),
-			Slice(_, slot) => matches!(slot.ty, Ty::Slice),
+			Slice(_, slot) | Edge(_, slot, _) => matches!(slot.ty, Ty::Slice),
 			SliceKey(_, slot) => matches!(slot.ty, Ty::OptSlice),
 			OptListKey(_, slot) => matches!(slot.ty, Ty::OptList),
 			Bool(_, slot) | BoolNames(_, slot, _) => matches!(slot.ty, Ty::Bool),
@@ -431,6 +437,26 @@ pub static KINDS: ByKind = {
 		KeyBlock: &[Type("KeyBlock"), Node("expression", at!(expression)), Node("fragment", at!(fragment))],
 		SnippetBlock: &[Type("SnippetBlock"), Node("expression", at!(expression)), SliceKey("typeParams", at!(type_params)), List("parameters", at!(parameters)), Node("fragment", at!(fragment))],
 		Root: &[Type("Root"), Opt("css", at!(css)), EmptyList("js"), Null("options"), Comments("comments"), ItemKey("module", at!(scripts), 0), ItemKey("instance", at!(scripts), 1), Node("fragment", at!(fragment))],
+		StyleElement: &[Type("StyleSheet"), List("attributes", at!(attributes)), Splice(at!(sheet)), Object("content", &[Edge("start", at!(content), false), Edge("end", at!(content), true), Slice("styles", at!(content)), Null("comment")])],
+		StyleSheet: &[Type("StyleSheet"), List("children", at!(children)), List("comments", at!(comments))],
+		CssComment: &[Type("CSSComment"), Inner("value", 2, 2)],
+		CssCommentAt: &[Type("CSSComment"), Inner("value", 2, 2), Int("position", at!(position))],
+		Atrule: &[Type("Atrule"), Str("name", at!(name)), Str("prelude", at!(prelude)), Opt("block", at!(block))],
+		CssRule: &[Type("Rule"), Node("prelude", at!(prelude)), Node("block", at!(block))],
+		SelectorList: &[Type("SelectorList"), List("children", at!(children))],
+		ComplexSelector: &[Type("ComplexSelector"), List("children", at!(children))],
+		RelativeSelector: &[Type("RelativeSelector"), Opt("combinator", at!(combinator)), List("selectors", at!(selectors))],
+		NamedSelector: &[TypeOf(at!(ty)), Str("name", at!(name))],
+		TypeSelector: &[Type("TypeSelector"), Str("name", at!(name))],
+		TypeSelectorIn: &[Type("TypeSelector"), Str("name", at!(name)), Str("namespace", at!(namespace))],
+		PseudoClassSelector: &[Type("PseudoClassSelector"), Str("name", at!(name)), Opt("args", at!(args))],
+		PseudoElementSelector: &[Type("PseudoElementSelector"), Str("name", at!(name))],
+		PseudoElementSelectorOf: &[Type("PseudoElementSelector"), Str("name", at!(name)), Node("args", at!(args))],
+		AttributeSelector: &[Type("AttributeSelector"), Str("name", at!(name)), Opt("matcher", at!(matcher)), Opt("value", at!(value)), Opt("flags", at!(flags))],
+		Nth: &[Type("Nth"), Inner("value", 0, 0)],
+		Percentage: &[Type("Percentage"), Inner("value", 0, 0)],
+		CssBlock: &[Type("Block"), List("children", at!(children))],
+		Declaration: &[Type("Declaration"), Slice("property", at!(property)), Str("value", at!(value))],
 	};
 	assert!(named == VARIANTS.len(), "every kind has one recipe");
 	kinds

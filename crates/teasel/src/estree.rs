@@ -445,6 +445,20 @@ impl<'a> Writer<'a> {
 					self.key(key);
 					self.comment_list(0..self.ast.comments.len() as u32);
 				}
+				Op::Edge(key, slot, end) => {
+					let span = self.ast.slice_of(get(base, slot));
+					let at = self
+						.positions
+						.offset(&mut self.cursor, if end { span.end } else { span.start });
+					self.key(key);
+					self.json.int(at);
+				}
+				Op::Splice(slot) => {
+					let held: NodeId = get(base, slot);
+					let kind = &self.ast.nodes[held.index() as usize].kind;
+					let base = kind as *const NodeKind as *const u8;
+					self.run(held, &KINDS[tag(base)][1..], base);
+				}
 				Op::Strs(key, slot) => {
 					let [start, len] = get::<[u32; 2]>(base, slot);
 					self.key(key);
@@ -466,6 +480,16 @@ impl<'a> Writer<'a> {
 						self.key(key);
 						match get::<Option<StrId>>(base, slot) {
 							Some(string) => self.str_of(string),
+							None => self.json.null(),
+						}
+					}
+					Ty::OptSlice => {
+						self.key(key);
+						match get::<Option<crate::ast::SliceId>>(base, slot) {
+							Some(id) => {
+								let span = self.ast.slice_of(id);
+								self.slice(span.start, span.end);
+							}
 							None => self.json.null(),
 						}
 					}

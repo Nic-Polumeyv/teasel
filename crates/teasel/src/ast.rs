@@ -1359,6 +1359,91 @@ crate::layout::kinds! {
 			scripts: List,
 			fragment: NodeId,
 		},
+
+		// CSS, every kind from `StyleSheet` on
+		/// A style element's sheet: the element's attributes and where its content is, around the
+		/// sheet read there.
+		StyleElement {
+			attributes: List,
+			sheet: NodeId,
+			content: SliceId,
+		},
+		StyleSheet {
+			children: List,
+			comments: List,
+		},
+		CssComment,
+		/// A comment a value was read around, at that many characters of the value.
+		CssCommentAt {
+			position: u32,
+		},
+		Atrule {
+			name: StrId,
+			prelude: StrId,
+			block: Option<NodeId>,
+		},
+		CssRule {
+			prelude: NodeId,
+			block: NodeId,
+		},
+		SelectorList {
+			children: List,
+		},
+		ComplexSelector {
+			children: List,
+		},
+		RelativeSelector {
+			combinator: Option<NodeId>,
+			selectors: List,
+		},
+		NamedSelector {
+			name: StrId,
+			ty: SelectorType,
+		},
+		TypeSelector {
+			name: StrId,
+		},
+		TypeSelectorIn {
+			name: StrId,
+			namespace: StrId,
+		},
+		PseudoClassSelector {
+			name: StrId,
+			args: Option<NodeId>,
+		},
+		PseudoElementSelector {
+			name: StrId,
+		},
+		PseudoElementSelectorOf {
+			name: StrId,
+			args: NodeId,
+		},
+		AttributeSelector {
+			name: StrId,
+			matcher: Option<SliceId>,
+			value: Option<StrId>,
+			flags: Option<SliceId>,
+		},
+		Nth,
+		Percentage,
+		CssBlock {
+			children: List,
+		},
+		Declaration {
+			property: SliceId,
+			value: StrId,
+		},
+	}
+}
+
+crate::layout::names! {
+	/// The type of a selector that is its name and no more.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum SelectorType {
+		Nesting = "NestingSelector",
+		Id = "IdSelector",
+		Class = "ClassSelector",
+		Combinator = "Combinator",
 	}
 }
 
