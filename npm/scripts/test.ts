@@ -722,7 +722,10 @@ function types(text: string) {
 	const program = m.parseModule(text);
 	expect<Equal<typeof program.node, Program>>();
 	doc.node.fragment.nodes[0]?.type satisfies AST.FragmentNode['type'] | undefined;
-	m.parseCss(text).node.type satisfies string;
+	const sheet = m.parseCss(text);
+	expect<Equal<typeof sheet.node.type, 'StyleSheet'>>();
+	// @ts-expect-error a stylesheet read on its own has no element around it
+	sheet.node.attributes;
 	// the accessors take an attached comment and a component's nodes, and a script's program has a component's node for a parent
 	m.parentOf(m.parseModule(text).node.body[0].leadingComments![0]);
 	m.scopeOf(doc.node);

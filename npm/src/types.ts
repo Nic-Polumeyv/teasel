@@ -19,7 +19,7 @@ export interface Scope {
 		| 'enum'
 		| 'fragment';
 	/** The node that opens it; null for a function-name scope. */
-	node: Node | SvelteNode | HostNode | null;
+	node: Node | SvelteNode | null;
 	parent: Scope | null;
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
@@ -175,12 +175,6 @@ export interface Parsed<T> {
 	references?: Reference[];
 	/** With `scopes`, for a Svelte component: its pieces of JavaScript in the order a walk over the tree meets them. */
 	roots?: JsRoot[];
-}
-
-/** A node of a stylesheet, its type and its fields as `children` names them. */
-export interface HostNode extends Partial<Span> {
-	type: string;
-	[field: string]: unknown;
 }
 
 /** Every code the engine can report, by the byte it reports: what a parse error names in `code`. */

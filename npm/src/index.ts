@@ -1,24 +1,24 @@
 import type { Comment, Node, Program } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import type { HostNode, Parsed, Recovered, Reference, Scope } from './types.ts';
+import type { Parsed, Recovered, Reference, Scope } from './types.ts';
 import { flags, MODULE, OFFERED, OFFERED_CSS, type CssOptions, type Options } from './options.ts';
 import { engine } from '#engine';
 import { svelte as own } from './children.ts';
-import type { Root, SvelteNode } from './svelte.ts';
+import type { Root, StyleSheet, SvelteNode } from './svelte.ts';
 
 export type { CssOptions, Options } from './options.ts';
-export type { Arguments, Binding, Code, Comment, Declared, HostNode, JsRoot, Kept, Parsed, Recovered, Reference, Scope, Span } from './types.ts';
+export type { Arguments, Binding, Code, Comment, Declared, JsRoot, Kept, Parsed, Recovered, Reference, Scope, Span } from './types.ts';
 export type * as AST from './svelte.ts';
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
 const slot = (node: object | null | undefined, key: symbol) => (node as Record<symbol, any> | null | undefined)?.[key];
 
 /** The node `node` is a child of: for a comment, the node it is attached to, else the node that lists it; undefined for the root of an answer and for a comment no node holds. A literal's `regex` and a template element's `value` are not nodes and have none. */
-export function parentOf(node: Node | SvelteNode | HostNode | Comment | null | undefined): Node | SvelteNode | HostNode | undefined {
+export function parentOf(node: Node | SvelteNode | Comment | null | undefined): Node | SvelteNode | undefined {
 	return slot(node, PARENT);
 }
 /** With `scopes`: the scope `node` opens, when it opens one. */
-export function scopeOf(node: Node | SvelteNode | HostNode | null | undefined): Scope | undefined {
+export function scopeOf(node: Node | SvelteNode | null | undefined): Scope | undefined {
 	return slot(node, SCOPE);
 }
 /** With `scopes`: the reference an identifier makes, the binding itself for the identifier that declares it; a global's too, which no binding lists. Undefined when the identifier names no value, a property key say. */
@@ -66,7 +66,7 @@ export function parseModule(text: string, options?: Options): Parsed<Program> {
 	return read(text, flags(options, OFFERED) | MODULE, JAVASCRIPT);
 }
 
-/** CSS, the whole of `text` as a stylesheet: a `StyleSheet` of rules and at-rules with its comments listed. */
-export function parseCss(text: string, options?: CssOptions): Parsed<HostNode> {
+/** CSS, the whole of `text` as a stylesheet: a `StyleSheet` of rules and at-rules with its comments listed, without the attributes and `content` a style element's has. */
+export function parseCss(text: string, options?: CssOptions): Parsed<Omit<StyleSheet, 'attributes' | 'content'>> {
 	return read(text, flags(options, OFFERED_CSS), CSS);
 }
