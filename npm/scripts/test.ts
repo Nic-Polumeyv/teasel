@@ -729,9 +729,8 @@ if (name !== 'native') {
 	}
 }
 
-// /writing-a-grammar builds a grammar in steps; what each step answers for the page's template is pinned beside the page
+// a construct reads two texts of its own, and a grammar the engine cannot parse with is refused
 {
-	const template = '<ul>\n\t{{#repeat item, i in items by item.id}}\n\t\t<Card title={{ item.name }} index={{ i }} />\n\t{{:empty}}\n\t\t<li>No items</li>\n\t{{/repeat}}\n</ul>\n';
 	const html = {
 		document: { node: 'Template' },
 		elements: {
@@ -739,62 +738,11 @@ if (name !== 'native') {
 			other: { node: 'Element' },
 		},
 	};
-	const expression = { in: ['content', 'value'], open: { marker: ['{{'], form: [{ expression: g.js.expression }, '}}'] } } as const;
-	const item = { item: g.bind(g.js.pattern) };
-	const index = g.opt(',', { index: g.optional(g.bind(g.js.identifier)) });
-	const list = { list: g.js.expression };
-	const key = g.opt('by', { key: g.optional(g.js.expression) });
-	const repeat = (head: Any[], branches?: Any[]) => ({
-		...html,
-		constructs: {
-			Expression: expression,
-			RepeatBlock: {
-				open: { marker: ['{{', '#repeat'], space: true, form: branches ? [...head, '}}', { body: g.content }] : [...head, '}}'] },
-				...(branches && { branches }),
-				close: { marker: ['{{', '/repeat'], form: ['}}'] },
-			},
-		},
-	});
-	const steps: Any[] = [
-		html,
-		{ ...html, constructs: { Expression: expression } },
-		repeat([item, 'in', list]),
-		repeat([item, index, 'in', list]),
-		repeat([item, index, 'in', list, key]),
-		repeat([item, index, 'in', list, key], [{ marker: ['{{', ':empty'], form: ['}}', { fallback: g.optional(g.content) }] }]),
-	];
 	// a construct's second text is its own slice: only Text's `data` beside its `raw` shares a span
 	const pair = g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { right: g.js.text }, '%}'] } } } });
 	assert.deepEqual(read('<a>{% alpha | beta %}{%x|x%}</a>', {}, pair).node.fragment.nodes[0].fragment.nodes.map(({ left, right }: Any) => [left, right]), [['alpha', 'beta'], ['x', 'x']]);
 	// what the engine cannot parse with is refused by `grammar` itself, naming the rule
 	assert.throws(() => g.grammar({ ...html, constructs: { Pair: { in: ['content'], open: { marker: ['{%'], form: [{ left: g.js.text }, '|', { left: g.js.text }, '%}'] } } } }), /Pair reads left twice/);
-	// an identifier that refers to a binding declared elsewhere carries where that declaration is
-	const shape = (value: Any): Any => {
-		if (Array.isArray(value)) return value.map(shape);
-		if (value === null || typeof value !== 'object') return value;
-		const out: Any = {};
-		for (const field of Object.keys(value)) out[field] = shape(value[field]);
-		const binding = value.type === 'Identifier' ? referenceOf(value)?.binding : undefined;
-		if (binding && binding.node !== value) out.refers = [binding.node.start, binding.node.end];
-		return out;
-	};
-	const answers = steps.map((definition) => {
-		try {
-			return { tree: shape(read(template, { scopes: true }, g.grammar(definition)).node) };
-		} catch (e) {
-			const { code, message, pos, end } = e as Any;
-			return { error: { code, message, pos, end } };
-		}
-	});
-	const pin = new URL('../../docs/content/03-examples/writing-a-grammar.json', import.meta.url);
-	const pinned = `${JSON.stringify({ text: template, steps: answers }, null, '\t')}\n`;
-	if (process.env.UPDATE) writeFileSync(pin, pinned);
-	else assert.equal(readFileSync(pin, 'utf8'), pinned, `${name} writing-a-grammar.json changed; run with UPDATE=1 once the change is meant`);
-	// the whole grammar the page shows is the last step's
-	const whole = readFileSync(new URL('../../docs/content/03-examples/tpl.js', import.meta.url), 'utf8');
-	const builders = JSON.stringify(new URL('../dist/grammar.js', import.meta.url).href);
-	const written = await import(`data:text/javascript,${encodeURIComponent(whole.replace("'@teasel/parser/grammar'", builders))}`);
-	assert.deepEqual(written.tpl.definition, steps.at(-1), `${name} docs/content/03-examples/tpl.js is the last step's grammar`);
 }
 
 // tsc checks what the types promise here and node never calls it, since the refused definitions throw at runtime

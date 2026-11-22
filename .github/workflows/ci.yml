@@ -6,8 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# a pull request's runs replace each other; pushes to main run side by side, the deploy and
-# publish jobs each serialized on their own group, so a docs merge never waits for a release
+# a pull request's runs replace each other; pushes to main run side by side, the publish job
+# serialized on its own group
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
   cancel-in-progress: true
@@ -115,7 +115,6 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      docs: ${{ steps.diff.outputs.docs }}
       release: ${{ steps.diff.outputs.release }}
       version: ${{ steps.diff.outputs.version }}
     steps:
@@ -128,59 +127,13 @@ jobs:
           else
             changed=$(git diff --name-only "$base" HEAD)
           fi
-          docs=false; bumped=false
-          [ "$changed" = all ] && docs=true
-          echo "$changed" | grep -qE '^(docs/|npm/src/index.ts|npm/src/grammar.ts|npm/src/types.ts|npm/src/options.ts|npm/package.json|npm/tsconfig.json|npm/tsconfig.build.json|.github/workflows/ci.yml)' && docs=true
+          bumped=false
           echo "$changed" | grep -qx Cargo.toml && bumped=true
           [ '${{ github.event_name }}' = workflow_dispatch ] && bumped=true
           version=$(jq -r .version npm/package.json)
           release=false
           if [ "$bumped" = true ] && [ '${{ github.ref }}' = refs/heads/main ] && ! curl -sf -o /dev/null "https://registry.npmjs.org/@teasel%2Fparser/$version"; then release=true; fi
-          printf 'docs=%s\nrelease=%s\nversion=%s\n' "$docs" "$release" "$version" >> "$GITHUB_OUTPUT"
-
-  docs:
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      - run: npm ci && npm run build:js
-        working-directory: npm
-      - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun run build
-      - uses: actions/upload-artifact@v7
-        with:
-          name: site
-          path: docs/build
-          if-no-files-found: error
-
-  deploy:
-    needs: docs
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    concurrency:
-      group: site
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: site
-          path: build
-      - uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::038462749233:role/teasel-github-actions
-          aws-region: us-east-1
-      - run: aws s3 sync build/_app/immutable s3://teasel.dev/_app/immutable --cache-control "public, max-age=31536000, immutable"
-      - run: aws s3 sync build s3://teasel.dev --delete --exclude "_app/immutable/*" --cache-control "public, max-age=0, s-maxage=31536000"
-      - run: aws cloudfront create-invalidation --distribution-id E2MJUFV76BN8VA --paths "/*"
+          printf 'release=%s\nversion=%s\n' "$release" "$version" >> "$GITHUB_OUTPUT"
 
   version:
     if: github.repository == 'Nic-Polumeyv/teasel' && github.ref == 'refs/heads/main' && github.event_name == 'push'
