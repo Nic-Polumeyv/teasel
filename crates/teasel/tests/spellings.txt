@@ -141,6 +141,7 @@ Literal
 LiteralType
 LogicalExpression
 MappedType
+MarkupComment
 MemberExpression
 MetaProperty
 MethodDefinition
@@ -274,6 +275,7 @@ TaggedTemplateExpression
 TemplateElement
 TemplateLiteral
 Text
+TextDecoded
 ThisExpression
 ThisType
 ThrowStatement
@@ -319,6 +321,7 @@ attached_slots
 attributes
 await
 await using
+bare
 bigint
 bigintvalue
 binding

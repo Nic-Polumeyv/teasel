@@ -155,8 +155,14 @@ pub(crate) fn children() -> Vec<(&'static str, Vec<&'static str>)> {
 	out.extend([
 		("ElseIf", vec!["test", "consequent"]),
 		("IfBlock", vec!["test", "consequent", "branches", "alternate"]),
-		("EachBlock", vec!["expression", "context", "index", "key", "body", "fallback"]),
-		("AwaitBlock", vec!["expression", "value", "then", "error", "catch", "pending"]),
+		(
+			"EachBlock",
+			vec!["expression", "context", "index", "key", "body", "fallback"],
+		),
+		(
+			"AwaitBlock",
+			vec!["expression", "value", "then", "error", "catch", "pending"],
+		),
 		("KeyBlock", vec!["expression", "fragment"]),
 		("SnippetBlock", vec!["expression", "parameters", "fragment"]),
 		("HtmlTag", vec!["expression"]),
@@ -178,14 +184,6 @@ pub(crate) fn stylesheet_children() -> Vec<(&'static str, Vec<&'static str>)> {
 }
 
 impl Walker<'_> {
-	/// A string field: a slice of the source where the text is the source's, interned otherwise.
-	pub(crate) fn text(&mut self, start: u32, end: u32, value: Cow<str>) -> Value {
-		match value {
-			Cow::Borrowed(_) => Value::Slice(start, end),
-			Cow::Owned(owned) => Value::Str(self.intern(&owned)),
-		}
-	}
-
 	pub(crate) fn host(&mut self, ty: Name, start: u32, end: u32, fields: &[(Name, Value)]) -> NodeId {
 		self.opening(ty, start, end, fields, None)
 	}
@@ -220,14 +218,23 @@ impl Walker<'_> {
 
 	pub(crate) fn text_chunk(&mut self, start: u32, end: u32, attribute: bool) -> NodeId {
 		let raw = &self.src[start as usize..end as usize];
-		let data = decode(raw, attribute);
-		let data = self.text(start, end, data);
-		self.host(
-			n::Text,
-			start,
-			end,
-			&[(n::raw, Value::Slice(start, end)), (n::data, data)],
-		)
+		let kind = match decode(raw, attribute) {
+			Cow::Borrowed(_) => NodeKind::Text,
+			Cow::Owned(data) => NodeKind::TextDecoded {
+				data: self.intern(&data),
+			},
+		};
+		self.ast().add(kind, start, end)
+	}
+
+	/// A text's `data`: its source, or what its character references decode to.
+	pub(crate) fn text_data(&self, id: NodeId) -> Option<&str> {
+		let node = self.tree().node(id);
+		match node.kind {
+			NodeKind::Text => Some(&self.src[node.start as usize..node.end as usize]),
+			NodeKind::TextDecoded { data } => Some(self.tree().str(data)),
+			_ => None,
+		}
 	}
 
 	pub(crate) fn flush_text(&mut self, from: u32, to: u32, chunks: &mut Vec<NodeId>) {
@@ -246,7 +253,7 @@ impl Walker<'_> {
 			_ => (self.at, self.at),
 		};
 		self.nodes.give(nodes);
-		self.host(n::Fragment, start, end, &[(n::nodes, Value::Nodes(list))])
+		self.ast().add(NodeKind::Fragment { nodes: list }, start, end)
 	}
 
 	pub(crate) fn list(&mut self, nodes: &[NodeId]) -> List {

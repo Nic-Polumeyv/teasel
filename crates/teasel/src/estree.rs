@@ -3,7 +3,6 @@
 use crate::Options;
 use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
 use crate::engine;
-use crate::svelte;
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -11,6 +10,7 @@ use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
 use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
+use crate::svelte;
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
@@ -401,6 +401,15 @@ impl<'a> Writer<'a> {
 					self.text(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
 				}
 				Op::Type(name) => self.begin(name, id),
+				Op::Bare(name) => {
+					self.json.begin(name);
+					self.scope_facts(id);
+				}
+				Op::Inner(key, front, back) => {
+					let node = self.ast.node(id);
+					self.key(key);
+					self.slice(node.start + front as u32, node.end - back as u32);
+				}
 				Op::TypeOf(slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
 					self.begin(names[get::<u8>(base, slot) as usize], id);

@@ -43,20 +43,6 @@ impl Construct {
 		!matches!(self, Construct::Attach | Construct::Spread)
 	}
 
-	fn ty(self) -> Name {
-		match self {
-			Construct::Html => n::HtmlTag,
-			Construct::Debug => n::DebugTag,
-			Construct::Const => n::ConstTag,
-			Construct::Render => n::RenderTag,
-			Construct::Attach => n::AttachTag,
-			Construct::Spread => n::SpreadAttribute,
-			Construct::Declaration => n::DeclarationTag,
-			Construct::Expression => n::ExpressionTag,
-			_ => unreachable!(),
-		}
-	}
-
 	/// The marker and its end word, as messages name the open.
 	pub(super) fn display(self) -> &'static str {
 		match self {
@@ -591,7 +577,7 @@ impl<'a> Walker<'a> {
 			self.require_space()?;
 		}
 		self.space();
-		let (field, value) = match construct {
+		let kind = match construct {
 			Construct::Debug => {
 				let mut ids = self.nodes.take();
 				loop {
@@ -610,17 +596,28 @@ impl<'a> Walker<'a> {
 						return self.fail(at, at, Code::Expected, Some("an identifier"));
 					}
 				}
-				let list = self.list(&ids);
+				let identifiers = self.list(&ids);
 				self.nodes.give(ids);
-				(n::identifiers, Value::Nodes(list))
+				NodeKind::DebugTag { identifiers }
 			}
-			Construct::Const => (n::declaration, Value::Node(self.constant()?)),
-			_ => (n::expression, Value::Node(self.expression_of("}")?)),
+			Construct::Const => NodeKind::ConstTag {
+				declaration: self.constant()?,
+			},
+			_ => {
+				let expression = self.expression_of("}")?;
+				match construct {
+					Construct::Html => NodeKind::HtmlTag { expression },
+					Construct::Render => NodeKind::RenderTag { expression },
+					Construct::Attach => NodeKind::AttachTag { expression },
+					Construct::Spread => NodeKind::SpreadAttribute { expression },
+					_ => NodeKind::ExpressionTag { expression },
+				}
+			}
 		};
 		self.space();
 		self.expect("}")?;
 		let end = self.at;
-		Ok(self.host(construct.ty(), start, end, &[(field, value)]))
+		Ok(self.ast().add(kind, start, end))
 	}
 
 	/// `pattern = expression` of a `{@const}`, as the declaration it spells without its keyword.
@@ -689,7 +686,9 @@ impl<'a> Walker<'a> {
 				self.space();
 				self.expect("}")?;
 				let end = self.at;
-				let node = self.host(n::DeclarationTag, start, end, &[(n::declaration, Value::Node(statement))]);
+				let node = self
+					.ast()
+					.add(NodeKind::DeclarationTag { declaration: statement }, start, end);
 				self.append(node);
 				Ok(true)
 			}

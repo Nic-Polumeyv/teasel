@@ -12,6 +12,10 @@ use crate::scopes::{Binding, Reference, Root, Scope};
 pub enum Op {
 	/// The node's `type`, first.
 	Type(&'static str),
+	/// The `type` of a node without a span, first.
+	Bare(&'static str),
+	/// The node's source text under a key, short of its start and of its end by so many characters.
+	Inner(&'static str, u8, u8),
 	/// The `type` is the enum field's name: a keyword type.
 	TypeOf(Slot),
 	Node(&'static str, Slot),
@@ -93,6 +97,8 @@ pub enum Rest {
 	Names(&'static str, &'static str),
 	/// What `enumor` spells for no name.
 	Other(&'static str),
+	/// How far short of the node's start and of its end `inner` reads.
+	Cut(u8, u8),
 	Ops(&'static [Op]),
 }
 
@@ -102,6 +108,8 @@ impl Op {
 	pub fn told(&self) -> (&'static str, &'static str, Option<Slot>, Rest) {
 		match *self {
 			Type(t) => ("type", t, None, Rest::Nothing),
+			Bare(t) => ("bare", t, None, Rest::Nothing),
+			Inner(k, front, back) => ("inner", k, None, Rest::Cut(front, back)),
 			TypeOf(f) => ("typeof", "", Some(f), Rest::Nothing),
 			Node(k, f) => ("node", k, Some(f), Rest::Nothing),
 			Opt(k, f) => ("opt", k, Some(f), Rest::Nothing),
@@ -178,7 +186,8 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 	let mut i = 0;
 	while i < ops.len() {
 		let fits = match ops[i] {
-			Type(_) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_) | EmptyList(_) | Keep(_) => true,
+			Type(_) | Bare(_) | Inner(..) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_) | EmptyList(_)
+			| Keep(_) => true,
 			Node(_, slot) | Through(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
 			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32),
@@ -369,6 +378,18 @@ pub static KINDS: ByKind = {
 		InstantiationExpression: &[Through(at!(expression)), Type("TSInstantiationExpression"), Node("expression", at!(expression)), Node("typeArguments", at!(type_arguments))],
 		ParameterProperty: &[Keep("TSParameterProperty"), Through(at!(parameter)), Type("TSParameterProperty"), Node("parameter", at!(parameter))],
 		Decorator: &[Keep("Decorator"), Type("Decorator"), Node("expression", at!(expression))],
+		Fragment: &[Bare("Fragment"), List("nodes", at!(nodes))],
+		Text: &[Type("Text"), Raw, Inner("data", 0, 0)],
+		TextDecoded: &[Type("Text"), Raw, Str("data", at!(data))],
+		MarkupComment: &[Type("Comment"), Inner("data", 4, 3)],
+		ExpressionTag: &[Type("ExpressionTag"), Node("expression", at!(expression))],
+		HtmlTag: &[Type("HtmlTag"), Node("expression", at!(expression))],
+		RenderTag: &[Type("RenderTag"), Node("expression", at!(expression))],
+		AttachTag: &[Type("AttachTag"), Node("expression", at!(expression))],
+		SpreadAttribute: &[Type("SpreadAttribute"), Node("expression", at!(expression))],
+		ConstTag: &[Type("ConstTag"), Node("declaration", at!(declaration))],
+		DeclarationTag: &[Type("DeclarationTag"), Node("declaration", at!(declaration))],
+		DebugTag: &[Type("DebugTag"), List("identifiers", at!(identifiers))],
 	};
 	assert!(named == VARIANTS.len(), "every kind has one recipe");
 	kinds

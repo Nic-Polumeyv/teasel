@@ -475,8 +475,8 @@ interface Spelling<E, St> {
 	items(start: E, len: E, params: boolean): E;
 	pair(a: E, b: E): E;
 	object(fields: [string, E][]): E;
-	/** The node's own text, `back` characters short of its end; and the source between two offsets. */
-	slice(back: number): E;
+	/** The node's own text, `front` characters past its start and `back` short of its end; and the source between two offsets. */
+	slice(front: number, back: number): E;
 	text(start: E, end: E): E;
 	strs(start: E, len: E): E;
 	comments(): E;
@@ -564,11 +564,13 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 		case 'float':
 			return B.finite(B.numbers(B.word(op.at)));
 		case 'raw':
-			return B.slice(0);
+			return B.slice(0, 0);
+		case 'inner':
+			return B.slice(op.at, op.at2);
 		case 'bigint':
-			return B.bigint(B.slice(1));
+			return B.bigint(B.slice(0, 1));
 		case 'bigintvalue':
-			return B.bigint_value(B.slice(1));
+			return B.bigint_value(B.slice(0, 1));
 		case 'regexp':
 			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
 		case 'optstrkey': {
@@ -689,7 +691,7 @@ class Closures implements Spelling<Value, Stmt> {
 		for (const [key, field] of fields) o[key] = field(S, V, b, n, L);
 		return o;
 	};
-	slice = (back: number): Value => (S, V, b, n) => S.source.slice(n.start, n.end - back);
+	slice = (front: number, back: number): Value => (S, V, b, n) => S.source.slice(n.start + front, n.end - back);
 	text = (start: Value, end: Value): Value => (S, V, b, n, L) => S.source.slice(start(S, V, b, n, L), end(S, V, b, n, L));
 	strs = (start: Value, len: Value): Value => (S, V, b, n, L) => strs(S, start(S, V, b, n, L), len(S, V, b, n, L));
 	comments = (): Value => (S, V, b, n) => comments(S, n);
@@ -749,7 +751,7 @@ function program(ops: Op[], none: Missing, typescript: boolean): Program {
 	const body: Stmt[] = [];
 	let size = 0;
 	for (const op of ops) {
-		if (op.op === 'type' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
+		if (op.op === 'type' || op.op === 'bare' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
 		if (op.op !== 'keepif') size++;
 		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
@@ -790,7 +792,13 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 	}
 	const head = ops[at];
 	const P = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
-	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, wide(S, id, P));
+	let n: Decoded;
+	if (head.op === 'bare') {
+		n = { type: head.key };
+		n[PARENT] = parent;
+		n[SCOPE] = undefined;
+		if (S.of_node !== null && !S.name_only) facts(S, n, id);
+	} else n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, wide(S, id, P));
 	const pending = S.pending;
 	S.pending = null;
 	fill(S, id, n, P, view, base);
@@ -934,7 +942,14 @@ class Source implements Spelling<string, string> {
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
-	slice = (back: number) => `S.source.slice(S.P[p], S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
+	/** Whether the kind spells its whole text under two keys, a Text's `raw` and `data`: one string then. */
+	shared = false;
+	whole: string | undefined;
+	slice = (front: number, back: number) => {
+		const text = `S.source.slice(S.P[p]${front === 0 ? '' : ` + ${front}`}, S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
+		if (!this.shared || front !== 0 || back !== 0) return text;
+		return (this.whole ??= this.hold(text));
+	};
 	// a second text over the first's span, Text's `data` beside its `raw`, is the first's string
 	text = (start: string, end: string) => {
 		const first = this.first_text;
@@ -994,9 +1009,11 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 		else B.lead.push(`S.adopted.push(id); return ${B.built(B.dec(word(ops[at].at)), 'parent')};`);
 	}
 	const head = ops[at++];
-	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
+	const bare = head.op === 'bare';
+	const type = bare || head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
-	const props = [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
+	const props = bare ? [`type: ${type}`] : [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
+	B.shared = ops.filter((op) => op.op === 'raw' || (op.op === 'inner' && op.at === 0 && op.at2 === 0)).length > 1;
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];

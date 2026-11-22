@@ -970,7 +970,7 @@ impl<'a> Binder<'a> {
 					kind: ScopeKind::Block,
 					node: Some(n),
 					..
-				} => matches!(self.kind(n), NodeKind::Host(_)),
+				} => self.kind(n).is_svelte(),
 				_ => false,
 			};
 			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
@@ -1180,6 +1180,7 @@ impl<'a> Binder<'a> {
 				let kind = match self.ast.node(node).kind {
 					NodeKind::Program { .. } => ScopeKind::Script,
 					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
+					NodeKind::Fragment { .. } => ScopeKind::Fragment,
 					_ => ScopeKind::Block,
 				};
 				self.enter(kind, Some(node), false);
@@ -1209,27 +1210,35 @@ impl<'a> Binder<'a> {
 
 	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
 	fn host_field(&mut self, i: u32) {
-		let declared = |b: &Self, child: NodeId| {
-			b.host_declared
-				.iter()
-				.any(|list| b.ast.list(*list).contains(&Some(child)))
-		};
 		match self.ast.host_vals[i as usize] {
-			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
-			crate::ast::Value::Nodes(children) => {
-				for &child in self.ast.list(children).iter().flatten() {
-					if !declared(self, child) {
-						self.field_value(child);
-					}
-				}
-			}
+			crate::ast::Value::Node(child) => self.held(child),
+			crate::ast::Value::Nodes(children) => self.held_all(children),
 			_ => {}
+		}
+	}
+
+	/// What a node of Svelte's holds, as an expression, unless an open scope declares it.
+	fn held(&mut self, child: NodeId) {
+		let declared = self
+			.host_declared
+			.iter()
+			.any(|list| self.ast.list(*list).contains(&Some(child)));
+		if !declared {
+			self.field_value(child);
+		}
+	}
+
+	fn held_all(&mut self, children: List) {
+		for i in 0..children.len {
+			if let Some(child) = self.ast.nth(children, i) {
+				self.held(child);
+			}
 		}
 	}
 
 	/// A host field's value: a host node visited as such, JavaScript as a root of its own.
 	fn field_value(&mut self, child: NodeId) {
-		if matches!(self.kind(child), NodeKind::Host(_)) {
+		if self.kind(child).is_svelte() {
 			self.visit(child, Mode::Expression);
 		} else {
 			self.root(child, |b| b.visit(child, Mode::Expression));
@@ -1266,6 +1275,15 @@ impl<'a> Binder<'a> {
 		}
 		match self.kind(id) {
 			Host(index) => self.host(id, index),
+			Fragment { nodes: held } | DebugTag { identifiers: held } => self.held_all(held),
+			Text | TextDecoded { .. } | MarkupComment => {}
+			ExpressionTag { expression: held }
+			| HtmlTag { expression: held }
+			| RenderTag { expression: held }
+			| AttachTag { expression: held }
+			| SpreadAttribute { expression: held }
+			| ConstTag { declaration: held }
+			| DeclarationTag { declaration: held } => self.held(held),
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),

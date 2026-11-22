@@ -526,6 +526,9 @@ impl Ast {
 			_ => {
 				let base = kind as *const NodeKind as *const u8;
 				self.held(base, node_layout::VARIANTS[tag(base)].fields, out);
+				if kind.is_svelte() {
+					self.through_fragments(from, out);
+				}
 			}
 		}
 		if let Some(extras) = self.extras.get(id) {
@@ -559,6 +562,18 @@ impl Ast {
 		}
 	}
 
+	/// A child that is a fragment, a node without a span of its own, gives way to its nodes.
+	fn through_fragments(&self, from: usize, out: &mut Vec<NodeId>) {
+		let mut i = from;
+		while i < out.len() {
+			if let NodeKind::Fragment { nodes } = self.node(out[i]).kind {
+				out.splice(i..=i, self.list(nodes).iter().flatten().copied());
+			} else {
+				i += 1;
+			}
+		}
+	}
+
 	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
 	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
 	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
@@ -568,6 +583,7 @@ impl Ast {
 					NodeKind::Host(inner) if !self.host_rows[inner as usize].spanned() => {
 						self.host_children(inner, out)
 					}
+					NodeKind::Fragment { nodes } => out.extend(self.list(nodes).iter().flatten()),
 					_ => out.push(child),
 				},
 				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
@@ -1183,6 +1199,51 @@ crate::layout::kinds! {
 		Decorator {
 			expression: NodeId,
 		},
+
+		// Svelte, every kind from here on
+		/// The nodes of a body; it has no span in the answer.
+		Fragment {
+			nodes: List,
+		},
+		/// Text whose `data` is its source.
+		Text,
+		/// Text whose character references were decoded.
+		TextDecoded {
+			data: StrId,
+		},
+		MarkupComment,
+		ExpressionTag {
+			expression: NodeId,
+		},
+		HtmlTag {
+			expression: NodeId,
+		},
+		RenderTag {
+			expression: NodeId,
+		},
+		AttachTag {
+			expression: NodeId,
+		},
+		SpreadAttribute {
+			expression: NodeId,
+		},
+		ConstTag {
+			declaration: NodeId,
+		},
+		DeclarationTag {
+			declaration: NodeId,
+		},
+		DebugTag {
+			identifiers: List,
+		},
+	}
+}
+
+impl NodeKind {
+	/// A node of Svelte's markup, not of JavaScript.
+	pub fn is_svelte(&self) -> bool {
+		matches!(self, NodeKind::Host(_))
+			|| tag((self as *const NodeKind).cast()) >= node_layout::Tag::Fragment as usize
 	}
 }
 

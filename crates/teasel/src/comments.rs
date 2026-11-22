@@ -40,7 +40,7 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 	let mut attached = attacher.attached;
 	let last_node = *ast.node(last);
 	if rest < ast.comments.len() as u32
-		&& !matches!(last_node.kind, NodeKind::Host(_))
+		&& !last_node.kind.is_svelte()
 		&& (ast.comments[rest as usize].start >= last_node.end || matches!(last_node.kind, NodeKind::Program { .. }))
 	{
 		let trailing = &mut attached.entry(last).trailing;
@@ -187,7 +187,7 @@ impl Attacher<'_> {
 	}
 
 	fn is_host(&self, node: NodeId) -> bool {
-		matches!(self.ast.node(node).kind, NodeKind::Host(_))
+		self.ast.node(node).kind.is_svelte()
 	}
 
 	fn only_separators(&self, from: u32, to: u32) -> bool {

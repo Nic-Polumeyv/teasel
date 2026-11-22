@@ -324,11 +324,7 @@ impl<'a> Walker<'a> {
 		let Value::Nodes(_) = self.field_of(id, n::value)? else {
 			return None;
 		};
-		let chunk = self.attribute_chunk(id)?;
-		if self.host_type(chunk) != Some(n::Text) {
-			return None;
-		}
-		self.string_of(self.field_of(chunk, n::data)?)
+		self.text_data(self.attribute_chunk(id)?)
 	}
 
 	/// Whether a `<` at `i` starts a tag: a name, a closing tag or a comment follows.
@@ -484,10 +480,9 @@ impl<'a> Walker<'a> {
 				let len = self.len();
 				return self.fail(len, len, Code::Expected, Some("-->"));
 			};
-			let data_start = self.at;
 			self.at += len as u32 + 3;
 			let end = self.at;
-			let node = self.host(n::Comment, start, end, &[(n::data, Value::Slice(data_start, end - 3))]);
+			let node = self.ast().add(NodeKind::MarkupComment, start, end);
 			self.append(node);
 			return Ok(());
 		}
@@ -539,7 +534,12 @@ impl<'a> Walker<'a> {
 		if rule.title && !self.inside_head() {
 			ty = plain;
 		}
-		if rule.slot && self.frames.iter().any(|frame| matches!(frame, Frame::Element { shadow: true, .. })) {
+		if rule.slot
+			&& self
+				.frames
+				.iter()
+				.any(|frame| matches!(frame, Frame::Element { shadow: true, .. }))
+		{
 			ty = plain;
 		}
 		self.space();
@@ -605,23 +605,26 @@ impl<'a> Walker<'a> {
 					match self.attribute_chunk(id).and_then(|chunk| self.chunk_expression(chunk)) {
 						Some(expression) => expression,
 						None => {
-							let chunk = self
-								.attribute_chunk(id)
-								.filter(|&chunk| text && self.host_type(chunk) == Some(n::Text));
-							match chunk {
-								Some(chunk) => {
-									let node = *self.tree().node(chunk);
-									let value = match self.field_of(chunk, n::data) {
-										Some(Value::Str(s)) => s,
-										Some(Value::Slice(a, b)) => {
-											let src = self.src;
-											self.intern(&src[a as usize..b as usize])
-										}
-										_ => unreachable!(),
-									};
+							let chunk = self.attribute_chunk(id).filter(|_| text);
+							match chunk.map(|chunk| *self.tree().node(chunk)) {
+								Some(
+									node @ crate::ast::Node {
+										kind: NodeKind::Text, ..
+									},
+								) => {
+									let src = self.src;
+									let value = self.intern(&src[node.start as usize..node.end as usize]);
 									self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
 								}
-								None => {
+								Some(
+									node @ crate::ast::Node {
+										kind: NodeKind::TextDecoded { data },
+										..
+									},
+								) => self
+									.ast()
+									.add(NodeKind::StringLiteral { value: data }, node.start, node.end),
+								_ => {
 									let node = *self.tree().node(id);
 									self.report_at(
 										node.start,
@@ -679,8 +682,7 @@ impl<'a> Walker<'a> {
 			let content_start = self.at;
 			let (close, end) = self.closing(name);
 			self.at = end;
-			let text = Value::Slice(content_start, close);
-			let node = self.host(n::Text, content_start, close, &[(n::raw, text), (n::data, text)]);
+			let node = self.ast().add(NodeKind::Text, content_start, close);
 			if close == self.len() {
 				let len = self.len();
 				self.report_at(len, len, Code::Unclosed, Some(name))?;
@@ -859,11 +861,8 @@ impl<'a> Walker<'a> {
 
 	/// The expression node of a chunk written as one, `{expression}`.
 	fn chunk_expression(&self, chunk: NodeId) -> Option<NodeId> {
-		if self.host_type(chunk) != Some(n::ExpressionTag) {
-			return None;
-		}
-		match self.field_of(chunk, n::expression)? {
-			Value::Node(expression) => Some(expression),
+		match self.tree().node(chunk).kind {
+			NodeKind::ExpressionTag { expression } => Some(expression),
 			_ => None,
 		}
 	}
@@ -1039,7 +1038,7 @@ impl<'a> Walker<'a> {
 		if quote.is_some() && self.char() == quote {
 			self.at += 1;
 		}
-		let value = if quote.is_some() || chunks.len() > 1 || self.host_type(chunks[0]) == Some(n::Text) {
+		let value = if quote.is_some() || chunks.len() > 1 || self.text_data(chunks[0]).is_some() {
 			Value::Nodes(self.list(&chunks))
 		} else {
 			Value::Node(chunks[0])
@@ -1064,7 +1063,9 @@ impl<'a> Walker<'a> {
 				Done::Quote(q) => self.char() == Some(q),
 				Done::Bare => {
 					self.matches("/>")
-						|| self.char().is_none_or(|c| is_space(c) || matches!(c, '"' | '\'' | '=' | '<' | '>' | '`'))
+						|| self
+							.char()
+							.is_none_or(|c| is_space(c) || matches!(c, '"' | '\'' | '=' | '<' | '>' | '`'))
 				}
 				Done::Closing(name) => closing_tag(self.rest(), name).is_some(),
 			};
@@ -1077,7 +1078,12 @@ impl<'a> Walker<'a> {
 				let start = self.at;
 				// one expression here, unless the open of something else reads further
 				if self.opens_reach(start) > start + 1 {
-					return self.fail(start, start + 1, Code::Placement, Some(&format!("A block or tag in {place}")));
+					return self.fail(
+						start,
+						start + 1,
+						Code::Placement,
+						Some(&format!("A block or tag in {place}")),
+					);
 				}
 				self.flush_text(chunk_start, start, &mut chunks);
 				self.at = start + 1;
@@ -1091,7 +1097,7 @@ impl<'a> Walker<'a> {
 				self.space();
 				self.expect("}")?;
 				let end = self.at;
-				let tag = self.host(n::ExpressionTag, start, end, &[(n::expression, Value::Node(expression))]);
+				let tag = self.ast().add(NodeKind::ExpressionTag { expression }, start, end);
 				chunks.push(tag);
 				chunk_start = self.at;
 				continue;
@@ -1153,7 +1159,9 @@ impl<'a> Walker<'a> {
 		}
 		self.space();
 		self.expect("}")?;
-		let tag = self.host(n::ExpressionTag, id_start, id_end, &[(n::expression, Value::Node(id))]);
+		let tag = self
+			.ast()
+			.add(NodeKind::ExpressionTag { expression: id }, id_start, id_end);
 		let name_id = self.intern(name);
 		let end = self.at;
 		let node = self.host(

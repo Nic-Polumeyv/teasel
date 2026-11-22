@@ -4,11 +4,11 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::svelte;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
 use crate::positions::{Cursor, Positions};
 use crate::scopes;
+use crate::svelte;
 
 /// The answer's words, read in place by the decoder that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
@@ -84,7 +84,11 @@ pub fn layout_json() -> String {
 			w.list();
 			w.text(name);
 			w.text(key);
-			w.int(slot.map_or(0, |slot| slot.at as u32));
+			w.int(match (slot, &rest) {
+				(Some(slot), _) => slot.at as u32,
+				(None, Rest::Cut(front, _)) => *front as u32,
+				_ => 0,
+			});
 			w.text(slot.map_or("", |slot| ty(*slot.ty)));
 			w.list();
 			if let Some(Slot {
@@ -95,10 +99,10 @@ pub fn layout_json() -> String {
 				names.iter().for_each(|name| w.text(name));
 			}
 			w.end();
-			w.int(if let Rest::Second(slot) = rest {
-				slot.at as u32
-			} else {
-				0
+			w.int(match rest {
+				Rest::Second(slot) => slot.at as u32,
+				Rest::Cut(_, back) => back as u32,
+				_ => 0,
 			});
 			match rest {
 				Rest::Bool(value) => w.bool(value),
