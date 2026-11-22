@@ -134,8 +134,6 @@ pub fn layout_json() -> String {
 	w.int(std::mem::offset_of!(Node, end) as u32);
 	w.key("kind");
 	w.int(std::mem::offset_of!(Node, kind) as u32);
-	w.key("payload");
-	w.int((std::mem::offset_of!(Node, kind) + crate::ast::node_layout::Host::FIELDS[0].at) as u32);
 	w.end();
 	w.key("kinds");
 	texts(&mut w, VARIANTS.iter().map(|variant| variant.name));
@@ -170,13 +168,6 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	texts(&mut w, view_names(true));
 	w.end();
-	// the names Svelte's rows number, a stylesheet's and a component's alike
-	w.key("names");
-	texts(&mut w, svelte::NAMES.iter().copied());
-	w.key("stylesheet");
-	children_table(&mut w, svelte::stylesheet_children());
-	w.key("svelte");
-	children_table(&mut w, svelte::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -202,15 +193,6 @@ pub fn layout_json() -> String {
 	w.end();
 	w.end();
 	w.finish()
-}
-
-fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
-	w.object();
-	for (ty, fields) in table {
-		w.key(ty);
-		texts(w, fields);
-	}
-	w.end();
 }
 
 fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
@@ -419,7 +401,6 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, markup: 
 		scopes.mark(ast, &mut rare, &mut late);
 	}
 	(ast.rare, ast.late) = (rare, late);
-	positions.map_values(&mut ast.host_vals);
 	positions.map_slices(&mut ast.slices);
 	if options.has(Options::COMMENTS) || markup {
 		positions.map_comments(&ast.comments, &mut ast.comment_rows);

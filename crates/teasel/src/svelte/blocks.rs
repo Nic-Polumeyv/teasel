@@ -1,7 +1,7 @@
 //! What starts with `{`: the markers, the blocks with their branches and bodies, and the tags.
 
 use super::{Frame, Walker};
-use crate::ast::{List, NodeId, NodeKind, Value, VariableKind};
+use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::scan::is_space;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -189,12 +189,20 @@ impl Block {
 	}
 }
 
+/// What a slot of a block holds until its node is written.
+#[derive(Clone, Copy)]
+enum Slot {
+	Node(NodeId),
+	Nodes(List),
+	Slice(u32, u32),
+}
+
 /// A block being read, or the `{:else if}` node being read under its if block.
 pub(super) struct Open {
 	pub(super) start: u32,
 	pub(super) block: Block,
 	pub(super) elseif: bool,
-	slots: [Option<Value>; 6],
+	slots: [Option<Slot>; 6],
 	/// The slot `nodes` will fill: a body, or `branches` while `{:else if}` nodes come.
 	body: usize,
 	pub(super) nodes: Vec<NodeId>,
@@ -208,7 +216,7 @@ impl Open {
 		self.block == Block::If && !self.elseif && self.body == BRANCHES
 	}
 
-	fn set(&mut self, slot: usize, value: Value) {
+	fn set(&mut self, slot: usize, value: Slot) {
 		self.slots[slot].get_or_insert(value);
 	}
 }
@@ -668,7 +676,7 @@ impl<'a> Walker<'a> {
 		let body = match block {
 			Block::If => {
 				let test = self.expression_of("}")?;
-				open.set(TEST, Value::Node(test));
+				open.set(TEST, Slot::Node(test));
 				self.space();
 				self.expect("}")?;
 				CONSEQUENT
@@ -682,14 +690,14 @@ impl<'a> Walker<'a> {
 					},
 				};
 				let expression = self.first(roots);
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
 				if self.word("as") {
 					self.space();
 					self.at += 2;
 					self.space();
 					let context = self.pattern(", ( }")?;
-					open.set(CONTEXT, Value::Node(context));
+					open.set(CONTEXT, Slot::Node(context));
 				}
 				self.space();
 				if self.matches(",") {
@@ -697,7 +705,7 @@ impl<'a> Walker<'a> {
 					self.at += 1;
 					self.space();
 					let index = self.identifier()?;
-					open.set(INDEX, Value::Node(index));
+					open.set(INDEX, Slot::Node(index));
 				}
 				self.space();
 				if self.matches("(") {
@@ -705,7 +713,7 @@ impl<'a> Walker<'a> {
 					self.at += 1;
 					self.space();
 					let key = self.expression_of(")")?;
-					open.set(KEY, Value::Node(key));
+					open.set(KEY, Slot::Node(key));
 					self.space();
 					if !self.matches(")") {
 						let at = self.at;
@@ -719,7 +727,7 @@ impl<'a> Walker<'a> {
 			}
 			Block::Await => {
 				let expression = self.expression_of("then catch }")?;
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
 				let (slot, first) = if self.word("then") {
 					(VALUE, THEN)
@@ -735,7 +743,7 @@ impl<'a> Walker<'a> {
 					if self.char().is_some_and(|c| is_id_start(c) || c == '[' || c == '{') {
 						self.space();
 						let pattern = self.pattern("}")?;
-						open.set(slot, Value::Node(pattern));
+						open.set(slot, Slot::Node(pattern));
 					}
 				}
 				self.space();
@@ -744,14 +752,14 @@ impl<'a> Walker<'a> {
 			}
 			Block::Key => {
 				let expression = self.expression_of("}")?;
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
 				self.expect("}")?;
 				FRAGMENT_OF_KEY
 			}
 			Block::Snippet => {
 				let name = self.identifier()?;
-				open.set(EXPRESSION, Value::Node(name));
+				open.set(EXPRESSION, Slot::Node(name));
 				self.space();
 				if self.matches("<") {
 					self.space();
@@ -762,12 +770,12 @@ impl<'a> Walker<'a> {
 					let closed = node.end > start && self.src.as_bytes()[node.end as usize - 1] == b'>';
 					open.set(
 						TYPE_PARAMS,
-						Value::Slice(start, if closed { node.end - 1 } else { node.end.max(start) }),
+						Slot::Slice(start, if closed { node.end - 1 } else { node.end.max(start) }),
 					);
 				}
 				self.space();
 				let parameters = self.js(JsEntry::Params, "}")?;
-				open.set(PARAMETERS, Value::Nodes(parameters));
+				open.set(PARAMETERS, Slot::Nodes(parameters));
 				self.space();
 				self.expect("}")?;
 				FRAGMENT_OF_SNIPPET
@@ -845,7 +853,7 @@ impl<'a> Walker<'a> {
 				nodes: self.nodes.take(),
 				bodies: 1,
 			};
-			open.set(TEST, Value::Node(read.unwrap()));
+			open.set(TEST, Slot::Node(read.unwrap()));
 			self.frames.push(Frame::Block(open));
 			return Ok(());
 		}
@@ -854,7 +862,7 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		if let Some(pattern) = read {
-			frame.set(slot, Value::Node(pattern));
+			frame.set(slot, Slot::Node(pattern));
 		}
 		frame.bodies += 1;
 		Ok(())
@@ -872,9 +880,9 @@ impl<'a> Walker<'a> {
 		let children = if listing {
 			let list = self.list(&nodes);
 			self.nodes.give(nodes);
-			Value::Nodes(list)
+			Slot::Nodes(list)
 		} else {
-			Value::Node(self.fragment(nodes))
+			Slot::Node(self.fragment(nodes))
 		};
 		let Some(Frame::Block(open)) = self.frames.last_mut() else {
 			unreachable!()
@@ -917,7 +925,7 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		let node = |slot: usize| match open.slots[slot] {
-			Some(Value::Node(id)) => Some(id),
+			Some(Slot::Node(id)) => Some(id),
 			_ => None,
 		};
 		let kind = match open.block {
@@ -929,7 +937,7 @@ impl<'a> Walker<'a> {
 				test: node(TEST).unwrap(),
 				consequent: node(CONSEQUENT).unwrap(),
 				branches: match open.slots[BRANCHES] {
-					Some(Value::Nodes(branches)) => branches,
+					Some(Slot::Nodes(branches)) => branches,
 					_ => List::EMPTY,
 				},
 				alternate: node(ALTERNATE),
@@ -954,11 +962,11 @@ impl<'a> Walker<'a> {
 			Block::Snippet => NodeKind::SnippetBlock {
 				expression: node(EXPRESSION).unwrap(),
 				type_params: match open.slots[TYPE_PARAMS] {
-					Some(Value::Slice(start, end)) => Some(self.ast().slice(start, end)),
+					Some(Slot::Slice(start, end)) => Some(self.ast().slice(start, end)),
 					_ => None,
 				},
 				parameters: match open.slots[PARAMETERS] {
-					Some(Value::Nodes(parameters)) => parameters,
+					Some(Slot::Nodes(parameters)) => parameters,
 					_ => List::EMPTY,
 				},
 				fragment: node(FRAGMENT_OF_SNIPPET).unwrap(),

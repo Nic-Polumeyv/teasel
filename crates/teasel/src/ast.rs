@@ -216,81 +216,6 @@ pub struct Node {
 // the extras record
 const _: () = assert!(size_of::<Node>() == 32);
 
-/// The scopes a host node opens: the patterns it declares around itself, and its groups, a run
-/// of `Ast::host_groups`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Opens {
-	pub outside: List,
-	pub groups: (u32, u32),
-}
-
-/// One scope a host node opens over a run of its fields: the patterns declared in it, the
-/// fields inside it, and the node the scope belongs to when it is not the host node itself, a
-/// body's fragment say.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HostGroup {
-	pub inside: List,
-	pub from: u32,
-	pub until: u32,
-	pub node: Option<NodeId>,
-}
-
-/// A host node's field, in `Ast::host_vals` as it is: its tag, then the two words it may use.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C, u32)]
-pub enum Value {
-	Node(NodeId),
-	Nodes(List),
-	/// An interned string.
-	Str(StrId),
-	/// A slice of the source.
-	Slice(u32, u32),
-	/// Interned strings, a run of `Ast::host_strings`.
-	Strs(u32, u32),
-	Bool(bool),
-	Int(u32),
-	Null,
-	/// Every comment read, as the answer lists them.
-	Comments,
-}
-
-/// How the decoder reads a `Value`, the tag's names in the order of its variants.
-pub const VALUE_FIELDS: &[Field] = &[
-	Field {
-		name: "tag",
-		at: 0,
-		ty: Ty::Enum(&[
-			"node", "nodes", "str", "slice", "strs", "bool", "int", "null", "comments",
-		]),
-	},
-	Field {
-		name: "value",
-		at: size_of::<u32>(),
-		ty: Ty::Pair,
-	},
-];
-
-crate::layout::record! {
-	/// A node of Svelte's, a component's or a stylesheet's, its type and its fields named by
-	/// their numbers in `svelte::NAMES`.
-	#[derive(Clone, Copy, Debug)]
-	pub struct HostRow {
-		/// Its type, `Name::NONE` for a row without one.
-		pub ty: u32,
-		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
-		pub fields: Run,
-		/// The number of its shape in `Shapes`.
-		pub shape: u32,
-	}
-}
-
-impl HostRow {
-	/// A fragment has no span, and only teasel makes one.
-	pub fn spanned(&self) -> bool {
-		self.ty != crate::svelte::n::Fragment.0
-	}
-}
-
 crate::layout::record! {
 	/// Where something starts and ends, in UTF-16 offsets.
 	#[derive(Clone, Copy, Debug, Default)]
@@ -330,8 +255,6 @@ pub const RECORDS: &[(&str, usize, &[Field])] = &[
 	("comments", size_of::<CommentRow>(), CommentRow::FIELDS),
 	("attached", size_of::<Attached>(), Attached::FIELDS),
 	("errors", size_of::<ErrorRow>(), ErrorRow::FIELDS),
-	("hosts", size_of::<HostRow>(), HostRow::FIELDS),
-	("host_vals", size_of::<Value>(), VALUE_FIELDS),
 	("spans", size_of::<Span>(), Span::FIELDS),
 	("marks", size_of::<Surrogate>(), Surrogate::FIELDS),
 ];
@@ -342,11 +265,11 @@ pub struct Ast {
 	/// The values of the number literals, by `NumberLiteral::value`.
 	pub numbers: Handed<f64>,
 	pub lists: Handed<Option<NodeId>>,
-	pub host_strings: Handed<StrId>,
+	/// The modifiers of every directive, each directive's a run of them.
+	pub modifiers: Handed<StrId>,
 	/// The slices of the source a node holds that are not its own text, in bytes until the answer
 	/// maps them.
 	pub slices: Handed<Span>,
-	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
 	pub comment_rows: Handed<CommentRow>,
@@ -365,13 +288,6 @@ pub struct Ast {
 	/// Where each interned string starts in UTF-16 units, when the text has characters past ASCII.
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
-	pub host_rows: Handed<HostRow>,
-	/// Each host field's name by its number, and its value; a slice of the source in bytes until
-	/// the answer maps it.
-	pub host_keys: Handed<u32>,
-	pub host_vals: Handed<Value>,
-	/// The scope each host node opens, when it opens one.
-	pub host_scopes: Vec<Option<Opens>>,
 	/// The buffers the last parse worked in, for the next one.
 	pub spare: crate::parser::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
@@ -434,10 +350,8 @@ pub(crate) struct Mark {
 impl Ast {
 	/// Empties the tree for the next parse; the room stays allocated.
 	pub fn clear(&mut self) {
-		self.host_scopes.clear();
-		self.host_strings.clear();
+		self.modifiers.clear();
 		self.slices.clear();
-		self.host_groups.clear();
 		self.nodes.clear();
 		self.numbers.clear();
 		self.lists.clear();
@@ -456,9 +370,6 @@ impl Ast {
 		self.error_rows.clear();
 		self.spans.clear();
 		self.units.clear();
-		self.host_rows.clear();
-		self.host_keys.clear();
-		self.host_vals.clear();
 		self.extras.clear();
 	}
 
@@ -511,10 +422,7 @@ impl Ast {
 		out("comments", Some(&mut self.comment_rows));
 		self.attached.views("attached_slots", "attached", out);
 		out("errors", Some(&mut self.error_rows));
-		out("hosts", Some(&mut self.host_rows));
-		out("host_keys", Some(&mut self.host_keys));
-		out("host_vals", Some(&mut self.host_vals));
-		out("host_strings", Some(&mut self.host_strings));
+		out("modifiers", Some(&mut self.modifiers));
 		out("slices", Some(&mut self.slices));
 		match &mut self.scopes {
 			Some(scopes) => scopes.views(out),
@@ -531,15 +439,10 @@ impl Ast {
 	pub fn children(&self, id: NodeId, out: &mut Vec<NodeId>) {
 		let from = out.len();
 		let kind = &self.node(id).kind;
-		match *kind {
-			NodeKind::Host(index) => self.host_children(index, out),
-			_ => {
-				let base = kind as *const NodeKind as *const u8;
-				self.held(base, node_layout::VARIANTS[tag(base)].fields, out);
-				if kind.is_svelte() {
-					self.through_fragments(from, out);
-				}
-			}
+		let base = kind as *const NodeKind as *const u8;
+		self.held(base, node_layout::VARIANTS[tag(base)].fields, out);
+		if kind.is_svelte() {
+			self.through_fragments(from, out);
 		}
 		if let Some(extras) = self.extras.get(id) {
 			self.held(extras as *const Extras as *const u8, Extras::FIELDS, out);
@@ -580,24 +483,6 @@ impl Ast {
 				out.splice(i..=i, self.list(nodes).iter().flatten().copied());
 			} else {
 				i += 1;
-			}
-		}
-	}
-
-	/// The nodes under a host node's fields; a child that is a fragment, a node without a span
-	/// of its own, is walked through, so a document's nodes come in source order around its scripts.
-	fn host_children(&self, index: u32, out: &mut Vec<NodeId>) {
-		for i in self.host_rows[index as usize].fields.indices() {
-			match self.host_vals[i as usize] {
-				Value::Node(child) => match self.node(child).kind {
-					NodeKind::Host(inner) if !self.host_rows[inner as usize].spanned() => {
-						self.host_children(inner, out)
-					}
-					NodeKind::Fragment { nodes } => out.extend(self.list(nodes).iter().flatten()),
-					_ => out.push(child),
-				},
-				Value::Nodes(children) => out.extend(self.list(children).iter().flatten()),
-				_ => {}
 			}
 		}
 	}
@@ -980,8 +865,6 @@ crate::layout::kinds! {
 			source: NodeId,
 			attributes: List,
 		},
-		/// A node of Svelte's, indexed into `Ast::host_rows`.
-		Host(u32),
 
 		// Types
 		TypeAnnotation {
@@ -1273,7 +1156,7 @@ crate::layout::kinds! {
 		StyleDirective {
 			name: StrId,
 			value: List,
-			/// A run of `Ast::host_strings`: where it starts and how many.
+			/// A run of `Ast::modifiers`: where it starts and how many.
 			modifiers: [u32; 2],
 		},
 		StyleDirectiveTag {
@@ -1484,8 +1367,7 @@ crate::layout::names! {
 impl NodeKind {
 	/// A node of Svelte's markup, not of JavaScript.
 	pub fn is_svelte(&self) -> bool {
-		matches!(self, NodeKind::Host(_))
-			|| tag((self as *const NodeKind).cast()) >= node_layout::Tag::Fragment as usize
+		tag((self as *const NodeKind).cast()) >= node_layout::Tag::Fragment as usize
 	}
 }
 

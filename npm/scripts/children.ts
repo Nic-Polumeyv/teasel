@@ -25,14 +25,14 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	// JavaScript's kinds, then Svelte's from its first on
 	const first = layout.kinds.indexOf('Fragment');
 	const children = table(layout.recipes.kinds.slice(0, first));
-	const svelte = { ...layout.svelte, ...table(layout.recipes.kinds.slice(first), true) };
+	const svelte = table(layout.recipes.kinds.slice(first), true);
 	const adds = (layout.recipes.adds ?? []).flat();
 	const extras: string[] = [];
 	for (const field of extra_fields) {
 		const add = adds.find(([op, , at]) => op === 'maybe' && at === field.at);
 		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
 	}
-	const stylesheet = { ...layout.stylesheet, ...table(layout.recipes.kinds.slice(layout.kinds.indexOf('StyleSheet'))) };
+	const stylesheet = table(layout.recipes.kinds.slice(layout.kinds.indexOf('StyleSheet')));
 	return { children, extras, stylesheet, svelte };
 }
 

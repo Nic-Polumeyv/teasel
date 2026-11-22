@@ -9,13 +9,9 @@ mod js;
 mod markup;
 mod nodes;
 
-use std::cell::RefCell;
-
 use self::blocks::Open;
 pub(crate) use self::js::typescript;
 use self::markup::Once;
-use self::nodes::Shapes;
-pub(crate) use self::nodes::{NAMES, children, n, stylesheet_children};
 use crate::ast::{Ast, ElementType, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
@@ -23,31 +19,22 @@ use crate::lexer::scan::{find, is_space};
 use crate::lexer::unicode::is_id_continue;
 use crate::parser::{Options, Result};
 
-thread_local! {
-	/// The shapes of Svelte's rows, numbered for good as the walker meets them.
-	pub(super) static SHAPES: RefCell<Shapes> = RefCell::default();
-}
-
 /// Parses a Svelte component: its tree with the JavaScript inside it, positions of the whole
 /// source. Returns the tree and its root.
 pub(crate) fn parse_component(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	SHAPES.with(|shapes| {
-		let full = src.len() as u32;
-		let cut = src.trim_end_matches(is_space);
-		let mut walker = Walker::new(cut, full, shapes.borrow_mut(), options, reused);
-		let root = walker.run();
-		(walker.ast.take().unwrap(), root)
-	})
+	let full = src.len() as u32;
+	let cut = src.trim_end_matches(is_space);
+	let mut walker = Walker::new(cut, full, options, reused);
+	let root = walker.run();
+	(walker.ast.take().unwrap(), root)
 }
 
 /// The whole source as a CSS stylesheet; see `Walker::stylesheet`. Its rows are numbered among
 /// Svelte's, by the same names.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	SHAPES.with(|shapes| {
-		let mut walker = Walker::new(src, src.len() as u32, shapes.borrow_mut(), options, reused);
-		let root = walker.stylesheet();
-		(walker.ast.take().unwrap(), root)
-	})
+	let mut walker = Walker::new(src, src.len() as u32, options, reused);
+	let root = walker.stylesheet();
+	(walker.ast.take().unwrap(), root)
 }
 
 /// Buffers given back once used, for the next of their kind.
@@ -100,7 +87,6 @@ pub(crate) struct Walker<'a> {
 	pub(crate) src: &'a str,
 	/// The source's length before the whitespace that ends it was cut: where the root ends.
 	pub(crate) full: u32,
-	pub(crate) shapes: std::cell::RefMut<'a, Shapes>,
 	pub(crate) options: Options,
 	pub(crate) ast: Option<Box<Ast>>,
 	pub(crate) at: u32,
@@ -121,17 +107,10 @@ pub(crate) struct Walker<'a> {
 }
 
 impl<'a> Walker<'a> {
-	pub(crate) fn new(
-		src: &'a str,
-		full: u32,
-		shapes: std::cell::RefMut<'a, Shapes>,
-		options: Options,
-		reused: Option<Box<Ast>>,
-	) -> Self {
+	pub(crate) fn new(src: &'a str, full: u32, options: Options, reused: Option<Box<Ast>>) -> Self {
 		Walker {
 			src,
 			full,
-			shapes,
 			options,
 			ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(full as usize)))),
 			at: 0,

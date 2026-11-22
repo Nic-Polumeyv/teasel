@@ -310,10 +310,6 @@ impl ByNode {
 struct Scratch {
 	envs: Vec<Env>,
 	open: Vec<u32>,
-	host_declared: Vec<List>,
-	/// The groups of the host nodes being walked, each node's sorted behind the ones outside it.
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	env_of: Vec<u32>,
 	owned: FastMap<BindingId, u32>,
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
@@ -468,9 +464,6 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 		mut out,
 		mut envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		mut env_of,
 		owned,
 		..
@@ -503,9 +496,6 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 	out.scratch = Scratch {
 		envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		env_of,
 		owned,
 		names,
@@ -552,10 +542,6 @@ pub struct Binder<'a> {
 	envs: Vec<Env>,
 	/// The environments open here, innermost last.
 	open: Vec<u32>,
-	/// The patterns the open host scopes declare, which their fields do not reference.
-	host_declared: Vec<List>,
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -595,9 +581,6 @@ impl<'a> Binder<'a> {
 		let Scratch {
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			env_of,
 			owned,
 			names,
@@ -608,9 +591,6 @@ impl<'a> Binder<'a> {
 			out,
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -1149,74 +1129,6 @@ impl<'a> Binder<'a> {
 		self.visit_with(id, mode, true);
 	}
 
-	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
-	fn host(&mut self, id: NodeId, index: u32) {
-		let fields = self.ast.host_rows[index as usize].fields;
-		let (from, len) = (fields.start, fields.len);
-		let Some(opens) = self.ast.host_scopes[index as usize] else {
-			for i in from..from + len {
-				self.host_field(i);
-			}
-			return;
-		};
-		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-		}
-		let depth = self.host_declared.len();
-		self.host_declared.push(opens.outside);
-		// groups nest: the outer one opens first at a field and closes last
-		let base = self.host_groups.len();
-		let open_base = self.open_groups.len();
-		self.host_groups.extend_from_slice(
-			&self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize],
-		);
-		self.host_groups[base..].sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
-		let mut next = base;
-		for i in from..from + len {
-			while next < self.host_groups.len() && self.host_groups[next].from == i {
-				let group = self.host_groups[next];
-				// a script's program hoists `var` like a script; a fragment is where the markup's expressions sit
-				let node = group.node.unwrap_or(id);
-				let kind = match self.ast.node(node).kind {
-					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
-					NodeKind::Fragment { .. } => ScopeKind::Fragment,
-					_ => ScopeKind::Block,
-				};
-				self.enter(kind, Some(node), false);
-				for &pattern in self.ast.list(group.inside).iter().flatten() {
-					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
-				}
-				self.host_declared.push(group.inside);
-				self.open_groups.push(next);
-				next += 1;
-			}
-			self.host_field(i);
-			while self.open_groups.len() > open_base
-				&& self
-					.open_groups
-					.pop_if(|&mut g| self.host_groups[g].until == i + 1)
-					.is_some()
-			{
-				self.exit();
-				self.host_declared.pop();
-			}
-		}
-		debug_assert_eq!(self.open_groups.len(), open_base, "a host's scope groups must nest");
-		self.open_groups.truncate(open_base);
-		self.host_groups.truncate(base);
-		self.host_declared.truncate(depth);
-	}
-
-	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
-	fn host_field(&mut self, i: u32) {
-		match self.ast.host_vals[i as usize] {
-			crate::ast::Value::Node(child) => self.held(child),
-			crate::ast::Value::Nodes(children) => self.held_all(children),
-			_ => {}
-		}
-	}
-
 	/// An element: what its `let:` directives name is declared in a scope over its attributes and
 	/// its fragment, and the fragment has a scope of its own.
 	fn element(&mut self, id: NodeId, this: Option<NodeId>, attributes: List, fragment: NodeId) {
@@ -1264,26 +1176,16 @@ impl<'a> Binder<'a> {
 		self.exit();
 	}
 
-	/// What a node of Svelte's holds, as an expression, unless an open scope declares it.
-	fn held(&mut self, child: NodeId) {
-		let declared = self
-			.host_declared
-			.iter()
-			.any(|list| self.ast.list(*list).contains(&Some(child)));
-		if !declared {
-			self.field_value(child);
-		}
-	}
-
+	/// Each node a list of Svelte's holds.
 	fn held_all(&mut self, children: List) {
 		for i in 0..children.len {
 			if let Some(child) = self.ast.nth(children, i) {
-				self.held(child);
+				self.field_value(child);
 			}
 		}
 	}
 
-	/// A host field's value: a host node visited as such, JavaScript as a root of its own.
+	/// What a node of Svelte's holds: another of them visited as such, JavaScript as a root of its own.
 	fn field_value(&mut self, child: NodeId) {
 		if self.kind(child).is_svelte() {
 			self.visit(child, Mode::Expression);
@@ -1321,7 +1223,6 @@ impl<'a> Binder<'a> {
 			self.decorators(id);
 		}
 		match self.kind(id) {
-			Host(index) => self.host(id, index),
 			Fragment { nodes: held } | DebugTag { identifiers: held } => self.held_all(held),
 			Text | TextDecoded { .. } | MarkupComment => {}
 			// a stylesheet holds no JavaScript
@@ -1353,7 +1254,7 @@ impl<'a> Binder<'a> {
 			| ConstTag { declaration: held }
 			| DeclarationTag { declaration: held }
 			| AttributeTag { value: held, .. }
-			| StyleDirectiveTag { value: held, .. } => self.held(held),
+			| StyleDirectiveTag { value: held, .. } => self.field_value(held),
 			Attribute { value: held, .. } | StyleDirective { value: held, .. } => self.held_all(held),
 			AttributeFlag { .. } | StyleDirectiveFlag { .. } => {}
 			// what a `let:` directive names is declared by its element

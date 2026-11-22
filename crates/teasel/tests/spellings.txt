@@ -121,7 +121,6 @@ FunctionDeclaration
 FunctionExpression
 FunctionType
 Heritage
-Host
 HtmlTag
 IdSelector
 Identifier
@@ -420,10 +419,6 @@ generator
 get
 global
 handler
-host_keys
-host_strings
-host_vals
-hosts
 id
 identifiers
 implements
@@ -508,7 +503,6 @@ params
 parent
 parenthesized
 pattern
-payload
 pending
 pos
 position
@@ -543,7 +537,6 @@ script
 second
 selectors
 set
-shape
 shorthand
 size
 slice
@@ -564,11 +557,9 @@ string
 strs
 struct
 styles
-stylesheet
 superClass
 superTypeArguments
 super_type_arguments
-svelte
 switch
 tag
 tail

@@ -270,7 +270,7 @@ macro_rules! by_kind {
 	};
 }
 
-/// Every kind's recipe; `Host` has none, the writer spells it itself.
+/// Every kind's recipe.
 pub static KINDS: ByKind = {
 	let (kinds, named) = by_kind! {
 		Program: &[Type("Program"), List("body", at!(body)), BoolNames("sourceType", at!(module), &["module", "script"])],
@@ -351,7 +351,6 @@ pub static KINDS: ByKind = {
 		ExportSpecifier: &[Type("ExportSpecifier"), Node("local", at!(local)), OtherName("exported", at!(exported), at!(local))],
 		ExportDefaultDeclaration: &[Type("ExportDefaultDeclaration"), Node("declaration", at!(declaration))],
 		ExportAllDeclaration: &[Type("ExportAllDeclaration"), Opt("exported", at!(exported)), Node("source", at!(source)), List("attributes", at!(attributes))],
-		Host: &[],
 		TypeAnnotation: &[Type("TSTypeAnnotation"), Node("typeAnnotation", at!(type_annotation))],
 		Keyword: &[TypeOf(at!(f0))],
 		ThisType: &[Type("TSThisType")],

@@ -1,7 +1,7 @@
 //! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
+use crate::ast::{Ast, Extras, List, NodeId, NodeKind};
 use crate::engine;
 use crate::interner::StrId;
 use crate::json::Json;
@@ -10,7 +10,6 @@ use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
 use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
-use crate::svelte;
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
@@ -464,7 +463,7 @@ impl<'a> Writer<'a> {
 					self.key(key);
 					self.json.list();
 					for i in start as usize..(start + len) as usize {
-						self.str_of(self.ast.host_strings[i]);
+						self.str_of(self.ast.modifiers[i]);
 					}
 					self.json.end();
 				}
@@ -574,52 +573,11 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
-		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
-		match *kind {
-			Host(index) => {
-				let host = self.ast.host_rows[index as usize];
-				match svelte::NAMES.get(host.ty as usize).copied() {
-					None => {
-						// a row without a type, a style element's content, positions and all
-						let node = self.ast.node(id);
-						self.json.object();
-						self.span(node.start, node.end);
-					}
-					Some(ty) if host.spanned() => self.begin(ty, id),
-					Some(ty) => {
-						self.json.begin(ty);
-						self.scope_facts(id);
-					}
-				}
-				for i in host.fields.indices() {
-					self.json.key(svelte::NAMES[self.ast.host_keys[i as usize] as usize]);
-					match self.ast.host_vals[i as usize] {
-						Value::Node(child) => self.node(child),
-						Value::Nodes(children) => self.items(children),
-						Value::Str(string) => self.str_of(string),
-						Value::Slice(start, end) => self.slice(start, end),
-						Value::Strs(start, len) => {
-							self.json.list();
-							for i in start as usize..(start + len) as usize {
-								self.str_of(self.ast.host_strings[i]);
-							}
-							self.json.end();
-						}
-						Value::Bool(value) => self.json.bool(value),
-						Value::Int(value) => self.json.int(value),
-						Value::Null => self.json.null(),
-						Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
-					}
-				}
-			}
-			// erasing may put a child in the node's place, which closes itself
-			_ => {
-				let base = kind as *const NodeKind as *const u8;
-				if !self.run(id, KINDS[tag(base)], base) {
-					return;
-				}
-			}
+		// erasing may put a child in the node's place, which closes itself
+		let base = kind as *const NodeKind as *const u8;
+		if !self.run(id, KINDS[tag(base)], base) {
+			return;
 		}
 		self.end();
 	}

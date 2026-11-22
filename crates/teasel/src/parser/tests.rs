@@ -1216,12 +1216,11 @@ fn layout_sizes() {
 		size_of::<crate::lexer::token::TokenKind>()
 	);
 	eprintln!(
-		"Scope {} Binding {} Reference {} Comment {} HostRow {} Attached {} TokenSnapshot {}",
+		"Scope {} Binding {} Reference {} Comment {} Attached {} TokenSnapshot {}",
 		size_of::<crate::scopes::Scope>(),
 		size_of::<crate::scopes::Binding>(),
 		size_of::<crate::scopes::Reference>(),
 		size_of::<crate::ast::Comment>(),
-		size_of::<crate::ast::HostRow>(),
 		size_of::<crate::ast::Attached>(),
 		size_of::<super::TokenSnapshot>()
 	);

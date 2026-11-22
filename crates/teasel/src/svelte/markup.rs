@@ -959,11 +959,11 @@ impl<'a> Walker<'a> {
 				expression = Some(self.ast().add(NodeKind::Identifier { name }, arg_start, end));
 			}
 		}
-		let from = self.ast().host_strings.len() as u32;
+		let from = self.ast().modifiers.len() as u32;
 		let mut count = 0;
 		for modifier in modifiers.split('|').filter(|m| !m.is_empty()) {
 			let id = self.intern(modifier);
-			self.ast().host_strings.push(id);
+			self.ast().modifiers.push(id);
 			count += 1;
 		}
 		let modifiers = [from, count];
