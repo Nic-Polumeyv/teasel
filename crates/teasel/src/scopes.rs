@@ -1217,6 +1217,42 @@ impl<'a> Binder<'a> {
 		}
 	}
 
+	/// An element: what its `let:` directives name is declared in a scope over its attributes and
+	/// its fragment, and the fragment has a scope of its own.
+	fn element(&mut self, id: NodeId, this: Option<NodeId>, attributes: List, fragment: NodeId) {
+		if let Some(this) = this {
+			self.field_value(this);
+		}
+		let named = |b: &Self, i: u32| match b.ast.nth(attributes, i).map(|attribute| b.kind(attribute)) {
+			Some(NodeKind::Directive {
+				ty: crate::ast::DirectiveType::Let,
+				expression,
+				..
+			}) => expression,
+			_ => None,
+		};
+		let declares = (0..attributes.len).any(|i| named(self, i).is_some());
+		if declares {
+			self.enter(ScopeKind::Block, Some(id), false);
+			for i in 0..attributes.len {
+				if let Some(pattern) = named(self, i) {
+					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+				}
+			}
+		}
+		for i in 0..attributes.len {
+			if let Some(attribute) = self.ast.nth(attributes, i) {
+				self.field_value(attribute);
+			}
+		}
+		self.enter(ScopeKind::Fragment, Some(fragment), false);
+		self.field_value(fragment);
+		self.exit();
+		if declares {
+			self.exit();
+		}
+	}
+
 	/// What a node of Svelte's holds, as an expression, unless an open scope declares it.
 	fn held(&mut self, child: NodeId) {
 		let declared = self
@@ -1283,7 +1319,42 @@ impl<'a> Binder<'a> {
 			| AttachTag { expression: held }
 			| SpreadAttribute { expression: held }
 			| ConstTag { declaration: held }
-			| DeclarationTag { declaration: held } => self.held(held),
+			| DeclarationTag { declaration: held }
+			| AttributeTag { value: held, .. }
+			| StyleDirectiveTag { value: held, .. } => self.held(held),
+			Attribute { value: held, .. } | StyleDirective { value: held, .. } => self.held_all(held),
+			AttributeFlag { .. } | StyleDirectiveFlag { .. } => {}
+			// what a `let:` directive names is declared by its element
+			Directive {
+				ty: crate::ast::DirectiveType::Let,
+				..
+			} => {}
+			Directive { expression, .. } | TransitionDirective { expression, .. } => {
+				if let Some(expression) = expression {
+					self.field_value(expression);
+				}
+			}
+			Element {
+				attributes, fragment, ..
+			} => self.element(id, None, attributes, fragment),
+			SvelteElement {
+				tag: this,
+				attributes,
+				fragment,
+				..
+			}
+			| SvelteComponent {
+				expression: this,
+				attributes,
+				fragment,
+				..
+			} => self.element(id, Some(this), attributes, fragment),
+			Script {
+				content, attributes, ..
+			} => {
+				self.field_value(content);
+				self.held_all(attributes);
+			}
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),

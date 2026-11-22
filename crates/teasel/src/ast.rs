@@ -1236,6 +1236,105 @@ crate::layout::kinds! {
 		DebugTag {
 			identifiers: List,
 		},
+		/// An attribute whose value is text and tags.
+		Attribute {
+			name: StrId,
+			value: List,
+		},
+		/// An attribute whose value is one tag.
+		AttributeTag {
+			name: StrId,
+			value: NodeId,
+		},
+		/// An attribute without a value.
+		AttributeFlag {
+			name: StrId,
+		},
+		StyleDirective {
+			name: StrId,
+			value: List,
+			/// A run of `Ast::host_strings`: where it starts and how many.
+			modifiers: [u32; 2],
+		},
+		StyleDirectiveTag {
+			name: StrId,
+			value: NodeId,
+			modifiers: [u32; 2],
+		},
+		StyleDirectiveFlag {
+			name: StrId,
+			modifiers: [u32; 2],
+		},
+		Directive {
+			name: StrId,
+			expression: Option<NodeId>,
+			modifiers: [u32; 2],
+			ty: DirectiveType,
+		},
+		TransitionDirective {
+			name: StrId,
+			expression: Option<NodeId>,
+			modifiers: [u32; 2],
+			intro: bool,
+			outro: bool,
+		},
+		Element {
+			name: StrId,
+			attributes: List,
+			fragment: NodeId,
+			ty: ElementType,
+		},
+		SvelteElement {
+			name: StrId,
+			tag: NodeId,
+			attributes: List,
+			fragment: NodeId,
+		},
+		SvelteComponent {
+			name: StrId,
+			expression: NodeId,
+			attributes: List,
+			fragment: NodeId,
+		},
+		Script {
+			content: NodeId,
+			attributes: List,
+			module: bool,
+		},
+	}
+}
+
+crate::layout::names! {
+	/// An element's type; the first two hold what their `this` attribute gave beside the rest.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum ElementType {
+		SvelteElement = "SvelteElement",
+		SvelteComponent = "SvelteComponent",
+		SvelteSelf = "SvelteSelf",
+		SvelteWindow = "SvelteWindow",
+		SvelteDocument = "SvelteDocument",
+		SvelteBody = "SvelteBody",
+		SvelteHead = "SvelteHead",
+		SvelteOptions = "SvelteOptions",
+		SvelteFragment = "SvelteFragment",
+		SvelteBoundary = "SvelteBoundary",
+		TitleElement = "TitleElement",
+		SlotElement = "SlotElement",
+		RegularElement = "RegularElement",
+		Component = "Component",
+	}
+}
+
+crate::layout::names! {
+	/// The type of a directive that holds an expression and no more.
+	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+	pub enum DirectiveType {
+		Bind = "BindDirective",
+		On = "OnDirective",
+		Use = "UseDirective",
+		Class = "ClassDirective",
+		Animate = "AnimateDirective",
+		Let = "LetDirective",
 	}
 }
 

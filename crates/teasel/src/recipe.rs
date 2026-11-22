@@ -44,6 +44,8 @@ pub enum Op {
 	Int(&'static str, Slot),
 	/// Two words as a list of two numbers.
 	Pair(&'static str, Slot),
+	/// Two words as the run of interned strings they name.
+	Strs(&'static str, Slot),
 	/// A number literal's value: the float, or null when not finite.
 	Float(&'static str, Slot),
 	/// `raw`: the node's source text.
@@ -126,6 +128,7 @@ impl Op {
 			BoolNames(k, f, &[yes, no]) => ("boolnames", k, Some(f), Rest::Names(yes, no)),
 			Int(k, f) => ("int", k, Some(f), Rest::Nothing),
 			Pair(k, f) => ("pair", k, Some(f), Rest::Nothing),
+			Strs(k, f) => ("strs", k, Some(f), Rest::Nothing),
 			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
 			Raw => ("raw", "", None, Rest::Nothing),
 			BigInt => ("bigint", "", None, Rest::Nothing),
@@ -202,7 +205,7 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 			KeepIf(_, slot) => matches!(slot.ty, Ty::Enum([_, _])),
 			Modifier(_, slot) | EnumOr(_, slot, _) => matches!(slot.ty, Ty::OptEnum(_)),
 			Int(_, slot) | Float(_, slot) => matches!(slot.ty, Ty::U32),
-			Pair(_, slot) => matches!(slot.ty, Ty::Pair),
+			Pair(_, slot) | Strs(_, slot) => matches!(slot.ty, Ty::Pair),
 			Object(_, inner) => {
 				fits(inner);
 				true
@@ -390,6 +393,18 @@ pub static KINDS: ByKind = {
 		ConstTag: &[Type("ConstTag"), Node("declaration", at!(declaration))],
 		DeclarationTag: &[Type("DeclarationTag"), Node("declaration", at!(declaration))],
 		DebugTag: &[Type("DebugTag"), List("identifiers", at!(identifiers))],
+		Attribute: &[Type("Attribute"), Str("name", at!(name)), List("value", at!(value))],
+		AttributeTag: &[Type("Attribute"), Str("name", at!(name)), Node("value", at!(value))],
+		AttributeFlag: &[Type("Attribute"), Str("name", at!(name)), ConstBool("value", true)],
+		StyleDirective: &[Type("StyleDirective"), Str("name", at!(name)), List("value", at!(value)), Strs("modifiers", at!(modifiers))],
+		StyleDirectiveTag: &[Type("StyleDirective"), Str("name", at!(name)), Node("value", at!(value)), Strs("modifiers", at!(modifiers))],
+		StyleDirectiveFlag: &[Type("StyleDirective"), Str("name", at!(name)), ConstBool("value", true), Strs("modifiers", at!(modifiers))],
+		Directive: &[TypeOf(at!(ty)), Str("name", at!(name)), Opt("expression", at!(expression)), Strs("modifiers", at!(modifiers))],
+		TransitionDirective: &[Type("TransitionDirective"), Str("name", at!(name)), Opt("expression", at!(expression)), Strs("modifiers", at!(modifiers)), Bool("intro", at!(intro)), Bool("outro", at!(outro))],
+		Element: &[TypeOf(at!(ty)), Str("name", at!(name)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		SvelteElement: &[Type("SvelteElement"), Str("name", at!(name)), Node("tag", at!(tag)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		SvelteComponent: &[Type("SvelteComponent"), Str("name", at!(name)), Node("expression", at!(expression)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		Script: &[Type("Script"), BoolNames("context", at!(module), &["module", "default"]), Node("content", at!(content)), List("attributes", at!(attributes))],
 	};
 	assert!(named == VARIANTS.len(), "every kind has one recipe");
 	kinds

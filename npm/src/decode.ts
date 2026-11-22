@@ -548,6 +548,8 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.word(op.at);
 		case 'pair':
 			return B.pair(B.word(op.at), B.word(op.at + 4));
+		case 'strs':
+			return B.strs(B.word(op.at), B.word(op.at + 4));
 		case 'list':
 		case 'params':
 			return B.items(B.word(op.at), B.word(op.at + 4), op.op === 'params' && erase);
@@ -1077,7 +1079,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 	if (facts) after.push(LATE);
 	const lead = B.lead;
 	const body = `const N = S.N, J = S.J, b = id * ${C.words}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
+	return new Function('K', 'slow', 'items', 'params', 'strs', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, parent) => { ${body} };`)(B.constants, slow, items, params, strs, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {

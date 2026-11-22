@@ -13,9 +13,10 @@ use std::cell::RefCell;
 
 use self::blocks::{Group, Open};
 pub(crate) use self::js::typescript;
-use self::nodes::{Name, Shapes};
+use self::markup::Once;
+use self::nodes::Shapes;
 pub(crate) use self::nodes::{NAMES, children, n, stylesheet_children};
-use crate::ast::{Ast, HostGroup, List, NodeId, Opens, Value};
+use crate::ast::{Ast, ElementType, HostGroup, List, NodeId, NodeKind, Opens, Value};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::{find, is_space};
@@ -81,15 +82,13 @@ enum Frame {
 		start: u32,
 		name: (u32, u32),
 		name_id: StrId,
-		ty: Name,
+		ty: ElementType,
 		attributes: Vec<NodeId>,
-		/// The field a `this` attribute fills, on `svelte:element` and `svelte:component`.
-		this: Option<(Name, Value)>,
+		/// What a `this` attribute gave, on `svelte:element` and `svelte:component`.
+		this: Option<NodeId>,
 		nodes: Vec<NodeId>,
 		/// It carries `shadowrootmode`: a `slot` inside it is a plain element.
 		shadow: bool,
-		/// The patterns its directives declare in its scope.
-		declared: Vec<NodeId>,
 	},
 	Block(Open),
 }
@@ -111,17 +110,15 @@ pub(crate) struct Walker<'a> {
 	pub(crate) nesting: u32,
 	frames: Vec<Frame>,
 	/// The root elements read so far, each read once.
-	once: Vec<Name>,
+	once: Vec<ElementType>,
 	/// Where the current tag's word starts, for `{@const}`, which leaves its keyword out.
 	keyword: u32,
 	/// The element the browser closed last, what closed it and how deep the stack was then.
 	autoclosed: Option<(&'a str, &'a str, usize)>,
-	/// The patterns the directives of the element being read declare.
-	declared: Vec<NodeId>,
 	nodes: Pool<NodeId>,
 	groups: Pool<Group>,
 	/// The kinds and names the attributes of the element being read must not repeat.
-	seen: Vec<(Name, StrId)>,
+	seen: Vec<(Once, StrId)>,
 }
 
 impl<'a> Walker<'a> {
@@ -150,7 +147,6 @@ impl<'a> Walker<'a> {
 			once: Vec::new(),
 			keyword: 0,
 			autoclosed: None,
-			declared: Vec::new(),
 			nodes: Pool::default(),
 			groups: Pool::default(),
 			seen: Vec::new(),
@@ -359,8 +355,8 @@ impl<'a> Walker<'a> {
 		count += 1;
 		// the scope belongs to the instance script's program, or to the fragment
 		let node = match instance {
-			Some(script) => match self.field_of(script, n::content) {
-				Some(Value::Node(program)) => Some(program),
+			Some(script) => match self.tree().node(script).kind {
+				NodeKind::Script { content, .. } => Some(content),
 				_ => None,
 			},
 			None => Some(fragment),

@@ -423,6 +423,15 @@ impl<'a> Writer<'a> {
 					self.key(key);
 					self.json.ints(&get::<[u32; 2]>(base, slot));
 				}
+				Op::Strs(key, slot) => {
+					let [start, len] = get::<[u32; 2]>(base, slot);
+					self.key(key);
+					self.json.list();
+					for i in start as usize..(start + len) as usize {
+						self.str_of(self.ast.host_strings[i]);
+					}
+					self.json.end();
+				}
 				Op::Opt(key, slot) => match slot.ty {
 					Ty::OptU32 => {
 						self.key(key);

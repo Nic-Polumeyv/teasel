@@ -259,32 +259,4 @@ impl Walker<'_> {
 	pub(crate) fn list(&mut self, nodes: &[NodeId]) -> List {
 		self.ast().add_list_from(nodes.iter().map(|&id| Some(id)))
 	}
-
-	pub(crate) fn host_type(&self, id: NodeId) -> Option<Name> {
-		let ast = self.tree();
-		match ast.node(id).kind {
-			NodeKind::Host(index) => Some(Name(ast.host_rows[index as usize].ty)),
-			_ => None,
-		}
-	}
-
-	pub(crate) fn field_of(&self, id: NodeId, key: Name) -> Option<Value> {
-		let ast = self.tree();
-		let NodeKind::Host(index) = ast.node(id).kind else {
-			return None;
-		};
-		ast.host_rows[index as usize]
-			.fields
-			.indices()
-			.find(|&i| ast.host_keys[i as usize] == key.0)
-			.map(|i| ast.host_vals[i as usize])
-	}
-
-	pub(crate) fn string_of(&self, value: Value) -> Option<&str> {
-		match value {
-			Value::Str(s) => Some(self.tree().str(s)),
-			Value::Slice(a, b) => Some(&self.src[a as usize..b as usize]),
-			_ => None,
-		}
-	}
 }

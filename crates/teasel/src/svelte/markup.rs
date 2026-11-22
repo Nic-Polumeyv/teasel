@@ -3,9 +3,8 @@
 
 use super::blocks::{Mark, Which};
 use super::js::reserved;
-use super::nodes::{Name, n};
 use super::{Frame, Walker};
-use crate::ast::{CommentKind, HostGroup, List, NodeId, NodeKind, Opens, Value};
+use crate::ast::{CommentKind, DirectiveType, ElementType, List, NodeId, NodeKind};
 use crate::error::Code;
 use crate::interner::StrId;
 use crate::lexer::scan::{find_pair, is_space};
@@ -93,7 +92,23 @@ pub(crate) fn closing_tag(rest: &str, name: &str) -> Option<usize> {
 
 /// What reading an attribute gives: its node, and the kind and name it must not repeat on the
 /// element, when it has such a name.
-pub(crate) type Attribute = (NodeId, Option<(Name, StrId)>);
+pub(crate) type Attribute = (NodeId, Option<(Once, StrId)>);
+
+/// What an element holds once of a name: an attribute, a class directive or a style directive.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Once {
+	Attribute,
+	Class,
+	Style,
+}
+
+/// An attribute's value as written: none, one tag, or text and tags.
+#[derive(Clone, Copy)]
+enum Held {
+	Flag,
+	Tag(NodeId),
+	Chunks(List),
+}
 
 /// A directive by the name before its `:`.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -127,16 +142,16 @@ impl Directive {
 		})
 	}
 
-	fn ty(self) -> Name {
+	/// The type of a directive that is neither `style:` nor a transition.
+	fn ty(self) -> DirectiveType {
 		match self {
-			Directive::Bind => n::BindDirective,
-			Directive::On => n::OnDirective,
-			Directive::Use => n::UseDirective,
-			Directive::Class => n::ClassDirective,
-			Directive::Style => n::StyleDirective,
-			Directive::Transition | Directive::In | Directive::Out => n::TransitionDirective,
-			Directive::Animate => n::AnimateDirective,
-			Directive::Let => n::LetDirective,
+			Directive::Bind => DirectiveType::Bind,
+			Directive::On => DirectiveType::On,
+			Directive::Use => DirectiveType::Use,
+			Directive::Class => DirectiveType::Class,
+			Directive::Animate => DirectiveType::Animate,
+			Directive::Let => DirectiveType::Let,
+			_ => unreachable!(),
 		}
 	}
 
@@ -157,9 +172,7 @@ impl Directive {
 
 /// An element by its name: its type, and what its rule says of it.
 struct Rule {
-	ty: Name,
-	/// The field a `this` attribute fills, and whether text is taken there as a string.
-	this: Option<(Name, bool)>,
+	ty: ElementType,
 	/// Only at the root, and once.
 	root: bool,
 	/// A `title` is its own type only inside `svelte:head`.
@@ -170,10 +183,9 @@ struct Rule {
 	rcdata: bool,
 }
 
-const fn rule(ty: Name) -> Rule {
+const fn rule(ty: ElementType) -> Rule {
 	Rule {
 		ty,
-		this: None,
 		root: false,
 		title: false,
 		slot: false,
@@ -185,52 +197,46 @@ const fn rule(ty: Name) -> Rule {
 /// The rule of a tag's own name.
 fn own_rule(name: &str) -> Option<Rule> {
 	Some(match name {
-		"svelte:element" => Rule {
-			this: Some((n::tag, true)),
-			..rule(n::SvelteElement)
-		},
-		"svelte:component" => Rule {
-			this: Some((n::expression, false)),
-			..rule(n::SvelteComponent)
-		},
-		"svelte:self" => rule(n::SvelteSelf),
+		"svelte:element" => rule(ElementType::SvelteElement),
+		"svelte:component" => rule(ElementType::SvelteComponent),
+		"svelte:self" => rule(ElementType::SvelteSelf),
 		"svelte:window" => Rule {
 			root: true,
-			..rule(n::SvelteWindow)
+			..rule(ElementType::SvelteWindow)
 		},
 		"svelte:document" => Rule {
 			root: true,
-			..rule(n::SvelteDocument)
+			..rule(ElementType::SvelteDocument)
 		},
 		"svelte:body" => Rule {
 			root: true,
-			..rule(n::SvelteBody)
+			..rule(ElementType::SvelteBody)
 		},
 		"svelte:head" => Rule {
 			root: true,
-			..rule(n::SvelteHead)
+			..rule(ElementType::SvelteHead)
 		},
 		"svelte:options" => Rule {
 			root: true,
-			..rule(n::SvelteOptions)
+			..rule(ElementType::SvelteOptions)
 		},
-		"svelte:fragment" => rule(n::SvelteFragment),
-		"svelte:boundary" => rule(n::SvelteBoundary),
+		"svelte:fragment" => rule(ElementType::SvelteFragment),
+		"svelte:boundary" => rule(ElementType::SvelteBoundary),
 		"title" => Rule {
 			title: true,
-			..rule(n::TitleElement)
+			..rule(ElementType::TitleElement)
 		},
 		"slot" => Rule {
 			slot: true,
-			..rule(n::SlotElement)
+			..rule(ElementType::SlotElement)
 		},
 		"textarea" => Rule {
 			rcdata: true,
-			..rule(n::RegularElement)
+			..rule(ElementType::RegularElement)
 		},
 		"script" | "style" => Rule {
 			raw: true,
-			..rule(n::RegularElement)
+			..rule(ElementType::RegularElement)
 		},
 		_ => return None,
 	})
@@ -276,52 +282,45 @@ enum Done<'n> {
 }
 
 impl<'a> Walker<'a> {
-	/// The scope of an element whose `attributes` field is at that index of its fields, `fragment`
-	/// after it: what its directives declare over both, then its fragment's own.
-	pub(crate) fn element_scope(&mut self, attributes: usize, fragment: NodeId, declared: &[NodeId]) -> Opens {
-		let base = self.ast().host_keys.len() as u32 + attributes as u32;
-		let at = self.ast().host_groups.len() as u32;
-		if !declared.is_empty() {
-			let inside = self.list(declared);
-			self.ast().host_groups.push(HostGroup {
-				inside,
-				from: base,
-				until: base + 2,
-				node: None,
-			});
-		}
-		self.ast().host_groups.push(HostGroup {
-			inside: List::EMPTY,
-			from: base + 1,
-			until: base + 2,
-			node: Some(fragment),
-		});
-		Opens {
-			outside: List::EMPTY,
-			groups: (at, self.ast().host_groups.len() as u32 - at),
+	/// A plain attribute's name and value.
+	fn attribute_of(&self, id: NodeId) -> Option<(StrId, Held)> {
+		match self.tree().node(id).kind {
+			NodeKind::Attribute { name, value } => Some((name, Held::Chunks(value))),
+			NodeKind::AttributeTag { name, value } => Some((name, Held::Tag(value))),
+			NodeKind::AttributeFlag { name } => Some((name, Held::Flag)),
+			_ => None,
 		}
 	}
 
+	fn attribute_node(&mut self, name: StrId, value: Held, start: u32, end: u32) -> NodeId {
+		let kind = match value {
+			Held::Flag => NodeKind::AttributeFlag { name },
+			Held::Tag(value) => NodeKind::AttributeTag { name, value },
+			Held::Chunks(value) => NodeKind::Attribute { name, value },
+		};
+		self.ast().add(kind, start, end)
+	}
+
 	pub(crate) fn attribute_named(&self, id: NodeId, name: &str) -> bool {
-		self.host_type(id) == Some(n::Attribute)
-			&& self.field_of(id, n::name).and_then(|v| self.string_of(v)) == Some(name)
+		self.attribute_of(id)
+			.is_some_and(|(held, _)| self.tree().str(held) == name)
 	}
 
 	/// The one chunk of an attribute's value, when it has one.
 	pub(crate) fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
-		match self.field_of(id, n::value)? {
-			Value::Node(tag) => Some(tag),
-			Value::Nodes(list) => match self.tree().list(list) {
+		match self.attribute_of(id)?.1 {
+			Held::Tag(tag) => Some(tag),
+			Held::Chunks(list) => match self.tree().list(list) {
 				[Some(chunk)] => Some(*chunk),
 				_ => None,
 			},
-			_ => None,
+			Held::Flag => None,
 		}
 	}
 
 	/// The text of `name="text"`.
 	pub(crate) fn attribute_text(&self, id: NodeId) -> Option<&str> {
-		let Value::Nodes(_) = self.field_of(id, n::value)? else {
+		let Held::Chunks(_) = self.attribute_of(id)?.1 else {
 			return None;
 		};
 		self.text_data(self.attribute_chunk(id)?)
@@ -381,7 +380,7 @@ impl<'a> Walker<'a> {
 	}
 
 	/// A quoted or bare text value after `=`, as one text chunk.
-	pub(crate) fn text_value(&mut self) -> Result<Value> {
+	fn text_value(&mut self) -> Result<List> {
 		let value_start = self.at;
 		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
 		let (raw_start, raw_end) = match quote {
@@ -407,8 +406,7 @@ impl<'a> Walker<'a> {
 			}
 		};
 		let text = self.text_chunk(raw_start, raw_end, true);
-		let list = self.list(&[text]);
-		Ok(Value::Nodes(list))
+		Ok(self.list(&[text]))
 	}
 
 	/// `name`, `name=value` or `name="text"`: a plain attribute, as a script tag or a verbatim
@@ -419,22 +417,18 @@ impl<'a> Walker<'a> {
 		if name.is_empty() {
 			return Ok(None);
 		}
-		let mut value = Value::Bool(true);
+		let mut value = Held::Flag;
 		if self.eat("=") {
 			self.space();
-			value = self.text_value()?;
+			value = Held::Chunks(self.text_value()?);
 		}
 		if self.char().is_some_and(|c| c == '"' || c == '\'') {
 			return self.fail(self.at, self.at, Code::Expected, Some("="));
 		}
 		let name_id = self.intern(name);
-		let node = self.host(
-			n::Attribute,
-			start,
-			self.at,
-			&[(n::name, Value::Str(name_id)), (n::value, value)],
-		);
-		Ok(Some((node, Some((n::Attribute, name_id)))))
+		let end = self.at;
+		let node = self.attribute_node(name_id, value, start, end);
+		Ok(Some((node, Some((Once::Attribute, name_id)))))
 	}
 
 	pub(crate) fn comment_between_attributes(&mut self) -> bool {
@@ -464,7 +458,7 @@ impl<'a> Walker<'a> {
 				if &self.src[span.0 as usize..span.1 as usize] == "svelte:head" {
 					return true;
 				}
-				if *ty == n::RegularElement || *ty == n::Component {
+				if *ty == ElementType::RegularElement || *ty == ElementType::Component {
 					return false;
 				}
 			}
@@ -514,9 +508,9 @@ impl<'a> Walker<'a> {
 		let typing = self.recovering() && name.ends_with('.') && component_name(&format!("{name}_"));
 		let rule = match own {
 			Some(rule) => rule,
-			None if component_name(name) => rule(n::Component),
-			None if valid_name(name) => rule(n::RegularElement),
-			None if typing => rule(n::Component),
+			None if component_name(name) => rule(ElementType::Component),
+			None if valid_name(name) => rule(ElementType::RegularElement),
+			None if typing => rule(ElementType::Component),
 			None => return self.fail(name_span.0, name_span.1, Code::InvalidName, Some(name)),
 		};
 		if rule.root && self.frames.len() > 1 {
@@ -529,7 +523,7 @@ impl<'a> Walker<'a> {
 				self.once.push(rule.ty);
 			}
 		}
-		let plain = n::RegularElement;
+		let plain = ElementType::RegularElement;
 		let mut ty = rule.ty;
 		if rule.title && !self.inside_head() {
 			ty = plain;
@@ -564,7 +558,6 @@ impl<'a> Walker<'a> {
 		let mut seen = std::mem::take(&mut self.seen);
 		seen.clear();
 		let mut shadow = false;
-		self.declared.clear();
 		loop {
 			let attribute = if script || style {
 				self.static_attribute()?
@@ -574,7 +567,7 @@ impl<'a> Walker<'a> {
 			let Some((node, key)) = attribute else { break };
 			if let Some((kind, key)) = key {
 				let text = self.tree().strings.get(key);
-				if kind == n::Attribute && ty == plain && text == "shadowrootmode" {
+				if kind == Once::Attribute && ty == plain && text == "shadowrootmode" {
 					shadow = true;
 				}
 				let this = text == "this";
@@ -591,9 +584,14 @@ impl<'a> Walker<'a> {
 			self.space();
 		}
 		self.seen = seen;
-		let declared = std::mem::take(&mut self.declared);
 		let mut this = None;
-		if let Some((field, text)) = rule.this {
+		// the field `this` fills takes text as a string on `svelte:element` alone
+		let text = match rule.ty {
+			ElementType::SvelteElement => Some(true),
+			ElementType::SvelteComponent => Some(false),
+			_ => None,
+		};
+		if let Some(text) = text {
 			let position = attributes.iter().position(|&id| self.attribute_named(id, "this"));
 			let value = match position {
 				None => {
@@ -639,7 +637,7 @@ impl<'a> Walker<'a> {
 					}
 				}
 			};
-			this = Some((field, Value::Node(value)));
+			this = Some(value);
 		}
 		if script {
 			return self.script(start, name, attributes);
@@ -666,7 +664,7 @@ impl<'a> Walker<'a> {
 		if self_closing || unclosed {
 			let end = self.at;
 			let nodes = self.nodes.take();
-			self.element_node(ty, (start, end), name_id, this, attributes, nodes, &declared);
+			self.element_node(ty, (start, end), name_id, this, attributes, nodes);
 			return Ok(());
 		}
 		if rule.rcdata {
@@ -675,7 +673,7 @@ impl<'a> Walker<'a> {
 				self.at += len as u32;
 			}
 			let end = self.at;
-			self.element_node(ty, (start, end), name_id, this, attributes, nodes, &declared);
+			self.element_node(ty, (start, end), name_id, this, attributes, nodes);
 			return Ok(());
 		}
 		if rule.raw {
@@ -689,7 +687,7 @@ impl<'a> Walker<'a> {
 			}
 			let mut nodes = self.nodes.take();
 			nodes.push(node);
-			self.element_node(ty, (start, end), name_id, this, attributes, nodes, &declared);
+			self.element_node(ty, (start, end), name_id, this, attributes, nodes);
 			return Ok(());
 		}
 		let nodes = self.nodes.take();
@@ -703,7 +701,6 @@ impl<'a> Walker<'a> {
 			this,
 			nodes,
 			shadow,
-			declared,
 		});
 		Ok(())
 	}
@@ -730,7 +727,7 @@ impl<'a> Walker<'a> {
 				}
 			}
 			if self.attribute_named(id, "module") {
-				if !matches!(self.field_of(id, n::value), Some(Value::Bool(true))) {
+				if !matches!(self.tree().node(id).kind, NodeKind::AttributeFlag { .. }) {
 					let node = *self.tree().node(id);
 					self.report_at(node.start, node.end, Code::Expected, Some("module without a value"))?;
 				} else {
@@ -738,19 +735,17 @@ impl<'a> Walker<'a> {
 				}
 			}
 		}
-		let context = self.intern(if module { "module" } else { "default" });
 		let list = self.list(&attributes);
 		self.nodes.give(attributes);
 		let end = self.at;
-		let node = self.host(
-			n::Script,
+		let node = self.ast().add(
+			NodeKind::Script {
+				content: program,
+				attributes: list,
+				module,
+			},
 			start,
 			end,
-			&[
-				(n::context, Value::Str(context)),
-				(n::content, Value::Node(program)),
-				(n::attributes, Value::Nodes(list)),
-			],
 		);
 		let Some(Frame::Root {
 			instance,
@@ -768,31 +763,39 @@ impl<'a> Walker<'a> {
 		self.report_at(start, start + 1, Code::Duplicate, Some(name))
 	}
 
-	#[allow(clippy::too_many_arguments)]
 	fn element_node(
 		&mut self,
-		ty: Name,
+		ty: ElementType,
 		(start, end): (u32, u32),
 		name: StrId,
-		this: Option<(Name, Value)>,
+		this: Option<NodeId>,
 		attributes: Vec<NodeId>,
 		nodes: Vec<NodeId>,
-		declared: &[NodeId],
 	) {
 		let list = self.list(&attributes);
 		self.nodes.give(attributes);
 		let fragment = self.fragment(nodes);
-		let mut fields = [(n::name, Value::Str(name)); 4];
-		let mut count = 1;
-		if let Some(this) = this {
-			fields[1] = this;
-			count = 2;
-		}
-		let at = count;
-		fields[count] = (n::attributes, Value::Nodes(list));
-		fields[count + 1] = (n::fragment, Value::Node(fragment));
-		let scope = self.element_scope(at, fragment, declared);
-		let node = self.opening(ty, start, end, &fields[..count + 2], Some(scope));
+		let kind = match (ty, this) {
+			(ElementType::SvelteElement, Some(tag)) => NodeKind::SvelteElement {
+				name,
+				tag,
+				attributes: list,
+				fragment,
+			},
+			(ElementType::SvelteComponent, Some(expression)) => NodeKind::SvelteComponent {
+				name,
+				expression,
+				attributes: list,
+				fragment,
+			},
+			_ => NodeKind::Element {
+				name,
+				attributes: list,
+				fragment,
+				ty,
+			},
+		};
+		let node = self.ast().add(kind, start, end);
 		self.append(node);
 	}
 
@@ -805,14 +808,12 @@ impl<'a> Walker<'a> {
 			attributes,
 			this,
 			nodes,
-			declared,
 			..
 		}) = self.frames.pop()
 		else {
 			unreachable!()
 		};
-		self.element_node(ty, (start, end), name_id, this, attributes, nodes, &declared);
-		self.nodes.give(declared);
+		self.element_node(ty, (start, end), name_id, this, attributes, nodes);
 	}
 
 	fn close_element(&mut self, start: u32, name: &str) -> Result<()> {
@@ -845,7 +846,7 @@ impl<'a> Walker<'a> {
 						self.close_top(end);
 						return Ok(());
 					}
-					if *ty != n::RegularElement {
+					if *ty != ElementType::RegularElement {
 						self.report_at(start, start + 1, Code::UnexpectedClose, Some(name))?;
 					}
 					// the browser closes it here
@@ -916,49 +917,35 @@ impl<'a> Walker<'a> {
 			let value = if has_value {
 				self.plain_value(JsEntry::Expression)?
 			} else {
-				Value::Bool(true)
+				Held::Flag
 			};
 			if has_value {
 				end = self.at;
 			}
 			let name_id = self.intern(name);
-			let node = self.host(
-				n::Attribute,
-				start,
-				end,
-				&[(n::name, Value::Str(name_id)), (n::value, value)],
-			);
-			return Ok(Some((node, Some((n::Attribute, name_id)))));
+			let node = self.attribute_node(name_id, value, start, end);
+			return Ok(Some((node, Some((Once::Attribute, name_id)))));
 		};
-		let arg_id = self.intern(arg);
-		let mut fields = [(n::name, Value::Str(arg_id)); 5];
-		let value = if kind == Directive::Style {
-			let value = if has_value {
-				self.plain_value(JsEntry::Expression)?
-			} else {
-				Value::Bool(true)
-			};
-			if has_value {
-				end = self.at;
-			}
-			(n::value, value)
+		let name = self.intern(arg);
+		let entry = if kind == Directive::Let {
+			JsEntry::Pattern
 		} else {
-			let entry = if kind == Directive::Let {
-				JsEntry::Pattern
-			} else {
-				JsEntry::Expression
-			};
-			let value = if has_value {
-				self.plain_value(entry)?
-			} else {
-				Value::Bool(true)
-			};
-			if has_value {
-				end = self.at;
-			}
-			let expression = match value {
-				Value::Node(tag) => self.chunk_expression(tag),
-				Value::Nodes(list) => match *self.tree().list(list) {
+			JsEntry::Expression
+		};
+		let value = if has_value {
+			self.plain_value(entry)?
+		} else {
+			Held::Flag
+		};
+		if has_value {
+			end = self.at;
+		}
+		// a directive other than `style:` holds the one expression of its value
+		let mut expression = None;
+		if kind != Directive::Style {
+			expression = match value {
+				Held::Tag(tag) => self.chunk_expression(tag),
+				Held::Chunks(list) => match *self.tree().list(list) {
 					[Some(chunk)] if self.chunk_expression(chunk).is_some() => self.chunk_expression(chunk),
 					[Some(chunk), ..] => {
 						let node = *self.tree().node(chunk);
@@ -966,22 +953,12 @@ impl<'a> Walker<'a> {
 					}
 					_ => None,
 				},
-				_ => None,
+				Held::Flag => None,
 			};
-			let expression = match expression {
-				Some(e) => Value::Node(e),
-				None if kind.named() => {
-					let id = self.intern(arg);
-					Value::Node(self.ast().add(NodeKind::Identifier { name: id }, arg_start, end))
-				}
-				None => Value::Null,
-			};
-			if let (Directive::Let, Value::Node(pattern)) = (kind, expression) {
-				self.declared.push(pattern);
+			if expression.is_none() && kind.named() {
+				expression = Some(self.ast().add(NodeKind::Identifier { name }, arg_start, end));
 			}
-			(n::expression, expression)
-		};
-		fields[1] = value;
+		}
 		let from = self.ast().host_strings.len() as u32;
 		let mut count = 0;
 		for modifier in modifiers.split('|').filter(|m| !m.is_empty()) {
@@ -989,17 +966,32 @@ impl<'a> Walker<'a> {
 			self.ast().host_strings.push(id);
 			count += 1;
 		}
-		fields[2] = (n::modifiers, Value::Strs(from, count));
-		let mut len = 3;
-		if let Some((intro, outro)) = kind.flags() {
-			fields[3] = (n::intro, Value::Bool(intro));
-			fields[4] = (n::outro, Value::Bool(outro));
-			len = 5;
-		}
-		let node = self.host(kind.ty(), start, end, &fields[..len]);
+		let modifiers = [from, count];
+		let directive = match (kind, kind.flags()) {
+			(Directive::Style, _) => match value {
+				Held::Flag => NodeKind::StyleDirectiveFlag { name, modifiers },
+				Held::Tag(value) => NodeKind::StyleDirectiveTag { name, value, modifiers },
+				Held::Chunks(value) => NodeKind::StyleDirective { name, value, modifiers },
+			},
+			(_, Some((intro, outro))) => NodeKind::TransitionDirective {
+				name,
+				expression,
+				modifiers,
+				intro,
+				outro,
+			},
+			_ => NodeKind::Directive {
+				name,
+				expression,
+				modifiers,
+				ty: kind.ty(),
+			},
+		};
+		let node = self.ast().add(directive, start, end);
 		let key = match kind {
-			Directive::Class | Directive::Style => Some((kind.ty(), self.intern(arg))),
-			Directive::Bind => Some((n::Attribute, self.intern(arg))),
+			Directive::Class => Some((Once::Class, name)),
+			Directive::Style => Some((Once::Style, name)),
+			Directive::Bind => Some((Once::Attribute, name)),
 			_ => None,
 		};
 		Ok(Some((node, key)))
@@ -1007,13 +999,13 @@ impl<'a> Walker<'a> {
 
 	/// An attribute value: text with expressions, or one expression on its own; a slash right
 	/// before `>` is the value, `<a href=/>`.
-	fn plain_value(&mut self, entry: JsEntry) -> Result<Value> {
+	fn plain_value(&mut self, entry: JsEntry) -> Result<Held> {
 		if self.matches("/>") {
 			let slash = self.at;
 			self.at += 1;
 			let text = self.text_chunk(slash, slash + 1, true);
 			let list = self.list(&[text]);
-			return Ok(Value::Nodes(list));
+			return Ok(Held::Chunks(list));
 		}
 		let quote = self.char().filter(|c| matches!(c, '"' | '\''));
 		if let Some(q) = quote {
@@ -1023,7 +1015,7 @@ impl<'a> Walker<'a> {
 				self.at += 1;
 				let text = self.text_chunk(at, at, true);
 				let list = self.list(&[text]);
-				return Ok(Value::Nodes(list));
+				return Ok(Held::Chunks(list));
 			}
 		}
 		let done = match quote {
@@ -1039,9 +1031,9 @@ impl<'a> Walker<'a> {
 			self.at += 1;
 		}
 		let value = if quote.is_some() || chunks.len() > 1 || self.text_data(chunks[0]).is_some() {
-			Value::Nodes(self.list(&chunks))
+			Held::Chunks(self.list(&chunks))
 		} else {
-			Value::Node(chunks[0])
+			Held::Tag(chunks[0])
 		};
 		self.nodes.give(chunks);
 		Ok(value)
@@ -1164,12 +1156,7 @@ impl<'a> Walker<'a> {
 			.add(NodeKind::ExpressionTag { expression: id }, id_start, id_end);
 		let name_id = self.intern(name);
 		let end = self.at;
-		let node = self.host(
-			n::Attribute,
-			start,
-			end,
-			&[(n::name, Value::Str(name_id)), (n::value, Value::Node(tag))],
-		);
-		Ok(Some((node, Some((n::Attribute, name_id)))))
+		let node = self.attribute_node(name_id, Held::Tag(tag), start, end);
+		Ok(Some((node, Some((Once::Attribute, name_id)))))
 	}
 }

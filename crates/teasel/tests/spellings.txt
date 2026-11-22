@@ -52,7 +52,9 @@ AssignmentPattern
 Atrule
 AttachTag
 Attribute
+AttributeFlag
 AttributeSelector
+AttributeTag
 AwaitBlock
 AwaitExpression
 BigIntLiteral
@@ -89,8 +91,10 @@ DeclarationTag
 DeclareFunction
 DeclareMethod
 Decorator
+Directive
 DoWhileStatement
 EachBlock
+Element
 ElseIf
 EmptyStatement
 EnumDeclaration
@@ -191,6 +195,8 @@ SpreadElement
 StaticBlock
 StringLiteral
 StyleDirective
+StyleDirectiveFlag
+StyleDirectiveTag
 StyleSheet
 Super
 SvelteBody
