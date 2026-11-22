@@ -4,7 +4,7 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::host;
+use crate::svelte;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
 use crate::positions::Positions;
@@ -163,13 +163,13 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	texts(&mut w, view_names(true));
 	w.end();
-	// the names the hosts' rows number, a stylesheet's and a Svelte component's alike
+	// the names Svelte's rows number, a stylesheet's and a component's alike
 	w.key("names");
-	texts(&mut w, host::svelte::NAMES.iter().copied());
+	texts(&mut w, svelte::NAMES.iter().copied());
 	w.key("stylesheet");
-	children_table(&mut w, host::stylesheet_children());
+	children_table(&mut w, svelte::stylesheet_children());
 	w.key("svelte");
-	children_table(&mut w, host::svelte::children());
+	children_table(&mut w, svelte::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -305,7 +305,7 @@ pub(crate) fn read<R>(
 	offset: u32,
 	finish: impl FnOnce(&mut Ast, Option<List>, Options, &mut Words) -> R,
 ) -> R {
-	let says = entry == Entry::Svelte && host::svelte::typescript(source);
+	let says = entry == Entry::Svelte && svelte::typescript(source);
 	let options = if !options.typescript() && says {
 		options.with(Options::TYPESCRIPT)
 	} else {

@@ -1,4 +1,109 @@
-//! HTML named character references from the WHATWG table; a name keeps its `;` when it has one.
+//! Character references, decoded as the browser would: the named ones from the WHATWG table, where
+//! a name keeps its `;` when it has one.
+
+use std::borrow::Cow;
+
+// code points a browser repairs when a reference names them
+const WINDOWS_1252: [u32; 32] = [
+	8364, 129, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 141, 381, 143, 144, 8216, 8217, 8220,
+	8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
+];
+
+fn valid_code(code: u32, attribute: bool) -> u32 {
+	if code == 10 && !attribute {
+		return 32;
+	}
+	if code < 128 {
+		return code;
+	}
+	if code <= 159 {
+		return WINDOWS_1252[code as usize - 128];
+	}
+	if (55296..=57343).contains(&code) {
+		return 0;
+	}
+	if code <= 0x2ffff || (0xe0000..=0xe007f).contains(&code) || (0xe0100..=0xe01ef).contains(&code) {
+		return code;
+	}
+	0
+}
+
+/// Character references decoded as the browser would: the longest named reference wins, and in
+/// an attribute one without its `;` stays text before `=` or a word character.
+pub(crate) fn decode(raw: &str, attribute: bool) -> Cow<'_, str> {
+	if !raw.contains('&') {
+		return Cow::Borrowed(raw);
+	}
+	let mut out = String::with_capacity(raw.len());
+	let bytes = raw.as_bytes();
+	let mut i = 0;
+	while i < bytes.len() {
+		if bytes[i] != b'&' {
+			let start = i;
+			while i < bytes.len() && bytes[i] != b'&' {
+				i += 1;
+			}
+			out.push_str(&raw[start..i]);
+			continue;
+		}
+		let rest = &raw[i + 1..];
+		let mut code = None;
+		let mut mark = None;
+		let mut consumed = 0;
+		if let Some(number) = rest.strip_prefix('#') {
+			let (digits, hex) = match number.strip_prefix(['x', 'X']) {
+				Some(hex) => (hex, true),
+				None => (number, false),
+			};
+			let len = digits
+				.bytes()
+				.take_while(|b| if hex { b.is_ascii_hexdigit() } else { b.is_ascii_digit() })
+				.count();
+			if len > 0 {
+				code = u32::from_str_radix(&digits[..len], if hex { 16 } else { 10 }).ok();
+				consumed = 1 + usize::from(hex) + len;
+				if rest.as_bytes().get(consumed) == Some(&b';') {
+					consumed += 1;
+				}
+			}
+		} else {
+			let len = rest
+				.bytes()
+				.take(LONGEST)
+				.take_while(|b| b.is_ascii_alphanumeric())
+				.count();
+			let with = rest.as_bytes().get(len) == Some(&b';');
+			let bare = (1..=len.min(LONGEST_BARE)).rev();
+			for try_len in with.then_some(len + 1).into_iter().chain(bare) {
+				let Some((found, found_mark)) = lookup(&rest[..try_len]) else {
+					continue;
+				};
+				let after = rest.as_bytes().get(try_len);
+				if try_len <= len
+					&& attribute && after.is_some_and(|b| *b == b'=' || b.is_ascii_alphanumeric() || *b == b'_')
+				{
+					continue;
+				}
+				code = Some(found);
+				mark = found_mark;
+				consumed = try_len;
+				break;
+			}
+		}
+		match code.filter(|&c| c != 0) {
+			Some(code) => {
+				out.push(char::from_u32(valid_code(code, attribute)).unwrap_or('\0'));
+				out.extend(mark);
+				i += 1 + consumed;
+			}
+			None => {
+				out.push('&');
+				i += 1;
+			}
+		}
+	}
+	Cow::Owned(out)
+}
 
 /// The code point of a name and, for the 93 names that decode to a base character and a
 /// combining mark, the mark.

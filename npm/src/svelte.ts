@@ -1,4 +1,4 @@
-// the tree a Svelte component answers with, as the engine writes it: crates/teasel/src/host/svelte.rs and css.rs
+// the tree a Svelte component answers with, as the engine writes it: crates/teasel/src/svelte/, markup.rs, blocks.rs and css.rs
 import type { Expression, Identifier, Pattern, Program, VariableDeclaration } from 'estree';
 import type { Comment as JsComment } from './types.ts';
 

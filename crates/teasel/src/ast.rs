@@ -266,11 +266,11 @@ pub const VALUE_FIELDS: &[Field] = &[
 ];
 
 crate::layout::record! {
-	/// A node of the host's, a component's or a stylesheet's, its type and its fields named by
+	/// A node of Svelte's, a component's or a stylesheet's, its type and its fields named by
 	/// their numbers in `svelte::NAMES`.
 	#[derive(Clone, Copy, Debug)]
 	pub struct HostRow {
-		/// Its type, `Name::NONE` for an object of the host's without one.
+		/// Its type, `Name::NONE` for a row without one.
 		pub ty: u32,
 		/// Its fields, in `Ast::host_keys` and `Ast::host_vals`.
 		pub fields: Run,
@@ -282,7 +282,7 @@ crate::layout::record! {
 impl HostRow {
 	/// A fragment has no span, and only teasel makes one.
 	pub fn spanned(&self) -> bool {
-		self.ty != crate::host::own::Fragment.0
+		self.ty != crate::svelte::n::Fragment.0
 	}
 }
 
@@ -944,7 +944,7 @@ crate::layout::kinds! {
 			source: NodeId,
 			attributes: List,
 		},
-		/// A node of the host's, indexed into `Ast::hosts`.
+		/// A node of Svelte's, indexed into `Ast::host_rows`.
 		Host(u32),
 
 		// Types
