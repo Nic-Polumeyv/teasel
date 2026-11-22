@@ -143,30 +143,7 @@ export const children = frozen({
 	Decorator: ['expression'],
 });
 
-/** For every type of node a stylesheet holds, the fields that hold a node or a list of nodes. */
-export const stylesheet = frozen({
-	StyleSheet: ['children', 'comments'],
-	CSSComment: [],
-	Atrule: ['block'],
-	Rule: ['prelude', 'block'],
-	SelectorList: ['children'],
-	ComplexSelector: ['children'],
-	RelativeSelector: ['combinator', 'selectors'],
-	NestingSelector: [],
-	IdSelector: [],
-	ClassSelector: [],
-	Combinator: [],
-	TypeSelector: [],
-	PseudoClassSelector: ['args'],
-	PseudoElementSelector: ['args'],
-	AttributeSelector: [],
-	Nth: [],
-	Percentage: [],
-	Block: ['children'],
-	Declaration: [],
-});
-
-/** For every type of node a Svelte component holds, JavaScript's among them, the fields that hold a node or a list of nodes. */
+/** For every type of node a Svelte component or a stylesheet holds, JavaScript's among them, the fields that hold a node or a list of nodes. */
 export const svelte = frozen({
 	...children,
 	Fragment: ['nodes'],

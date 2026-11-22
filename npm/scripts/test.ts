@@ -569,7 +569,6 @@ if (name !== 'native') {
 	const made = generate(JSON.parse(engine.layout()));
 	assert.deepEqual(JSON.parse(JSON.stringify(tables.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
-	assert.deepEqual(JSON.parse(JSON.stringify(tables.stylesheet)), made.stylesheet, 'run node scripts/children.ts');
 	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');
 }
 
@@ -630,7 +629,7 @@ if (name !== 'native') {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(m.children, 'svelte fixtures', true);
+	// a stylesheet read on its own is walked by the same table
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
 			observe(css(text).node);
@@ -638,11 +637,11 @@ if (name !== 'native') {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(tables.stylesheet, 'css fixtures', true);
+	check(m.children, 'svelte and css fixtures', true);
 	assert.ok('Rule' in m.children && 'Identifier' in m.children && 'EachBlock' in m.children);
 	assert.ok(!('Host' in tables.children) && !('EachBlock' in tables.children));
-	assert.ok(Object.isFrozen(m.children) && Object.isFrozen(m.children.Program) && Object.isFrozen(tables.stylesheet.Rule));
-	assert.deepEqual([tables.stylesheet.StyleSheet, m.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
+	assert.ok(Object.isFrozen(m.children) && Object.isFrozen(m.children.Program) && Object.isFrozen(m.children.Rule));
+	assert.deepEqual(m.children.StyleSheet, ['attributes', 'children', 'comments']);
 	const cut = read('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
 }
