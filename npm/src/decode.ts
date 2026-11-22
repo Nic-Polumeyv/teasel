@@ -3,7 +3,7 @@
 
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
-import { SLOT, type Options } from './options.ts';
+import { SLOT, type Flags } from './options.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -1098,7 +1098,7 @@ function comments(S: State, parent: Decoded | undefined): Decoded[] {
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
 // `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a component's script tag said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
-const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
+const slot = (key: keyof Flags, index = 3) => index << (2 * SLOT[key]);
 const FAILED = 1 << 31, TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
@@ -1155,13 +1155,11 @@ function line_of(starts: number[], offset: number, lo: number, hi: number) {
 // tried: a closure per answer, 1.2x slower a call, and as an own property it is a key and fails structuredClone
 class Answer {
 	node: unknown;
-	end: number;
 	readonly #text: string;
 	#starts: number[] | undefined = undefined;
 	#line = 0;
-	constructor(node: unknown, end: number, text: string) {
+	constructor(node: unknown, text: string) {
 		this.node = node;
-		this.end = end;
 		this.#text = text;
 	}
 	locate(offset: number) {
@@ -1177,12 +1175,12 @@ class Answer {
 }
 
 /**
- * The answer of the last parse: `words` are `end`, the roots by number, the options it was read
+ * The answer of the last parse: `words` are the roots by number, the options it was read
  * with and each view's length; the tree itself is read in place.
  */
 export function decode(words: Uint32Array, source: string, engine: Views): Decoded {
 	const C = compile(engine);
-	const lens = 2 + words[1];
+	const lens = 1 + words[0];
 	const what = words[lens];
 	const typescript = (what & TS_OPTION) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
@@ -1271,7 +1269,7 @@ export function decode(words: Uint32Array, source: string, engine: Views): Decod
 	}
 	let answer: Decoded;
 	try {
-		answer = new Answer(failed ? null : build(S, words[2], undefined), words[0], source);
+		answer = new Answer(failed ? null : build(S, words[1], undefined), source);
 		if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 		if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 		if (!failed && erase) answer.typescript = kept(S);
@@ -1280,7 +1278,7 @@ export function decode(words: Uint32Array, source: string, engine: Views): Decod
 			answer.bindings = S.bindings;
 			answer.references = S.references;
 			// a component's answer, or a stylesheet's, lists the roots of its scopes
-			if (S.N[words[2] * C.words + (C.kind >> 2)] >= C.markup) answer.roots = S.roots;
+			if (S.N[words[1] * C.words + (C.kind >> 2)] >= C.markup) answer.roots = S.roots;
 		}
 	} finally {
 		// the state outlives the answer and any decode the stack cut short, so it lets go of what they hold

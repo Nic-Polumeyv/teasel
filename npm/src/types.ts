@@ -19,7 +19,7 @@ export interface Scope {
 		| 'enum'
 		| 'fragment';
 	/** The node that opens it; null for a function-name scope. */
-	node: Node | SvelteNode | HostNode | null;
+	node: Node | SvelteNode | null;
 	parent: Scope | null;
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
@@ -149,22 +149,9 @@ export interface Recovered {
 	column: number;
 }
 
-export declare const answers: unique symbol;
-export const LANGUAGE = Symbol('language');
-/** What `parse` reads, the whole text: a Svelte component, JavaScript or CSS. `T` is what its parse answers with. */
-export interface Language<T> {
-	readonly [answers]?: T;
-	/** The engine's number for the language. */
-	readonly [LANGUAGE]: number;
-	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. Svelte's names the JavaScript types beside its own. */
-	readonly children: Readonly<Record<string, readonly string[]>>;
-}
-
 /** What a parse returns: the node, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;
-	/** The end of the text. */
-	end: number;
 	/**
 	 * The line of `offset`, counting from 1, and its column, counting UTF-16 units from 0, in the
 	 * text parsed. A line ends at `\n`, `\r\n`, a lone `\r`,
@@ -186,12 +173,6 @@ export interface Parsed<T> {
 	references?: Reference[];
 	/** With `scopes`, for a Svelte component: its pieces of JavaScript in the order a walk over the tree meets them. */
 	roots?: JsRoot[];
-}
-
-/** A node of a stylesheet, its type and its fields as `css.children` names them. */
-export interface HostNode extends Partial<Span> {
-	type: string;
-	[field: string]: unknown;
 }
 
 /** Every code the engine can report, by the byte it reports: what a parse error names in `code`. */

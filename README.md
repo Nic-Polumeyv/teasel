@@ -14,7 +14,7 @@ npm install @teasel/parser
 
 ## A component
 
-`parse` reads a Svelte component by default and returns its `Root`:
+`parse` reads a Svelte component and returns its `Root`:
 
 ```js
 import { parse } from '@teasel/parser';
@@ -46,33 +46,32 @@ Root 0..93
 
 The markup's nodes are Svelte's: elements (`RegularElement`, `Component`, `SvelteHead` and the other `svelte:` tags), `Text` and `Comment`, attributes and directives (`Attribute`, `SpreadAttribute`, `BindDirective`, `OnDirective`, …), blocks (`IfBlock`, `EachBlock`, `AwaitBlock`, `KeyBlock`, `SnippetBlock`) and tags (`ExpressionTag`, `HtmlTag`, `ConstTag`, `RenderTag`, …). Every JavaScript expression, pattern and script inside them is ESTree. The package's TypeScript types name every node and field: `AST.Root`, `AST.EachBlock` and so on, exported as the namespace `AST`.
 
-A component is TypeScript when a script tag says `lang="ts"`. A script's program is read as a script unless you pass `sourceType: 'module'`, which a script with `import` or `export` needs.
+A component is TypeScript when a script tag says `lang="ts"`. Its scripts are read as modules.
 
 ## JavaScript and CSS
 
-Pass a language to read something else:
+`parseModule` reads JavaScript or TypeScript as a module, and `parseCss` reads a stylesheet:
 
 ```js
-import { parse, js, css } from '@teasel/parser';
+import { parseModule, parseCss } from '@teasel/parser';
 
-parse('let x: number = 1', { sourceType: 'module', typescript: true }, js).node; // an ESTree Program
-parse('a { color: red }', {}, css).node;                                          // a StyleSheet
+parseModule('let x: number = 1', { typescript: true }).node; // an ESTree Program
+parseCss('a { color: red }').node;                           // a StyleSheet
 ```
 
-`svelte` is exported too, so the default can be named. Each language has `children`: for every node type it answers with, the fields that hold a node or a list of nodes, which is what a walk over the tree follows.
+`children` is exported too: for every node type a parse answers with, the fields that hold a node or a list of nodes, which is what a walk over the tree follows. `extras` lists the fields TypeScript may add to a node of any type.
 
 ## The answer
 
-`parse` returns an object, the answer. It always has `node`, the tree, and `end`, the end of the text. Every other key is there only when its option is on:
+Each of the three returns an object, the answer. It always has `node`, the tree. Every other key is there only when its option is on:
 
 - `comments`: `comments` lists every comment in source order, and the same objects go in `leadingComments`, `trailingComments` and `innerComments` on the nodes. A component's `Root` lists its scripts' comments whatever the option.
 - `scopes`: `scopes`, `bindings` and `references`, and for a component `roots`. See below.
 - `errorRecovery`: `errors`, and a tree instead of a throw. See below.
 - `typescript: true` reads TypeScript, in the TS-ESTree shape. `typescript: 'erase'` reads it and removes the types in the same pass, and adds `typescript`, the list of what could not be removed because it does something at runtime: enums, namespaces with values, parameter properties, `export =`, `import =`, decorators and accessor fields.
 - `parenthesized` puts `parenthesized: true` on every node written in parentheses.
-- `sourceType: 'module'` reads strict code, with `import`, `export` and top-level `await`.
 
-An unknown option, or a value an option does not take, throws a `TypeError`.
+`parseCss` takes `errorRecovery` alone. An unknown option, or a value an option does not take, throws a `TypeError`.
 
 ## Positions
 
