@@ -3,7 +3,7 @@
 
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
-import { SLOT, type Options } from './options.ts';
+import { SLOT, type Flags } from './options.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -1212,7 +1212,7 @@ function hosts(C: Compiled, engine: Views): Hosts {
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
 // `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a component's script tag said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
-const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
+const slot = (key: keyof Flags, index = 3) => index << (2 * SLOT[key]);
 const FAILED = 1 << 31, TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {

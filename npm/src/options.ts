@@ -1,4 +1,5 @@
-export interface Options {
+/** Every dial of the engine's word. The package offers `Options`; the rest are the engine's own, for its tests. */
+export interface Flags {
 	/** @default 'script' */
 	sourceType?: 'script' | 'module';
 	/**
@@ -35,8 +36,13 @@ export interface Options {
 	errorRecovery?: boolean;
 }
 
+/** What `parse` and `parseModule` take. */
+export type Options = Pick<Flags, 'typescript' | 'comments' | 'scopes' | 'parenthesized' | 'errorRecovery'>;
+/** What `parseCss` takes. */
+export type CssOptions = Pick<Flags, 'errorRecovery'>;
+
 // the engine's word: two bits per option, in this order, holding the index of its value; `Options` in parser/mod.rs lays it out the same way
-const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } = {
+const ACCEPTED: { [K in keyof Flags]-?: readonly NonNullable<Flags[K]>[] } = {
 	sourceType: ['script', 'module'],
 	typescript: [false, true, 'erase'],
 	comments: [false, true],
@@ -50,13 +56,17 @@ const ACCEPTED: { [K in keyof Options]-?: readonly NonNullable<Options[K]>[] } =
 };
 /** Each option's slot in the engine's word: two bits holding the index of its value. */
 export const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot]));
-const known = (key: string): key is keyof Options => Object.hasOwn(ACCEPTED, key);
+const known = (key: string): key is keyof Flags => Object.hasOwn(ACCEPTED, key);
+/** The word of a text read as a module, which a component and a module always are. */
+export const MODULE = 1 << (2 * SLOT.sourceType);
+export const OFFERED: readonly (keyof Flags)[] = ['typescript', 'comments', 'scopes', 'parenthesized', 'errorRecovery'];
+export const OFFERED_CSS: readonly (keyof Flags)[] = ['errorRecovery'];
 
-/** The options that are on, as the word the engine takes. */
-export function flags(options: Options = {}): number {
+/** The options that are on, as the word the engine takes; of `offered` alone, when a function of the package asks. */
+export function flags(options: Flags = {}, offered?: readonly (keyof Flags)[]): number {
 	let on = 0;
 	for (const key in options) {
-		if (!known(key)) throw new TypeError(`${key} is not an option`);
+		if (!known(key) || (offered !== undefined && !offered.includes(key))) throw new TypeError(`${key} is not an option`);
 		const value: unknown = options[key];
 		if (value === undefined) continue;
 		const accepted: readonly unknown[] = ACCEPTED[key];

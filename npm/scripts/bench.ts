@@ -50,7 +50,7 @@ if (process.argv[2] === '--child') {
 		} else {
 			// index.ts reaches the engine through #engine, which is this module, so the wrapper sees every parse
 			const { engine } = await import('../dist/engine/node.js');
-			const { parse, js } = await import('../src/index.ts');
+			const { parse, parseModule } = await import('../src/index.ts');
 			const own = engine.parse;
 			(engine as { parse: typeof own }).parse = (...args) => {
 				const start = performance.now();
@@ -61,10 +61,10 @@ if (process.argv[2] === '--child') {
 				}
 			};
 			run =
-				job === 'teasel' ? ([text]) => parse(text, { sourceType: 'module', comments: true })
-				: job === 'scopes' ? ([text]) => parse(text, { sourceType: 'module', comments: true, scopes: true })
-				: job === 'scripts' ? ([text, typescript]) => parse(text, { sourceType: 'module', comments: true, typescript }, js)
-				: ([text, typescript]) => parse(text, { sourceType: 'module', comments: true, typescript });
+				job === 'teasel' ? ([text]) => parse(text, { comments: true })
+				: job === 'scopes' ? ([text]) => parse(text, { comments: true, scopes: true })
+				: job === 'scripts' ? ([text, typescript]) => parseModule(text, { comments: true, typescript })
+				: ([text, typescript]) => parse(text, { comments: true, typescript });
 		}
 		const answer: Answer = { totals: [], engines: [] };
 		for (let round = 0; round < warmup + rounds; round++) {
@@ -122,7 +122,7 @@ async function main() {
 	// only what both accept is timed: a parser that stops at the first error would look fast on what it rejects
 	const internal = await svelteInternal();
 	const { parse: sveltePublic } = await import('svelte/compiler');
-	const { parse, js } = await import('../src/index.ts');
+	const { parse, parseModule } = await import('../src/index.ts');
 	const { load } = await import('../dist/engine/addon.js');
 	const accepts = (f: () => unknown) => {
 		try {
@@ -141,7 +141,7 @@ async function main() {
 	let styleBytes = 0;
 	for (const text of unique) {
 		const svelteOk = accepts(() => internal(text));
-		const teaselOk = accepts(() => parse(text, { sourceType: 'module', comments: true }));
+		const teaselOk = accepts(() => parse(text, { comments: true }));
 		if (!svelteOk) svelteRejected++;
 		if (!teaselOk) teaselRejected++;
 		if (!svelteOk || !teaselOk) continue;
@@ -168,8 +168,8 @@ async function main() {
 	}
 	if (docs.length === 0) throw new Error('no file both parsers accept');
 	// the pieces cut out may not stand alone: a script whose exports name template bindings, a template whose TypeScript lost its script
-	const scriptsOk = scripts.filter(([text, typescript]) => accepts(() => parse(text, { sourceType: 'module', comments: true, typescript }, js)));
-	const templatesOk = templates.filter(([text, typescript]) => accepts(() => parse(text, { sourceType: 'module', comments: true, typescript })));
+	const scriptsOk = scripts.filter(([text, typescript]) => accepts(() => parseModule(text, { comments: true, typescript })));
+	const templatesOk = templates.filter(([text, typescript]) => accepts(() => parse(text, { comments: true, typescript })));
 
 	const time = (job: Job, inputs: Input[]) =>
 		new Promise<Answer>((resolve, reject) => {

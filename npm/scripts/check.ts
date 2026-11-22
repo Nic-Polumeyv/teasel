@@ -10,7 +10,7 @@ import { compile } from '../dist/engine/wasm.js';
 import { decode, LINKED, REFERENCE, SCOPE } from '../dist/decode.js';
 import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
-import { flags, type Options } from '../dist/options.js';
+import { flags, type Flags as Options } from '../dist/options.js';
 import { target } from './target.ts';
 
 // without the addon node.js is the wasm engine already, and every diff would pass

@@ -149,17 +149,6 @@ export interface Recovered {
 	column: number;
 }
 
-export declare const answers: unique symbol;
-export const LANGUAGE = Symbol('language');
-/** What `parse` reads, the whole text: a Svelte component, JavaScript or CSS. `T` is what its parse answers with. */
-export interface Language<T> {
-	readonly [answers]?: T;
-	/** The engine's number for the language. */
-	readonly [LANGUAGE]: number;
-	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. Svelte's names the JavaScript types beside its own. */
-	readonly children: Readonly<Record<string, readonly string[]>>;
-}
-
 /** What a parse returns: the node, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;

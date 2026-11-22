@@ -1,13 +1,13 @@
 import type { Comment, Node, Program } from 'estree';
 import { decode, PARENT, REFERENCE, SCOPE } from './decode.ts';
-import { LANGUAGE, type HostNode, type Language, type Parsed, type Recovered, type Reference, type Scope } from './types.ts';
-import { flags, type Options } from './options.ts';
+import type { HostNode, Parsed, Recovered, Reference, Scope } from './types.ts';
+import { flags, MODULE, OFFERED, OFFERED_CSS, type CssOptions, type Options } from './options.ts';
 import { engine } from '#engine';
-import { children, extras, stylesheet, svelte as own } from './children.ts';
+import { svelte as own } from './children.ts';
 import type { Root, SvelteNode } from './svelte.ts';
 
-export type { Options } from './options.ts';
-export type { Arguments, Binding, Code, Comment, Declared, HostNode, JsRoot, Kept, Language, Parsed, Recovered, Reference, Scope, Span } from './types.ts';
+export type { CssOptions, Options } from './options.ts';
+export type { Arguments, Binding, Code, Comment, Declared, HostNode, JsRoot, Kept, Parsed, Recovered, Reference, Scope, Span } from './types.ts';
 export type * as AST from './svelte.ts';
 
 // what the decoder hangs on a node, under keys JSON and enumeration skip
@@ -26,31 +26,17 @@ export function referenceOf(node: Node | null | undefined): Reference | undefine
 	return slot(node, REFERENCE);
 }
 
-/** A Svelte component: a parse of it answers with its `Root`, the markup's nodes around ESTree's for the JavaScript inside. The default language of `parse`. */
-export const svelte: Language<Root> = Object.freeze({ [LANGUAGE]: 2, children: own });
+/** For every type of node a parse answers with, the fields that hold a node or a list of nodes: what a walk follows. */
+export const children = own;
+/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
+export { extras } from './children.ts';
 
-/** JavaScript: a parse of it reads the whole text as a program. */
-export const js: Language<Program> & {
-	/** The fields TypeScript may add to a node of any type, holding nodes: annotations, type parameters and arguments, what a class implements, decorators. */
-	readonly extras: readonly string[];
-} = Object.freeze({ [LANGUAGE]: 0, children, extras });
+// the engine's numbers for what it reads
+const JAVASCRIPT = 0, CSS = 1, SVELTE = 2;
 
-/** CSS: a parse of it reads the whole text as a stylesheet, a `StyleSheet` of rules and at-rules with its comments listed. */
-export const css: Language<HostNode> = Object.freeze({ [LANGUAGE]: 1, children: stylesheet });
-
-/**
- * The whole of `text`, as `language` reads it: `svelte` by default, a component, its markup's
- * nodes and the JavaScript inside them in one tree, in TypeScript when a script tag says
- * `lang="ts"`. `js` reads it as a program, `css` as a stylesheet. Positions are UTF-16 offsets. A
- * lone surrogate in the text reaches the parser as U+FFFD, the way `TextEncoder` encodes it, so
- * string values, template cooked and raw text and regex patterns carry U+FFFD there while spans
- * and `locate` are right.
- */
-export function parse<T = Root>(text: string, options?: Options, language: Language<T> = svelte as Language<never>): Parsed<T> {
-	const read = language?.[LANGUAGE];
-	if (typeof read !== 'number') throw new TypeError('parse takes `svelte`, `js` or `css`');
+function read<T>(text: string, word: number, language: number): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
-	const words = engine.parse(text, flags(options), read);
+	const words = engine.parse(text, word, language);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
 		const parsed = decode(words, text, engine) as Parsed<T>;
@@ -62,4 +48,25 @@ export function parse<T = Root>(text: string, options?: Options, language: Langu
 		error = { code: 'nesting_depth', args: [], pos: 0, end: 0 };
 	}
 	throw Object.assign(new SyntaxError(error.args.reduce((text: string, arg) => `${text} '${arg}'`, error.code)), error);
+}
+
+/**
+ * A Svelte component, the whole of `text`: its `Root`, the markup's nodes and the JavaScript
+ * inside them in one tree, its scripts read as modules, in TypeScript when a script tag says
+ * `lang="ts"`. Positions are UTF-16 offsets. A lone surrogate in the text reaches the parser as
+ * U+FFFD, the way `TextEncoder` encodes it, so string values, template cooked and raw text and
+ * regex patterns carry U+FFFD there while spans and `locate` are right.
+ */
+export function parse(text: string, options?: Options): Parsed<Root> {
+	return read(text, flags(options, OFFERED) | MODULE, SVELTE);
+}
+
+/** JavaScript or TypeScript, the whole of `text` as a module: its `Program`. */
+export function parseModule(text: string, options?: Options): Parsed<Program> {
+	return read(text, flags(options, OFFERED) | MODULE, JAVASCRIPT);
+}
+
+/** CSS, the whole of `text` as a stylesheet: a `StyleSheet` of rules and at-rules with its comments listed. */
+export function parseCss(text: string, options?: CssOptions): Parsed<HostNode> {
+	return read(text, flags(options, OFFERED_CSS), CSS);
 }
