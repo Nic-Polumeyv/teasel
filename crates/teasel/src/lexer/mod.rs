@@ -104,13 +104,21 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	// computed for the ids asked about alone: filling every id below the one asked computed them for
+	// each string and property name too, and app scripts parsed 2% slower in WebAssembly
 	pub(crate) fn word_flags(&mut self, id: StrId) -> u8 {
 		let i = id.index() as usize;
-		while self.strings.word_flags.len() <= i {
-			let flags = token::word::flags(self.strings.get(StrId::at(self.strings.word_flags.len() as u32)));
-			self.strings.word_flags.push(flags);
+		let known = &mut self.strings.word_flags;
+		if known.len() <= i {
+			known.resize(i + 1, token::word::UNKNOWN);
 		}
-		self.strings.word_flags[i]
+		let flags = known[i];
+		if flags != token::word::UNKNOWN {
+			return flags;
+		}
+		let flags = token::word::flags(self.strings.get(id));
+		self.strings.word_flags[i] = flags;
+		flags
 	}
 
 	pub(crate) fn source(&self) -> &'a str {
@@ -337,6 +345,9 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	// the common case in the token reader, the rest a call: called for all of it, a lexing pass
+	// over app scripts took 3.7% longer in WebAssembly
+	#[inline(always)]
 	fn skip_space(&mut self) -> Result<bool> {
 		let bytes = self.src.as_bytes();
 		if let Some(&b) = bytes.get(self.pos)
@@ -357,6 +368,12 @@ impl<'a> Lexer<'a> {
 				}
 			}
 		}
+		self.skip_trivia()
+	}
+
+	#[inline(never)]
+	fn skip_trivia(&mut self) -> Result<bool> {
+		let bytes = self.src.as_bytes();
 		let comments = &mut self.comments;
 		match trivia(self.src, self.pos, self.module, |comment| comments.push(comment)) {
 			Ok((pos, newline)) => {
