@@ -425,7 +425,8 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(read(text, { errorRecovery: true, comments: true, scopes: true }).node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => read('<a on:x={@}/>'), (e: Any) => e instanceof SyntaxError, `${name}`);
+	// JavaScript that fails on its first token
+	assert.throws(() => read('<a on:x={)}/>'), (e: Any) => e instanceof SyntaxError && (e as Any).code === 'unexpected_token' && (e as Any).pos === 9, `${name}`);
 }
 // every node's parent is the node it sits in, objects without a type passed through, and a listed
 // comment's the node it is attached to; a list born at its size has no holes
@@ -467,7 +468,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	};
 	const texts: [string, Any][] = [
 		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
-		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', read],
+		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<p>{a /* 𝒳 */}\r\n</p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', read],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
 		['a\nb\nc\nd\ne', js],
 	];
@@ -524,7 +525,7 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 	assert.deepEqual(read(sheets, { errorRecovery: true }).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
-// a component parses after the engine started over: the fresh instance numbers its shapes anew
+// a component parses after the engine started over
 if (name !== 'native') {
 	let restarted = false;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
@@ -568,7 +569,6 @@ if (name !== 'native') {
 	const made = generate(JSON.parse(engine.layout()));
 	assert.deepEqual(JSON.parse(JSON.stringify(tables.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
-	assert.deepEqual(JSON.parse(JSON.stringify(tables.stylesheet)), made.stylesheet, 'run node scripts/children.ts');
 	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');
 }
 
@@ -629,7 +629,7 @@ if (name !== 'native') {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(m.children, 'svelte fixtures', true);
+	// a stylesheet read on its own is walked by the same table
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
 			observe(css(text).node);
@@ -637,11 +637,11 @@ if (name !== 'native') {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(tables.stylesheet, 'css fixtures', true);
+	check(m.children, 'svelte and css fixtures', true);
 	assert.ok('Rule' in m.children && 'Identifier' in m.children && 'EachBlock' in m.children);
 	assert.ok(!('Host' in tables.children) && !('EachBlock' in tables.children));
-	assert.ok(Object.isFrozen(m.children) && Object.isFrozen(m.children.Program) && Object.isFrozen(tables.stylesheet.Rule));
-	assert.deepEqual([tables.stylesheet.StyleSheet, m.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
+	assert.ok(Object.isFrozen(m.children) && Object.isFrozen(m.children.Program) && Object.isFrozen(m.children.Rule));
+	assert.deepEqual(m.children.StyleSheet, ['attributes', 'children', 'comments']);
 	const cut = read('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
 }

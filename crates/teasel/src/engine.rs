@@ -4,11 +4,11 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::svelte;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
 use crate::positions::Positions;
 use crate::scopes;
+use crate::svelte;
 
 /// The answer's words, read in place by the decoder that takes the allocation over.
 pub type Words = crate::handed::Handed<u32>;
@@ -33,6 +33,8 @@ pub fn layout_json() -> String {
 			Ty::U32 => "u32",
 			Ty::OptU32 => "?u32",
 			Ty::Pair => "pair",
+			Ty::Slice => "slice",
+			Ty::OptSlice => "?slice",
 			Ty::Enum(_) => "enum",
 			Ty::OptEnum(_) => "?enum",
 			Ty::Struct(_) => "struct",
@@ -84,7 +86,11 @@ pub fn layout_json() -> String {
 			w.list();
 			w.text(name);
 			w.text(key);
-			w.int(slot.map_or(0, |slot| slot.at as u32));
+			w.int(match (slot, &rest) {
+				(Some(slot), _) => slot.at as u32,
+				(None, Rest::Cut(front, _)) => *front as u32,
+				_ => 0,
+			});
 			w.text(slot.map_or("", |slot| ty(*slot.ty)));
 			w.list();
 			if let Some(Slot {
@@ -95,10 +101,11 @@ pub fn layout_json() -> String {
 				names.iter().for_each(|name| w.text(name));
 			}
 			w.end();
-			w.int(if let Rest::Second(slot) = rest {
-				slot.at as u32
-			} else {
-				0
+			w.int(match rest {
+				Rest::Second(slot) => slot.at as u32,
+				Rest::Cut(_, back) => back as u32,
+				Rest::Place(place) => place as u32,
+				_ => 0,
 			});
 			match rest {
 				Rest::Bool(value) => w.bool(value),
@@ -127,8 +134,6 @@ pub fn layout_json() -> String {
 	w.int(std::mem::offset_of!(Node, end) as u32);
 	w.key("kind");
 	w.int(std::mem::offset_of!(Node, kind) as u32);
-	w.key("payload");
-	w.int((std::mem::offset_of!(Node, kind) + crate::ast::node_layout::Host::FIELDS[0].at) as u32);
 	w.end();
 	w.key("kinds");
 	texts(&mut w, VARIANTS.iter().map(|variant| variant.name));
@@ -163,13 +168,6 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	texts(&mut w, view_names(true));
 	w.end();
-	// the names Svelte's rows number, a stylesheet's and a component's alike
-	w.key("names");
-	texts(&mut w, svelte::NAMES.iter().copied());
-	w.key("stylesheet");
-	children_table(&mut w, svelte::stylesheet_children());
-	w.key("svelte");
-	children_table(&mut w, svelte::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -197,15 +195,6 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
-fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
-	w.object();
-	for (ty, fields) in table {
-		w.key(ty);
-		texts(w, fields);
-	}
-	w.end();
-}
-
 fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
 	w.list();
 	list.into_iter().for_each(|text| w.text(text));
@@ -218,7 +207,8 @@ pub fn parse(source: &str, options: Options, entry: Entry) {
 	let positions = Positions::new(source);
 	read(source, options, entry, 0, |ast, roots, options, words| {
 		let failed = roots.is_none();
-		prepare(ast, source, &positions, options, failed);
+		let markup = matches!(entry, Entry::Svelte | Entry::StyleSheet);
+		prepare(ast, source, &positions, options, failed, markup);
 		// the roots by number, the options the answer was read with, each view's length, then where
 		// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
 		words.clear();
@@ -355,9 +345,9 @@ pub(crate) fn read<R>(
 /// What the decoder reading the tree in place needs beside it: every node's span as JavaScript
 /// counts it, the nodes erasure leaves out, the comments, the errors and the strings' UTF-16
 /// starts; a failed parse prepares its error row alone.
-fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
+fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, markup: bool) {
 	if !failed {
-		prepare_tree(ast, positions, options);
+		prepare_tree(ast, positions, options, markup);
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
@@ -393,7 +383,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 	}
 }
 
-fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
+fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, markup: bool) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
@@ -411,8 +401,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 		scopes.mark(ast, &mut rare, &mut late);
 	}
 	(ast.rare, ast.late) = (rare, late);
-	positions.map_values(&mut ast.host_vals);
-	if options.has(Options::COMMENTS) || !ast.host_rows.is_empty() {
+	positions.map_slices(&mut ast.slices);
+	if options.has(Options::COMMENTS) || markup {
 		positions.map_comments(&ast.comments, &mut ast.comment_rows);
 	}
 }

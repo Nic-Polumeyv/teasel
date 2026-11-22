@@ -54,8 +54,6 @@ async function fetched() {
 	}
 }
 
-// a panic traps the instance for good: a fresh one takes over, numbering the shapes of host nodes anew
-let generation = 0;
 // the instance is spent, and the next call starts the fresh one: where a stack overflow is caught there may be no stack left to start it
 let spent = false;
 
@@ -70,7 +68,6 @@ function guarded<T>(f: () => T): T {
 		// a stack overflow unwinds the module mid-parse and leaves it as unusable as a trap does
 		if (!(error instanceof WebAssembly.RuntimeError || error instanceof RangeError)) throw error;
 		spent = true;
-		generation++;
 		throw new Error('the engine panicked and started over', { cause: error });
 	}
 }
@@ -102,15 +99,11 @@ const engine: Engine = {
 		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
 		if (wasm.memory.buffer.byteLength > 1 << 28) {
 			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
-			generation++;
 		}
 		if (guarded(() => wasm.parse(...bytes(source), flags, language)) !== 0) throw new Error(text());
 		// the layout comes first: writing it can grow the memory and detach a view taken before
 		layout();
 		return words();
-	},
-	get generation() {
-		return generation;
 	},
 	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew

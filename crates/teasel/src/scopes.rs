@@ -310,10 +310,6 @@ impl ByNode {
 struct Scratch {
 	envs: Vec<Env>,
 	open: Vec<u32>,
-	host_declared: Vec<List>,
-	/// The groups of the host nodes being walked, each node's sorted behind the ones outside it.
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	env_of: Vec<u32>,
 	owned: FastMap<BindingId, u32>,
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
@@ -468,9 +464,6 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 		mut out,
 		mut envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		mut env_of,
 		owned,
 		..
@@ -503,9 +496,6 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 	out.scratch = Scratch {
 		envs,
 		open,
-		host_declared,
-		host_groups,
-		open_groups,
 		env_of,
 		owned,
 		names,
@@ -520,7 +510,7 @@ pub fn analyze(ast: &mut Ast, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
 		Entry::Program | Entry::Svelte => {
-			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
+			if ast.node(root.unwrap()).kind.is_svelte() {
 				return analyze_with(ast, ScopeKind::Module, root, |b| {
 					b.visit(root.unwrap(), Mode::Expression)
 				});
@@ -552,10 +542,6 @@ pub struct Binder<'a> {
 	envs: Vec<Env>,
 	/// The environments open here, innermost last.
 	open: Vec<u32>,
-	/// The patterns the open host scopes declare, which their fields do not reference.
-	host_declared: Vec<List>,
-	host_groups: Vec<crate::ast::HostGroup>,
-	open_groups: Vec<usize>,
 	/// The node whose pattern is being declared, for `Binding::declaration`.
 	declaring: Option<NodeId>,
 	/// What the target being visited is assigned, for `Reference::write_expr`.
@@ -595,9 +581,6 @@ impl<'a> Binder<'a> {
 		let Scratch {
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			env_of,
 			owned,
 			names,
@@ -608,9 +591,6 @@ impl<'a> Binder<'a> {
 			out,
 			envs,
 			open,
-			host_declared,
-			host_groups,
-			open_groups,
 			declaring: None,
 			writing: None,
 			compound: false,
@@ -961,7 +941,7 @@ impl<'a> Binder<'a> {
 		});
 		if let Some(existing) = existing {
 			let scope = here.scope;
-			let opened_by_host = match self.out.scopes[scope as usize] {
+			let opened_by_markup = match self.out.scopes[scope as usize] {
 				Scope {
 					kind: ScopeKind::Fragment,
 					..
@@ -970,10 +950,10 @@ impl<'a> Binder<'a> {
 					kind: ScopeKind::Block,
 					node: Some(n),
 					..
-				} => matches!(self.kind(n), NodeKind::Host(_)),
+				} => self.kind(n).is_svelte(),
 				_ => false,
 			};
-			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
+			if opened_by_markup && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
 				let n = *self.ast.node(node);
 				self.out
 					.errors
@@ -1149,87 +1129,65 @@ impl<'a> Binder<'a> {
 		self.visit_with(id, mode, true);
 	}
 
-	/// A host node: its fields in order, inside the scope it opens from `Opens::from` on.
-	fn host(&mut self, id: NodeId, index: u32) {
-		let fields = self.ast.host_rows[index as usize].fields;
-		let (from, len) = (fields.start, fields.len);
-		let Some(opens) = self.ast.host_scopes[index as usize] else {
-			for i in from..from + len {
-				self.host_field(i);
-			}
-			return;
-		};
-		for &pattern in self.ast.list(opens.outside).iter().flatten() {
-			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+	/// An element: what its `let:` directives name is declared in a scope over its attributes and
+	/// its fragment, and the fragment has a scope of its own.
+	fn element(&mut self, id: NodeId, this: Option<NodeId>, attributes: List, fragment: NodeId) {
+		if let Some(this) = this {
+			self.field_value(this);
 		}
-		let depth = self.host_declared.len();
-		self.host_declared.push(opens.outside);
-		// groups nest: the outer one opens first at a field and closes last
-		let base = self.host_groups.len();
-		let open_base = self.open_groups.len();
-		self.host_groups.extend_from_slice(
-			&self.ast.host_groups[opens.groups.0 as usize..(opens.groups.0 + opens.groups.1) as usize],
-		);
-		self.host_groups[base..].sort_unstable_by_key(|group| (group.from, std::cmp::Reverse(group.until)));
-		let mut next = base;
-		for i in from..from + len {
-			while next < self.host_groups.len() && self.host_groups[next].from == i {
-				let group = self.host_groups[next];
-				// a script's program hoists `var` like a script; a fragment is where the markup's expressions sit
-				let node = group.node.unwrap_or(id);
-				let kind = match self.ast.node(node).kind {
-					NodeKind::Program { .. } => ScopeKind::Script,
-					NodeKind::Host(inner) if !self.ast.host_rows[inner as usize].spanned() => ScopeKind::Fragment,
-					_ => ScopeKind::Block,
-				};
-				self.enter(kind, Some(node), false);
-				for &pattern in self.ast.list(group.inside).iter().flatten() {
+		let named = |b: &Self, i: u32| match b.ast.nth(attributes, i).map(|attribute| b.kind(attribute)) {
+			Some(NodeKind::Directive {
+				ty: crate::ast::DirectiveType::Let,
+				expression,
+				..
+			}) => expression,
+			_ => None,
+		};
+		let declares = (0..attributes.len).any(|i| named(self, i).is_some());
+		if declares {
+			self.enter(ScopeKind::Block, Some(id), false);
+			for i in 0..attributes.len {
+				if let Some(pattern) = named(self, i) {
 					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
 				}
-				self.host_declared.push(group.inside);
-				self.open_groups.push(next);
-				next += 1;
-			}
-			self.host_field(i);
-			while self.open_groups.len() > open_base
-				&& self
-					.open_groups
-					.pop_if(|&mut g| self.host_groups[g].until == i + 1)
-					.is_some()
-			{
-				self.exit();
-				self.host_declared.pop();
 			}
 		}
-		debug_assert_eq!(self.open_groups.len(), open_base, "a host's scope groups must nest");
-		self.open_groups.truncate(open_base);
-		self.host_groups.truncate(base);
-		self.host_declared.truncate(depth);
-	}
-
-	/// A host node's field as an expression, the patterns the open host scopes declare left to them.
-	fn host_field(&mut self, i: u32) {
-		let declared = |b: &Self, child: NodeId| {
-			b.host_declared
-				.iter()
-				.any(|list| b.ast.list(*list).contains(&Some(child)))
-		};
-		match self.ast.host_vals[i as usize] {
-			crate::ast::Value::Node(child) if !declared(self, child) => self.field_value(child),
-			crate::ast::Value::Nodes(children) => {
-				for &child in self.ast.list(children).iter().flatten() {
-					if !declared(self, child) {
-						self.field_value(child);
-					}
-				}
+		for i in 0..attributes.len {
+			if let Some(attribute) = self.ast.nth(attributes, i) {
+				self.field_value(attribute);
 			}
-			_ => {}
+		}
+		self.enter(ScopeKind::Fragment, Some(fragment), false);
+		self.field_value(fragment);
+		self.exit();
+		if declares {
+			self.exit();
 		}
 	}
 
-	/// A host field's value: a host node visited as such, JavaScript as a root of its own.
+	/// A body: its fragment's scope, where what its block names for it is declared.
+	fn body(&mut self, pattern: Option<NodeId>, fragment: Option<NodeId>) {
+		let Some(fragment) = fragment else { return };
+		self.enter(ScopeKind::Fragment, Some(fragment), false);
+		if let Some(pattern) = pattern {
+			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+		}
+		self.field_value(fragment);
+		self.exit();
+	}
+
+	/// Each node a list of Svelte's holds.
+	fn held_all(&mut self, children: List) {
+		for i in 0..children.len {
+			if let Some(child) = self.ast.nth(children, i) {
+				self.field_value(child);
+			}
+		}
+	}
+
+	/// What a node of Svelte's holds: another of them visited as such, JavaScript as a root of its own.
 	fn field_value(&mut self, child: NodeId) {
-		if matches!(self.kind(child), NodeKind::Host(_)) {
+		if self.kind(child).is_svelte() {
 			self.visit(child, Mode::Expression);
 		} else {
 			self.root(child, |b| b.visit(child, Mode::Expression));
@@ -1265,7 +1223,157 @@ impl<'a> Binder<'a> {
 			self.decorators(id);
 		}
 		match self.kind(id) {
-			Host(index) => self.host(id, index),
+			Fragment { nodes: held } | DebugTag { identifiers: held } => self.held_all(held),
+			Text | TextDecoded { .. } | MarkupComment => {}
+			// a stylesheet holds no JavaScript
+			StyleElement { .. }
+			| StyleSheet { .. }
+			| CssComment
+			| CssCommentAt { .. }
+			| Atrule { .. }
+			| CssRule { .. }
+			| SelectorList { .. }
+			| ComplexSelector { .. }
+			| RelativeSelector { .. }
+			| NamedSelector { .. }
+			| TypeSelector { .. }
+			| TypeSelectorIn { .. }
+			| PseudoClassSelector { .. }
+			| PseudoElementSelector { .. }
+			| PseudoElementSelectorOf { .. }
+			| AttributeSelector { .. }
+			| Nth
+			| Percentage
+			| CssBlock { .. }
+			| Declaration { .. } => {}
+			ExpressionTag { expression: held }
+			| HtmlTag { expression: held }
+			| RenderTag { expression: held }
+			| AttachTag { expression: held }
+			| SpreadAttribute { expression: held }
+			| ConstTag { declaration: held }
+			| DeclarationTag { declaration: held }
+			| AttributeTag { value: held, .. }
+			| StyleDirectiveTag { value: held, .. } => self.field_value(held),
+			Attribute { value: held, .. } | StyleDirective { value: held, .. } => self.held_all(held),
+			AttributeFlag { .. } | StyleDirectiveFlag { .. } => {}
+			// what a `let:` directive names is declared by its element
+			Directive {
+				ty: crate::ast::DirectiveType::Let,
+				..
+			} => {}
+			Directive { expression, .. } | TransitionDirective { expression, .. } => {
+				if let Some(expression) = expression {
+					self.field_value(expression);
+				}
+			}
+			Element {
+				attributes, fragment, ..
+			} => self.element(id, None, attributes, fragment),
+			SvelteElement {
+				tag: this,
+				attributes,
+				fragment,
+				..
+			}
+			| SvelteComponent {
+				expression: this,
+				attributes,
+				fragment,
+				..
+			} => self.element(id, Some(this), attributes, fragment),
+			Script {
+				content, attributes, ..
+			} => {
+				self.field_value(content);
+				self.held_all(attributes);
+			}
+			IfBlock {
+				test,
+				consequent,
+				branches,
+				alternate,
+			} => {
+				self.field_value(test);
+				self.body(None, Some(consequent));
+				self.held_all(branches);
+				self.body(None, alternate);
+			}
+			ElseIf {
+				test: expression,
+				consequent: fragment,
+			}
+			| KeyBlock { expression, fragment } => {
+				self.field_value(expression);
+				self.body(None, Some(fragment));
+			}
+			EachBlock {
+				expression,
+				parts,
+				body,
+			} => {
+				self.field_value(expression);
+				let [context, index, key, fallback] = [0, 1, 2, 3].map(|place| self.ast.nth(parts, place));
+				// the key is read where the item is known, when the block names one
+				let names = context.is_some() || index.is_some();
+				if let (false, Some(key)) = (names, key) {
+					self.field_value(key);
+				}
+				self.enter(ScopeKind::Fragment, Some(body), false);
+				for pattern in [context, index].into_iter().flatten() {
+					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+				}
+				if let (true, Some(key)) = (names, key) {
+					self.field_value(key);
+				}
+				self.field_value(body);
+				self.exit();
+				self.body(None, fallback);
+			}
+			AwaitBlock { expression, parts } => {
+				self.field_value(expression);
+				let [value, then, error, catch, pending] = [0, 1, 2, 3, 4].map(|place| self.ast.nth(parts, place));
+				self.body(value, then);
+				self.body(error, catch);
+				self.body(None, pending);
+			}
+			// a snippet's name is declared around it, its parameters in its body
+			SnippetBlock {
+				expression,
+				parameters,
+				fragment,
+				..
+			} => {
+				self.root(expression, |b| b.visit(expression, Mode::Declare(BindingKind::Pattern)));
+				self.enter(ScopeKind::Fragment, Some(fragment), false);
+				for place in 0..parameters.len {
+					if let Some(pattern) = self.ast.nth(parameters, place) {
+						self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+					}
+				}
+				self.field_value(fragment);
+				self.exit();
+			}
+			Root { css, scripts, fragment } => {
+				if let Some(css) = css {
+					self.field_value(css);
+				}
+				let [module, instance] = [0, 1].map(|place| self.ast.nth(scripts, place));
+				if let Some(module) = module {
+					self.field_value(module);
+				}
+				// the fragment's own scope inside the one the instance script opens, a second of the
+				// fragment's when there is none
+				match instance.map(|script| self.kind(script)) {
+					Some(Script { content, .. }) => self.enter(ScopeKind::Script, Some(content), false),
+					_ => self.enter(ScopeKind::Fragment, Some(fragment), false),
+				}
+				if let Some(instance) = instance {
+					self.field_value(instance);
+				}
+				self.body(None, Some(fragment));
+				self.exit();
+			}
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),
 				Mode::Declare(kind) => self.declare(id, kind),

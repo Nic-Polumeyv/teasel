@@ -1,9 +1,8 @@
 //! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, Extras, List, NodeId, NodeKind, Value};
+use crate::ast::{Ast, Extras, List, NodeId, NodeKind};
 use crate::engine;
-use crate::svelte;
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -31,6 +30,8 @@ pub struct Writer<'a> {
 	positions: &'a Positions,
 	cursor: Cursor,
 	options: Options,
+	/// The answer is a component's or a stylesheet's: its scopes list their roots.
+	markup: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -48,6 +49,7 @@ impl<'a> Writer<'a> {
 			positions,
 			cursor: Cursor::default(),
 			options,
+			markup: false,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
@@ -57,6 +59,7 @@ impl<'a> Writer<'a> {
 	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
 	/// when the parse failed, then what the options add.
 	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>) -> String {
+		self.markup = matches!(entry, Entry::Svelte | Entry::StyleSheet);
 		self.json.object();
 		match roots {
 			None => {
@@ -167,7 +170,7 @@ impl<'a> Writer<'a> {
 		self.rows("scopes", &scopes.scopes, 0);
 		self.rows("bindings", &scopes.bindings, 1);
 		self.rows("references", &scopes.references, 2);
-		if !self.ast.host_rows.is_empty() {
+		if self.markup {
 			self.rows("roots", &scopes.roots, 3);
 		}
 	}
@@ -365,12 +368,6 @@ impl<'a> Writer<'a> {
 		self.json.marked(self.ast.str(id), self.ast.strings.marks_of(id));
 	}
 
-	pub(crate) fn raw(&mut self, id: NodeId) {
-		let node = self.ast.node(id);
-		self.key("raw");
-		self.slice(node.start, node.end);
-	}
-
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
 	fn run(&mut self, id: NodeId, ops: &[Op], base: *const u8) -> bool {
@@ -398,6 +395,15 @@ impl<'a> Writer<'a> {
 					self.text(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
 				}
 				Op::Type(name) => self.begin(name, id),
+				Op::Bare(name) => {
+					self.json.begin(name);
+					self.scope_facts(id);
+				}
+				Op::Inner(key, front, back) => {
+					let node = self.ast.node(id);
+					self.key(key);
+					self.slice(node.start + front as u32, node.end - back as u32);
+				}
 				Op::TypeOf(slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
 					self.begin(names[get::<u8>(base, slot) as usize], id);
@@ -411,6 +417,47 @@ impl<'a> Writer<'a> {
 					self.key(key);
 					self.json.ints(&get::<[u32; 2]>(base, slot));
 				}
+				Op::Item(key, slot, place) => self.opt(key, self.ast.nth(get(base, slot), place as u32)),
+				Op::ItemKey(key, slot, place) => self.opt_key(key, self.ast.nth(get(base, slot), place as u32)),
+				Op::Slice(key, slot) => {
+					let span = self.ast.slice_of(get(base, slot));
+					self.key(key);
+					self.slice(span.start, span.end);
+				}
+				Op::SliceKey(key, slot) => {
+					if let Some(id) = get::<Option<crate::ast::SliceId>>(base, slot) {
+						let span = self.ast.slice_of(id);
+						self.key(key);
+						self.slice(span.start, span.end);
+					}
+				}
+				Op::Comments(key) => {
+					self.key(key);
+					self.comment_list(0..self.ast.comments.len() as u32);
+				}
+				Op::Edge(key, slot, end) => {
+					let span = self.ast.slice_of(get(base, slot));
+					let at = self
+						.positions
+						.offset(&mut self.cursor, if end { span.end } else { span.start });
+					self.key(key);
+					self.json.int(at);
+				}
+				Op::Splice(slot) => {
+					let held: NodeId = get(base, slot);
+					let kind = &self.ast.nodes[held.index() as usize].kind;
+					let base = kind as *const NodeKind as *const u8;
+					self.run(held, &KINDS[tag(base)][1..], base);
+				}
+				Op::Strs(key, slot) => {
+					let [start, len] = get::<[u32; 2]>(base, slot);
+					self.key(key);
+					self.json.list();
+					for i in start as usize..(start + len) as usize {
+						self.str_of(self.ast.modifiers[i]);
+					}
+					self.json.end();
+				}
 				Op::Opt(key, slot) => match slot.ty {
 					Ty::OptU32 => {
 						self.key(key);
@@ -423,6 +470,16 @@ impl<'a> Writer<'a> {
 						self.key(key);
 						match get::<Option<StrId>>(base, slot) {
 							Some(string) => self.str_of(string),
+							None => self.json.null(),
+						}
+					}
+					Ty::OptSlice => {
+						self.key(key);
+						match get::<Option<crate::ast::SliceId>>(base, slot) {
+							Some(id) => {
+								let span = self.ast.slice_of(id);
+								self.slice(span.start, span.end);
+							}
 							None => self.json.null(),
 						}
 					}
@@ -481,7 +538,6 @@ impl<'a> Writer<'a> {
 						self.json.null();
 					}
 				}
-				Op::Raw => self.raw(id),
 				Op::BigInt => {
 					let node = self.ast.node(id);
 					let raw = &self.source[node.start as usize..node.end as usize - 1];
@@ -507,52 +563,11 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
-		use NodeKind::*;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
-		match *kind {
-			Host(index) => {
-				let host = self.ast.host_rows[index as usize];
-				match svelte::NAMES.get(host.ty as usize).copied() {
-					None => {
-						// a row without a type, a style element's content, positions and all
-						let node = self.ast.node(id);
-						self.json.object();
-						self.span(node.start, node.end);
-					}
-					Some(ty) if host.spanned() => self.begin(ty, id),
-					Some(ty) => {
-						self.json.begin(ty);
-						self.scope_facts(id);
-					}
-				}
-				for i in host.fields.indices() {
-					self.json.key(svelte::NAMES[self.ast.host_keys[i as usize] as usize]);
-					match self.ast.host_vals[i as usize] {
-						Value::Node(child) => self.node(child),
-						Value::Nodes(children) => self.items(children),
-						Value::Str(string) => self.str_of(string),
-						Value::Slice(start, end) => self.slice(start, end),
-						Value::Strs(start, len) => {
-							self.json.list();
-							for i in start as usize..(start + len) as usize {
-								self.str_of(self.ast.host_strings[i]);
-							}
-							self.json.end();
-						}
-						Value::Bool(value) => self.json.bool(value),
-						Value::Int(value) => self.json.int(value),
-						Value::Null => self.json.null(),
-						Value::Comments => self.comment_list(0..self.ast.comments.len() as u32),
-					}
-				}
-			}
-			// erasing may put a child in the node's place, which closes itself
-			_ => {
-				let base = kind as *const NodeKind as *const u8;
-				if !self.run(id, KINDS[tag(base)], base) {
-					return;
-				}
-			}
+		// erasing may put a child in the node's place, which closes itself
+		let base = kind as *const NodeKind as *const u8;
+		if !self.run(id, KINDS[tag(base)], base) {
+			return;
 		}
 		self.end();
 	}

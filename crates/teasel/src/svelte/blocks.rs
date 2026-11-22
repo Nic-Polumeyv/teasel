@@ -1,8 +1,7 @@
 //! What starts with `{`: the markers, the blocks with their branches and bodies, and the tags.
 
-use super::nodes::{Name, n};
 use super::{Frame, Walker};
-use crate::ast::{HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
+use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
 use crate::lexer::scan::is_space;
 use crate::lexer::unicode::{is_id_continue, is_id_start};
@@ -41,20 +40,6 @@ impl Construct {
 	/// Whether it stands in content; the others stand among attributes.
 	pub(super) fn in_content(self) -> bool {
 		!matches!(self, Construct::Attach | Construct::Spread)
-	}
-
-	fn ty(self) -> Name {
-		match self {
-			Construct::Html => n::HtmlTag,
-			Construct::Debug => n::DebugTag,
-			Construct::Const => n::ConstTag,
-			Construct::Render => n::RenderTag,
-			Construct::Attach => n::AttachTag,
-			Construct::Spread => n::SpreadAttribute,
-			Construct::Declaration => n::DeclarationTag,
-			Construct::Expression => n::ExpressionTag,
-			_ => unreachable!(),
-		}
 	}
 
 	/// The marker and its end word, as messages name the open.
@@ -159,7 +144,7 @@ pub(super) enum Block {
 	Snippet,
 }
 
-// the slots of each block's node, in the order its rows hold them
+// the slots a block's parts wait in while it is read
 const TEST: usize = 0;
 const CONSEQUENT: usize = 1;
 const BRANCHES: usize = 2;
@@ -182,63 +167,7 @@ const FRAGMENT_OF_KEY: usize = 1;
 /// No body is being filled.
 const NONE: usize = usize::MAX;
 
-/// A block's fields in order, each with the value it takes when nothing filled it, or none.
-type Fields = &'static [(Name, Option<Value>)];
-
-const NULL: Option<Value> = Some(Value::Null);
-
-static IF: Fields = &[
-	(n::test, NULL),
-	(n::consequent, NULL),
-	(n::branches, Some(Value::Nodes(List::EMPTY))),
-	(n::alternate, NULL),
-];
-static ELSE_IF: Fields = &[(n::test, NULL), (n::consequent, NULL)];
-static EACH: Fields = &[
-	(n::expression, NULL),
-	(n::context, NULL),
-	(n::index, None),
-	(n::key, None),
-	(n::body, NULL),
-	(n::fallback, None),
-];
-static AWAIT: Fields = &[
-	(n::expression, NULL),
-	(n::value, NULL),
-	(n::then, NULL),
-	(n::error, NULL),
-	(n::r#catch, NULL),
-	(n::pending, NULL),
-];
-static KEY_BLOCK: Fields = &[(n::expression, NULL), (n::fragment, NULL)];
-static SNIPPET: Fields = &[
-	(n::expression, NULL),
-	(n::typeParams, None),
-	(n::parameters, NULL),
-	(n::fragment, NULL),
-];
-
 impl Block {
-	fn ty(self) -> Name {
-		match self {
-			Block::If => n::IfBlock,
-			Block::Each => n::EachBlock,
-			Block::Await => n::AwaitBlock,
-			Block::Key => n::KeyBlock,
-			Block::Snippet => n::SnippetBlock,
-		}
-	}
-
-	fn shape(self) -> Fields {
-		match self {
-			Block::If => IF,
-			Block::Each => EACH,
-			Block::Await => AWAIT,
-			Block::Key => KEY_BLOCK,
-			Block::Snippet => SNIPPET,
-		}
-	}
-
 	pub(super) fn construct(self) -> Construct {
 		match self {
 			Block::If => Construct::If,
@@ -260,12 +189,12 @@ impl Block {
 	}
 }
 
-/// A body's scope as the head before it read it: the body's slot, the slots the scope holds,
-/// and the patterns declared in it.
-pub(super) struct Group {
-	body: usize,
-	fields: u8,
-	inside: Vec<NodeId>,
+/// What a slot of a block holds until its node is written.
+#[derive(Clone, Copy)]
+enum Slot {
+	Node(NodeId),
+	Nodes(List),
+	Slice(u32, u32),
 }
 
 /// A block being read, or the `{:else if}` node being read under its if block.
@@ -273,25 +202,21 @@ pub(super) struct Open {
 	pub(super) start: u32,
 	pub(super) block: Block,
 	pub(super) elseif: bool,
-	slots: [Option<Value>; 6],
+	slots: [Option<Slot>; 6],
 	/// The slot `nodes` will fill: a body, or `branches` while `{:else if}` nodes come.
 	body: usize,
 	pub(super) nodes: Vec<NodeId>,
-	groups: Vec<Group>,
-	outside: Vec<NodeId>,
+	/// How many bodies it has opened.
+	bodies: u8,
 }
 
 impl Open {
-	fn shape(&self) -> Fields {
-		if self.elseif { ELSE_IF } else { self.block.shape() }
-	}
-
 	/// The slot holds the `{:else if}` nodes, not a fragment.
 	fn listing(&self) -> bool {
 		self.block == Block::If && !self.elseif && self.body == BRANCHES
 	}
 
-	fn set(&mut self, slot: usize, value: Value) {
+	fn set(&mut self, slot: usize, value: Slot) {
 		self.slots[slot].get_or_insert(value);
 	}
 }
@@ -313,6 +238,21 @@ impl<'a> Walker<'a> {
 	}
 
 	// ── markers
+
+	/// A word of Svelte's, followed by nothing that continues an identifier.
+	fn word(&self, s: &str) -> bool {
+		self.matches(s) && !self.rest()[s.len()..].starts_with(is_id_continue)
+	}
+
+	fn require_space(&mut self) -> Result<()> {
+		match self.char() {
+			Some(c) if is_space(c) => {
+				self.space();
+				Ok(())
+			}
+			_ => self.fail(self.at, self.at, Code::Expected, Some("whitespace")),
+		}
+	}
 
 	/// Whitespace and comments from `i` on: what may stand between a marker's parts.
 	fn trivia(&self, mut i: usize) -> usize {
@@ -591,7 +531,7 @@ impl<'a> Walker<'a> {
 			self.require_space()?;
 		}
 		self.space();
-		let (field, value) = match construct {
+		let kind = match construct {
 			Construct::Debug => {
 				let mut ids = self.nodes.take();
 				loop {
@@ -610,17 +550,28 @@ impl<'a> Walker<'a> {
 						return self.fail(at, at, Code::Expected, Some("an identifier"));
 					}
 				}
-				let list = self.list(&ids);
+				let identifiers = self.list(&ids);
 				self.nodes.give(ids);
-				(n::identifiers, Value::Nodes(list))
+				NodeKind::DebugTag { identifiers }
 			}
-			Construct::Const => (n::declaration, Value::Node(self.constant()?)),
-			_ => (n::expression, Value::Node(self.expression_of("}")?)),
+			Construct::Const => NodeKind::ConstTag {
+				declaration: self.constant()?,
+			},
+			_ => {
+				let expression = self.expression_of("}")?;
+				match construct {
+					Construct::Html => NodeKind::HtmlTag { expression },
+					Construct::Render => NodeKind::RenderTag { expression },
+					Construct::Attach => NodeKind::AttachTag { expression },
+					Construct::Spread => NodeKind::SpreadAttribute { expression },
+					_ => NodeKind::ExpressionTag { expression },
+				}
+			}
 		};
 		self.space();
 		self.expect("}")?;
 		let end = self.at;
-		Ok(self.host(construct.ty(), start, end, &[(field, value)]))
+		Ok(self.ast().add(kind, start, end))
 	}
 
 	/// `pattern = expression` of a `{@const}`, as the declaration it spells without its keyword.
@@ -689,7 +640,9 @@ impl<'a> Walker<'a> {
 				self.space();
 				self.expect("}")?;
 				let end = self.at;
-				let node = self.host(n::DeclarationTag, start, end, &[(n::declaration, Value::Node(statement))]);
+				let node = self
+					.ast()
+					.add(NodeKind::DeclarationTag { declaration: statement }, start, end);
 				self.append(node);
 				Ok(true)
 			}
@@ -732,22 +685,16 @@ impl<'a> Walker<'a> {
 			slots: [None; 6],
 			body: NONE,
 			nodes: Vec::new(),
-			groups: Vec::new(),
-			outside: Vec::new(),
-		};
-		let mut group = Group {
-			body: NONE,
-			fields: 0,
-			inside: self.nodes.take(),
+			bodies: 1,
 		};
 		self.space();
-		match block {
+		let body = match block {
 			Block::If => {
 				let test = self.expression_of("}")?;
-				open.set(TEST, Value::Node(test));
+				open.set(TEST, Slot::Node(test));
 				self.space();
 				self.expect("}")?;
-				group.body = CONSEQUENT;
+				CONSEQUENT
 			}
 			Block::Each => {
 				let roots = match self.trial("as", |walker| walker.stopped) {
@@ -758,16 +705,14 @@ impl<'a> Walker<'a> {
 					},
 				};
 				let expression = self.first(roots);
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
 				if self.word("as") {
 					self.space();
 					self.at += 2;
 					self.space();
 					let context = self.pattern(", ( }")?;
-					open.set(CONTEXT, Value::Node(context));
-					group.fields |= 1 << CONTEXT;
-					group.inside.push(context);
+					open.set(CONTEXT, Slot::Node(context));
 				}
 				self.space();
 				if self.matches(",") {
@@ -775,9 +720,7 @@ impl<'a> Walker<'a> {
 					self.at += 1;
 					self.space();
 					let index = self.identifier()?;
-					open.set(INDEX, Value::Node(index));
-					group.fields |= 1 << INDEX;
-					group.inside.push(index);
+					open.set(INDEX, Slot::Node(index));
 				}
 				self.space();
 				if self.matches("(") {
@@ -785,10 +728,7 @@ impl<'a> Walker<'a> {
 					self.at += 1;
 					self.space();
 					let key = self.expression_of(")")?;
-					open.set(KEY, Value::Node(key));
-					if group.fields != 0 {
-						group.fields |= 1 << KEY;
-					}
+					open.set(KEY, Slot::Node(key));
 					self.space();
 					if !self.matches(")") {
 						let at = self.at;
@@ -798,13 +738,13 @@ impl<'a> Walker<'a> {
 				}
 				self.space();
 				self.expect("}")?;
-				group.body = BODY;
+				BODY
 			}
 			Block::Await => {
 				let expression = self.expression_of("then catch }")?;
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
-				let (slot, body) = if self.word("then") {
+				let (slot, first) = if self.word("then") {
 					(VALUE, THEN)
 				} else if self.word("catch") {
 					(ERROR, CATCH)
@@ -818,26 +758,23 @@ impl<'a> Walker<'a> {
 					if self.char().is_some_and(|c| is_id_start(c) || c == '[' || c == '{') {
 						self.space();
 						let pattern = self.pattern("}")?;
-						open.set(slot, Value::Node(pattern));
-						group.fields |= 1 << slot;
-						group.inside.push(pattern);
+						open.set(slot, Slot::Node(pattern));
 					}
 				}
 				self.space();
 				self.expect("}")?;
-				group.body = body;
+				first
 			}
 			Block::Key => {
 				let expression = self.expression_of("}")?;
-				open.set(EXPRESSION, Value::Node(expression));
+				open.set(EXPRESSION, Slot::Node(expression));
 				self.space();
 				self.expect("}")?;
-				group.body = FRAGMENT_OF_KEY;
+				FRAGMENT_OF_KEY
 			}
 			Block::Snippet => {
 				let name = self.identifier()?;
-				open.set(EXPRESSION, Value::Node(name));
-				open.outside.push(name);
+				open.set(EXPRESSION, Slot::Node(name));
 				self.space();
 				if self.matches("<") {
 					self.space();
@@ -848,25 +785,20 @@ impl<'a> Walker<'a> {
 					let closed = node.end > start && self.src.as_bytes()[node.end as usize - 1] == b'>';
 					open.set(
 						TYPE_PARAMS,
-						Value::Slice(start, if closed { node.end - 1 } else { node.end.max(start) }),
+						Slot::Slice(start, if closed { node.end - 1 } else { node.end.max(start) }),
 					);
 				}
 				self.space();
 				let parameters = self.js(JsEntry::Params, "}")?;
-				open.set(PARAMETERS, Value::Nodes(parameters));
-				group.fields |= 1 << PARAMETERS;
-				let ast = self.ast.as_deref().unwrap();
-				group.inside.extend(ast.list(parameters).iter().flatten());
+				open.set(PARAMETERS, Slot::Nodes(parameters));
 				self.space();
 				self.expect("}")?;
-				group.body = FRAGMENT_OF_SNIPPET;
+				FRAGMENT_OF_SNIPPET
 			}
-		}
+		};
 		self.within_depth(start)?;
-		open.body = group.body;
+		open.body = body;
 		open.nodes = self.nodes.take();
-		open.groups = self.groups.take();
-		open.groups.push(group);
 		self.frames.push(Frame::Block(open));
 		Ok(true)
 	}
@@ -891,7 +823,7 @@ impl<'a> Walker<'a> {
 		};
 		// a branch read once adds a scope to its block's: `{:else if}` after `{:else}`
 		let duplicate = if elseif {
-			frame.groups.len() > 1
+			frame.bodies > 1
 		} else {
 			frame.body == body || frame.slots[body].is_some()
 		};
@@ -923,11 +855,6 @@ impl<'a> Walker<'a> {
 		if listed {
 			self.pop_block(start);
 		}
-		let mut group = Group {
-			body,
-			fields: 0,
-			inside: self.nodes.take(),
-		};
 		if elseif {
 			if !listed {
 				self.finish_body(BRANCHES);
@@ -939,26 +866,20 @@ impl<'a> Walker<'a> {
 				slots: [None; 6],
 				body,
 				nodes: self.nodes.take(),
-				groups: self.groups.take(),
-				outside: Vec::new(),
+				bodies: 1,
 			};
-			open.set(TEST, Value::Node(read.unwrap()));
-			open.groups.push(group);
+			open.set(TEST, Slot::Node(read.unwrap()));
 			self.frames.push(Frame::Block(open));
 			return Ok(());
 		}
 		self.finish_body(body);
-		if let Some(pattern) = read {
-			group.fields |= 1 << slot;
-			group.inside.push(pattern);
-		}
 		let Some(Frame::Block(frame)) = self.frames.last_mut() else {
 			unreachable!()
 		};
 		if let Some(pattern) = read {
-			frame.set(slot, Value::Node(pattern));
+			frame.set(slot, Slot::Node(pattern));
 		}
-		frame.groups.push(group);
+		frame.bodies += 1;
 		Ok(())
 	}
 
@@ -974,9 +895,9 @@ impl<'a> Walker<'a> {
 		let children = if listing {
 			let list = self.list(&nodes);
 			self.nodes.give(nodes);
-			Value::Nodes(list)
+			Slot::Nodes(list)
 		} else {
-			Value::Node(self.fragment(nodes))
+			Slot::Node(self.fragment(nodes))
 		};
 		let Some(Frame::Block(open)) = self.frames.last_mut() else {
 			unreachable!()
@@ -1018,51 +939,56 @@ impl<'a> Walker<'a> {
 		let Some(Frame::Block(mut open)) = self.frames.pop() else {
 			unreachable!()
 		};
-		let shape = open.shape();
-		let mut fields = [(n::name, Value::Null); 6];
-		let mut position = [0usize; 6];
-		let mut count = 0;
-		for (i, &(name, absent)) in shape.iter().enumerate() {
-			position[i] = count;
-			if let Some(value) = open.slots[i].or(absent) {
-				fields[count] = (name, value);
-				count += 1;
-			}
-		}
-		let base = self.ast().host_keys.len() as u32;
-		let groups_at = self.ast().host_groups.len() as u32;
-		for group in &open.groups {
-			let until = position[group.body];
-			// the body's scope opens at the first of its fields, which stand before it
-			let from = if group.fields == 0 {
-				until
-			} else {
-				position[group.fields.trailing_zeros() as usize]
-			};
-			let inside = self.list(&group.inside);
-			let node = match fields[until].1 {
-				Value::Node(fragment) => Some(fragment),
-				_ => None,
-			};
-			self.ast().host_groups.push(HostGroup {
-				inside,
-				from: base + from as u32,
-				until: base + until as u32 + 1,
-				node,
-			});
-		}
-		let outside = self.list(&open.outside);
-		let scope = Some(Opens {
-			outside,
-			groups: (groups_at, open.groups.len() as u32),
-		});
-		let ty = if open.elseif { n::ElseIf } else { open.block.ty() };
-		let node = self.opening(ty, open.start, end, &fields[..count], scope);
+		let node = |slot: usize| match open.slots[slot] {
+			Some(Slot::Node(id)) => Some(id),
+			_ => None,
+		};
+		let kind = match open.block {
+			Block::If if open.elseif => NodeKind::ElseIf {
+				test: node(TEST).unwrap(),
+				consequent: node(CONSEQUENT).unwrap(),
+			},
+			Block::If => NodeKind::IfBlock {
+				test: node(TEST).unwrap(),
+				consequent: node(CONSEQUENT).unwrap(),
+				branches: match open.slots[BRANCHES] {
+					Some(Slot::Nodes(branches)) => branches,
+					_ => List::EMPTY,
+				},
+				alternate: node(ALTERNATE),
+			},
+			Block::Each => NodeKind::EachBlock {
+				expression: node(EXPRESSION).unwrap(),
+				parts: self
+					.ast()
+					.add_list(&[node(CONTEXT), node(INDEX), node(KEY), node(FALLBACK)]),
+				body: node(BODY).unwrap(),
+			},
+			Block::Await => NodeKind::AwaitBlock {
+				expression: node(EXPRESSION).unwrap(),
+				parts: self
+					.ast()
+					.add_list(&[node(VALUE), node(THEN), node(ERROR), node(CATCH), node(PENDING)]),
+			},
+			Block::Key => NodeKind::KeyBlock {
+				expression: node(EXPRESSION).unwrap(),
+				fragment: node(FRAGMENT_OF_KEY).unwrap(),
+			},
+			Block::Snippet => NodeKind::SnippetBlock {
+				expression: node(EXPRESSION).unwrap(),
+				type_params: match open.slots[TYPE_PARAMS] {
+					Some(Slot::Slice(start, end)) => Some(self.ast().slice(start, end)),
+					_ => None,
+				},
+				parameters: match open.slots[PARAMETERS] {
+					Some(Slot::Nodes(parameters)) => parameters,
+					_ => List::EMPTY,
+				},
+				fragment: node(FRAGMENT_OF_SNIPPET).unwrap(),
+			},
+		};
+		let node = self.ast().add(kind, open.start, end);
 		self.nodes.give(std::mem::take(&mut open.nodes));
-		for group in open.groups.drain(..) {
-			self.nodes.give(group.inside);
-		}
-		self.groups.give(open.groups);
 		self.append(node);
 	}
 }

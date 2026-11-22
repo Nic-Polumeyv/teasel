@@ -378,8 +378,6 @@ export interface Views {
 	readonly layout: () => string;
 	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
-	/** How many times the engine started over, numbering the shapes of host nodes anew; none for one that never does. */
-	readonly generation?: number;
 }
 
 /** What parses: the addon or the WebAssembly module. */

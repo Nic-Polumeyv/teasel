@@ -42,16 +42,14 @@ impl Positions {
 		}
 	}
 
-	pub(crate) fn map_values(&self, values: &mut [crate::ast::Value]) {
+	pub(crate) fn map_slices(&self, slices: &mut [crate::ast::Span]) {
 		if self.gaps.is_empty() {
 			return;
 		}
 		let mut cursor = Cursor::default();
-		for value in values {
-			if let crate::ast::Value::Slice(start, end) = value {
-				*start = self.offset(&mut cursor, *start);
-				*end = self.offset(&mut cursor, *end);
-			}
+		for slice in slices {
+			slice.start = self.offset(&mut cursor, slice.start);
+			slice.end = self.offset(&mut cursor, slice.end);
 		}
 	}
 

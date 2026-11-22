@@ -1,58 +1,45 @@
-//! Svelte: a component read by one walker, its markup, blocks and tags written as rows, the
-//! JavaScript inside read by the parser into the same tree; and CSS, a component's style element
-//! or a stylesheet on its own.
+//! Svelte: a component read by one walker, its markup, blocks and tags and the JavaScript
+//! inside them in one tree; and CSS, a component's style element or a stylesheet on its own.
 
 mod blocks;
 mod css;
 mod entities;
 mod js;
 mod markup;
-mod nodes;
 
-use std::cell::RefCell;
+use std::borrow::Cow;
 
-use self::blocks::{Group, Open};
+use self::blocks::Open;
+use self::entities::decode;
 pub(crate) use self::js::typescript;
-use self::nodes::{Name, Shapes};
-pub(crate) use self::nodes::{NAMES, children, n, stylesheet_children};
-use crate::ast::{Ast, HostGroup, List, NodeId, Opens, Value};
+use self::markup::Once;
+use crate::ast::{Ast, ElementType, List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::{find, is_space};
-use crate::lexer::unicode::is_id_continue;
 use crate::parser::{Options, Result};
-
-thread_local! {
-	/// The shapes of Svelte's rows, numbered for good as the walker meets them.
-	pub(super) static SHAPES: RefCell<Shapes> = RefCell::default();
-}
 
 /// Parses a Svelte component: its tree with the JavaScript inside it, positions of the whole
 /// source. Returns the tree and its root.
 pub(crate) fn parse_component(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
 	// a component's scripts are modules
 	let options = options.with(Options::MODULE);
-	SHAPES.with(|shapes| {
-		let full = src.len() as u32;
-		let cut = src.trim_end_matches(is_space);
-		let mut walker = Walker::new(cut, full, shapes.borrow_mut(), options, reused);
-		let root = walker.run();
-		(walker.ast.take().unwrap(), root)
-	})
+	let full = src.len() as u32;
+	let cut = src.trim_end_matches(is_space);
+	let mut walker = Walker::new(cut, full, options, reused);
+	let root = walker.run();
+	(walker.ast.take().unwrap(), root)
 }
 
-/// The whole source as a CSS stylesheet; see `Walker::stylesheet`. Its rows are numbered among
-/// Svelte's, by the same names.
+/// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
-	SHAPES.with(|shapes| {
-		let mut walker = Walker::new(src, src.len() as u32, shapes.borrow_mut(), options, reused);
-		let root = walker.stylesheet();
-		(walker.ast.take().unwrap(), root)
-	})
+	let mut walker = Walker::new(src, src.len() as u32, options, reused);
+	let root = walker.stylesheet();
+	(walker.ast.take().unwrap(), root)
 }
 
 /// Buffers given back once used, for the next of their kind.
-pub(crate) struct Pool<T>(Vec<Vec<T>>);
+struct Pool<T>(Vec<Vec<T>>);
 
 impl<T> Default for Pool<T> {
 	fn default() -> Self {
@@ -61,11 +48,11 @@ impl<T> Default for Pool<T> {
 }
 
 impl<T> Pool<T> {
-	pub(crate) fn take(&mut self) -> Vec<T> {
+	fn take(&mut self) -> Vec<T> {
 		self.0.pop().unwrap_or_default()
 	}
 
-	pub(crate) fn give(&mut self, mut buffer: Vec<T>) {
+	fn give(&mut self, mut buffer: Vec<T>) {
 		buffer.clear();
 		self.0.push(buffer);
 	}
@@ -83,61 +70,47 @@ enum Frame {
 		start: u32,
 		name: (u32, u32),
 		name_id: StrId,
-		ty: Name,
+		ty: ElementType,
 		attributes: Vec<NodeId>,
-		/// The field a `this` attribute fills, on `svelte:element` and `svelte:component`.
-		this: Option<(Name, Value)>,
+		/// What a `this` attribute gave, on `svelte:element` and `svelte:component`.
+		this: Option<NodeId>,
 		nodes: Vec<NodeId>,
 		/// It carries `shadowrootmode`: a `slot` inside it is a plain element.
 		shadow: bool,
-		/// The patterns its directives declare in its scope.
-		declared: Vec<NodeId>,
 	},
 	Block(Open),
 }
 
-/// The cursor over a component's source, or a stylesheet's, and the tree it writes: the rows,
-/// numbered by shape, and the JavaScript read into it; what it is inside, and what the element
-/// being read holds so far.
-pub(crate) struct Walker<'a> {
-	pub(crate) src: &'a str,
+/// The cursor over a component's source, or a stylesheet's, and the tree it writes; what it is
+/// inside, and what the element being read holds so far.
+struct Walker<'a> {
+	src: &'a str,
 	/// The source's length before the whitespace that ends it was cut: where the root ends.
-	pub(crate) full: u32,
-	pub(crate) shapes: std::cell::RefMut<'a, Shapes>,
-	pub(crate) options: Options,
-	pub(crate) ast: Option<Box<Ast>>,
-	pub(crate) at: u32,
+	full: u32,
+	options: Options,
+	ast: Option<Box<Ast>>,
+	at: u32,
 	/// The JavaScript read last ended at one of its stops.
-	pub(crate) stopped: bool,
+	stopped: bool,
 	/// How many CSS blocks and pseudo-class argument lists are open.
-	pub(crate) nesting: u32,
+	nesting: u32,
 	frames: Vec<Frame>,
 	/// The root elements read so far, each read once.
-	once: Vec<Name>,
+	once: Vec<ElementType>,
 	/// Where the current tag's word starts, for `{@const}`, which leaves its keyword out.
 	keyword: u32,
 	/// The element the browser closed last, what closed it and how deep the stack was then.
 	autoclosed: Option<(&'a str, &'a str, usize)>,
-	/// The patterns the directives of the element being read declare.
-	declared: Vec<NodeId>,
 	nodes: Pool<NodeId>,
-	groups: Pool<Group>,
 	/// The kinds and names the attributes of the element being read must not repeat.
-	seen: Vec<(Name, StrId)>,
+	seen: Vec<(Once, StrId)>,
 }
 
 impl<'a> Walker<'a> {
-	pub(crate) fn new(
-		src: &'a str,
-		full: u32,
-		shapes: std::cell::RefMut<'a, Shapes>,
-		options: Options,
-		reused: Option<Box<Ast>>,
-	) -> Self {
+	fn new(src: &'a str, full: u32, options: Options, reused: Option<Box<Ast>>) -> Self {
 		Walker {
 			src,
 			full,
-			shapes,
 			options,
 			ast: Some(reused.unwrap_or_else(|| Box::new(Ast::sized(full as usize)))),
 			at: 0,
@@ -152,47 +125,34 @@ impl<'a> Walker<'a> {
 			once: Vec::new(),
 			keyword: 0,
 			autoclosed: None,
-			declared: Vec::new(),
 			nodes: Pool::default(),
-			groups: Pool::default(),
 			seen: Vec::new(),
 		}
 	}
 
-	pub(crate) fn ast(&mut self) -> &mut Ast {
-		self.ast.as_deref_mut().unwrap()
-	}
+	// ── the cursor
 
-	pub(crate) fn tree(&self) -> &Ast {
-		self.ast.as_deref().unwrap()
-	}
-
-	pub(crate) fn len(&self) -> u32 {
+	fn len(&self) -> u32 {
 		self.src.len() as u32
 	}
 
-	pub(crate) fn rest(&self) -> &'a str {
+	fn rest(&self) -> &'a str {
 		&self.src[self.at as usize..]
 	}
 
-	pub(crate) fn byte(&self) -> Option<u8> {
+	fn byte(&self) -> Option<u8> {
 		self.src.as_bytes().get(self.at as usize).copied()
 	}
 
-	pub(crate) fn char(&self) -> Option<char> {
+	fn char(&self) -> Option<char> {
 		self.rest().chars().next()
 	}
 
-	pub(crate) fn matches(&self, s: &str) -> bool {
+	fn matches(&self, s: &str) -> bool {
 		self.rest().starts_with(s)
 	}
 
-	/// A word of Svelte's, followed by nothing that continues an identifier.
-	pub(crate) fn word(&self, s: &str) -> bool {
-		self.matches(s) && !self.rest()[s.len()..].starts_with(is_id_continue)
-	}
-
-	pub(crate) fn eat(&mut self, s: &str) -> bool {
+	fn eat(&mut self, s: &str) -> bool {
 		if self.matches(s) {
 			self.at += s.len() as u32;
 			true
@@ -201,7 +161,7 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	pub(crate) fn expect(&mut self, s: &str) -> Result<()> {
+	fn expect(&mut self, s: &str) -> Result<()> {
 		if self.eat(s) {
 			Ok(())
 		} else {
@@ -209,40 +169,8 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	pub(crate) fn recovering(&self) -> bool {
-		self.options.has(Options::ERROR_RECOVERY)
-	}
-
-	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
-	/// the parse.
-	pub(crate) fn report(&mut self, error: Box<SyntaxError>) -> Result<()> {
-		if self.recovering() {
-			self.ast().errors.push(*error);
-			Ok(())
-		} else {
-			Err(error)
-		}
-	}
-
-	pub(crate) fn report_at(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<()> {
-		let error = self.error(pos, end, code, arg);
-		self.report(error)
-	}
-
-	pub(crate) fn fail<T>(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
-		Err(self.error(pos, end, code, arg))
-	}
-
-	pub(crate) fn error(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Box<SyntaxError> {
-		let error = SyntaxError::new(pos, code).to(end);
-		Box::new(match arg {
-			Some(arg) => error.arg(self.intern(arg)),
-			None => error,
-		})
-	}
-
 	/// The word that ends the tag being read, skipped to under recovery.
-	pub(crate) fn skip_to(&mut self, end: &str) {
+	fn skip_to(&mut self, end: &str) {
 		if let Some(i) = self.rest().find(end) {
 			self.at += (i + end.len()) as u32;
 		} else {
@@ -250,7 +178,7 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	pub(crate) fn space(&mut self) {
+	fn space(&mut self) {
 		let bytes = self.src.as_bytes();
 		let mut i = self.at as usize;
 		// ASCII by its bytes, the rest by its characters
@@ -271,25 +199,81 @@ impl<'a> Walker<'a> {
 		self.at = i as u32;
 	}
 
-	pub(crate) fn require_space(&mut self) -> Result<()> {
-		match self.char() {
-			Some(c) if is_space(c) => {
-				self.space();
-				Ok(())
-			}
-			_ => self.fail(self.at, self.at, Code::Expected, Some("whitespace")),
+	// ── errors
+
+	fn recovering(&self) -> bool {
+		self.options.has(Options::ERROR_RECOVERY)
+	}
+
+	/// Under recovery the error is recorded on the tree and reading goes on; otherwise it ends
+	/// the parse.
+	fn report(&mut self, error: Box<SyntaxError>) -> Result<()> {
+		if self.recovering() {
+			self.ast().errors.push(*error);
+			Ok(())
+		} else {
+			Err(error)
 		}
 	}
 
-	pub(crate) fn intern(&mut self, s: &str) -> StrId {
+	fn report_at(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<()> {
+		let error = self.error(pos, end, code, arg);
+		self.report(error)
+	}
+
+	fn fail<T>(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Result<T> {
+		Err(self.error(pos, end, code, arg))
+	}
+
+	fn error(&mut self, pos: u32, end: u32, code: Code, arg: Option<&str>) -> Box<SyntaxError> {
+		let error = SyntaxError::new(pos, code).to(end);
+		Box::new(match arg {
+			Some(arg) => error.arg(self.intern(arg)),
+			None => error,
+		})
+	}
+
+	// ── the tree
+
+	fn ast(&mut self) -> &mut Ast {
+		self.ast.as_deref_mut().unwrap()
+	}
+
+	fn tree(&self) -> &Ast {
+		self.ast.as_deref().unwrap()
+	}
+
+	fn intern(&mut self, s: &str) -> StrId {
 		self.ast().strings.intern(s)
 	}
 
-	fn within_depth(&mut self, at: u32) -> Result<()> {
-		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
-			return self.fail(at, at + 1, Code::NestingDepth, None);
-		}
-		Ok(())
+	fn list(&mut self, nodes: &[NodeId]) -> List {
+		self.ast().add_list_from(nodes.iter().map(|&id| Some(id)))
+	}
+
+	/// The nodes as a fragment: positioned for the walks that order nodes, though none are written,
+	/// at the cursor when there are none. The buffer is given back.
+	fn fragment(&mut self, nodes: Vec<NodeId>) -> NodeId {
+		let list = self.list(&nodes);
+		let (start, end) = match (nodes.first(), nodes.last()) {
+			(Some(&first), Some(&last)) => (self.tree().node(first).start, self.tree().node(last).end),
+			_ => (self.at, self.at),
+		};
+		self.nodes.give(nodes);
+		self.ast().add(NodeKind::Fragment { nodes: list }, start, end)
+	}
+
+	/// A text node over `start..end`, its character references decoded as content's or as an
+	/// attribute value's.
+	fn text_chunk(&mut self, start: u32, end: u32, attribute: bool) -> NodeId {
+		let raw = &self.src[start as usize..end as usize];
+		let kind = match decode(raw, attribute) {
+			Cow::Borrowed(_) => NodeKind::Text,
+			Cow::Owned(data) => NodeKind::TextDecoded {
+				data: self.intern(&data),
+			},
+		};
+		self.ast().add(kind, start, end)
 	}
 
 	fn append(&mut self, node: NodeId) {
@@ -312,7 +296,7 @@ impl<'a> Walker<'a> {
 			} else if byte == b'{' {
 				self.construct()
 			} else {
-				self.text_node();
+				self.text();
 				Ok(())
 			};
 			if let Err(error) = result {
@@ -340,53 +324,13 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		let fragment = self.fragment(nodes);
-		let mut fields = [(n::fragment, Value::Null); 7];
-		let mut count = 4;
-		fields[..4].copy_from_slice(&[
-			(n::css, css.map_or(Value::Null, Value::Node)),
-			(n::js, Value::Nodes(List::EMPTY)),
-			(n::options, Value::Null),
-			(n::comments, Value::Comments),
-		]);
-		if let Some(module) = module {
-			fields[count] = (n::module, Value::Node(module));
-			count += 1;
-		}
-		let from = count;
-		if let Some(instance) = instance {
-			fields[count] = (n::instance, Value::Node(instance));
-			count += 1;
-		}
-		fields[count] = (n::fragment, Value::Node(fragment));
-		count += 1;
-		// the scope belongs to the instance script's program, or to the fragment
-		let node = match instance {
-			Some(script) => match self.field_of(script, n::content) {
-				Some(Value::Node(program)) => Some(program),
-				_ => None,
-			},
-			None => Some(fragment),
-		};
+		let scripts = self.ast().add_list(&[module, instance]);
 		let full = self.full;
-		let base = self.ast().host_keys.len() as u32;
-		let at = self.ast().host_groups.len() as u32;
-		// the fragment's own scope inside the one the instance script opens, one scope around both
-		for (from, node) in [(count - 1, Some(fragment)), (from, node)] {
-			self.ast().host_groups.push(HostGroup {
-				inside: List::EMPTY,
-				from: base + from as u32,
-				until: base + count as u32,
-				node,
-			});
-		}
-		let scope = Some(Opens {
-			outside: List::EMPTY,
-			groups: (at, 2),
-		});
-		Ok(self.opening(n::Root, 0, full, &fields[..count], scope))
+		Ok(self.ast().add(NodeKind::Root { css, scripts, fragment }, 0, full))
 	}
 
-	fn text_node(&mut self) {
+	/// Text in content, up to the tag or the `{` that ends it.
+	fn text(&mut self) {
 		let start = self.at;
 		let bytes = self.src.as_bytes();
 		// the first character is text whatever it is
@@ -401,6 +345,13 @@ impl<'a> Walker<'a> {
 		self.at = i as u32;
 		let node = self.text_chunk(start, self.at, false);
 		self.append(node);
+	}
+
+	fn within_depth(&mut self, at: u32) -> Result<()> {
+		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
+			return self.fail(at, at + 1, Code::NestingDepth, None);
+		}
+		Ok(())
 	}
 
 	/// Closes what is on top at `at` as unclosed: an `{:else if}` node is listed as it is, its

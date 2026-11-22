@@ -38,6 +38,7 @@
 ?enum
 ?list
 ?node
+?slice
 ?str
 ?u32
 AccessorProperty
@@ -52,7 +53,9 @@ AssignmentPattern
 Atrule
 AttachTag
 Attribute
+AttributeFlag
 AttributeSelector
+AttributeTag
 AwaitBlock
 AwaitExpression
 BigIntLiteral
@@ -82,6 +85,10 @@ ConstTag
 ConstructSignatureDeclaration
 ConstructorType
 ContinueStatement
+CssBlock
+CssComment
+CssCommentAt
+CssRule
 DebugTag
 DebuggerStatement
 Declaration
@@ -89,8 +96,10 @@ DeclarationTag
 DeclareFunction
 DeclareMethod
 Decorator
+Directive
 DoWhileStatement
 EachBlock
+Element
 ElseIf
 EmptyStatement
 EnumDeclaration
@@ -112,7 +121,6 @@ FunctionDeclaration
 FunctionExpression
 FunctionType
 Heritage
-Host
 HtmlTag
 IdSelector
 Identifier
@@ -141,12 +149,14 @@ Literal
 LiteralType
 LogicalExpression
 MappedType
+MarkupComment
 MemberExpression
 MetaProperty
 MethodDefinition
 MethodSignature
 ModuleBlock
 ModuleDeclaration
+NamedSelector
 NamedTupleMember
 NamespaceExportDeclaration
 NestingSelector
@@ -169,6 +179,7 @@ PropertyDefinition
 PropertySignature
 PseudoClassSelector
 PseudoElementSelector
+PseudoElementSelectorOf
 QualifiedName
 RegExpLiteral
 RegularElement
@@ -190,6 +201,9 @@ SpreadElement
 StaticBlock
 StringLiteral
 StyleDirective
+StyleDirectiveFlag
+StyleDirectiveTag
+StyleElement
 StyleSheet
 Super
 SvelteBody
@@ -274,6 +288,7 @@ TaggedTemplateExpression
 TemplateElement
 TemplateLiteral
 Text
+TextDecoded
 ThisExpression
 ThisType
 ThrowStatement
@@ -293,6 +308,7 @@ TypePredicate
 TypeQuery
 TypeReference
 TypeSelector
+TypeSelectorIn
 UnaryExpression
 UnionType
 UpdateExpression
@@ -319,6 +335,7 @@ attached_slots
 attributes
 await
 await using
+bare
 bigint
 bigintvalue
 binding
@@ -364,6 +381,7 @@ delegate
 delete
 directive
 discriminant
+edge
 elementType
 elementTypes
 elements
@@ -401,10 +419,6 @@ generator
 get
 global
 handler
-host_keys
-host_strings
-host_vals
-hosts
 id
 identifiers
 implements
@@ -426,6 +440,8 @@ isExport
 is_abstract
 is_override
 is_static
+item
+itemkey
 js
 keep
 keepif
@@ -487,7 +503,6 @@ params
 parent
 parenthesized
 pattern
-payload
 pending
 pos
 position
@@ -522,15 +537,17 @@ script
 second
 selectors
 set
-shape
 shorthand
 size
 slice
+slicekey
+slices
 source
 sourceType
 span
 spans
 specifiers
+splice
 start
 starts
 static
@@ -540,11 +557,9 @@ string
 strs
 struct
 styles
-stylesheet
 superClass
 superTypeArguments
 super_type_arguments
-svelte
 switch
 tag
 tail
