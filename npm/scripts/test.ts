@@ -723,7 +723,7 @@ function types(text: string) {
 	expect<Equal<typeof program.node, Program>>();
 	doc.node.fragment.nodes[0]?.type satisfies AST.FragmentNode['type'] | undefined;
 	m.parseCss(text).node.type satisfies string;
-	// the accessors take an attached comment and a component's nodes, and a piece's root has a component's node for a parent
+	// the accessors take an attached comment and a component's nodes, and a script's program has a component's node for a parent
 	m.parentOf(m.parseModule(text).node.body[0].leadingComments![0]);
 	m.scopeOf(doc.node);
 	m.parentOf(doc.node.instance!.content)?.type === 'Script';

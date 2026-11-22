@@ -58,7 +58,7 @@ function read<T>(text: string, word: number, language: number): Parsed<T> {
  * regex patterns carry U+FFFD there while spans and `locate` are right.
  */
 export function parse(text: string, options?: Options): Parsed<Root> {
-	return read(text, flags(options, OFFERED) | MODULE, SVELTE);
+	return read(text, flags(options, OFFERED), SVELTE);
 }
 
 /** JavaScript or TypeScript, the whole of `text` as a module: its `Program`. */

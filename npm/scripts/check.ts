@@ -148,16 +148,16 @@ const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/scr
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
-		json(file, text, { comments: true }, STYLESHEET);
+		json(file, text, {}, STYLESHEET);
 		continue;
 	}
 	const svelte = file.endsWith('.svelte');
 	if (svelte) {
 		const typescript = /lang=["']?ts/.test(text);
-		component(file, text, { sourceType: 'module', comments: true, scopes: true });
-		component(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, scopes: true });
-		component(file, text, { sourceType: 'module', typescript, errorRecovery: true, parenthesized: true });
-		component(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
+		component(file, text, { comments: true, scopes: true });
+		component(file, text, { typescript: typescript ? 'erase' : false, scopes: true });
+		component(file, text, { typescript, errorRecovery: true, parenthesized: true });
+		component(file, text, { typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
 	}
 	const sources: [string, boolean][] = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
 	for (const [source, typescript] of sources) {

@@ -136,6 +136,8 @@ thread_local! {
 /// Parses a Svelte document: the host's tree with the JavaScript inside it, positions of the
 /// whole source. Returns the tree and its root.
 pub(crate) fn parse_document(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
+	// a component's scripts are modules
+	let options = options.with(Options::MODULE);
 	SHAPES.with(|shapes| {
 		let full = src.len() as u32;
 		let cut = src.trim_end_matches(is_space);

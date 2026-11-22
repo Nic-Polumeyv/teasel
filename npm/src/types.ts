@@ -177,7 +177,7 @@ export interface Parsed<T> {
 	roots?: JsRoot[];
 }
 
-/** A node of a stylesheet, its type and its fields as `css.children` names them. */
+/** A node of a stylesheet, its type and its fields as `children` names them. */
 export interface HostNode extends Partial<Span> {
 	type: string;
 	[field: string]: unknown;

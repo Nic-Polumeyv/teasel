@@ -57,7 +57,7 @@ const ACCEPTED: { [K in keyof Flags]-?: readonly NonNullable<Flags[K]>[] } = {
 /** Each option's slot in the engine's word: two bits holding the index of its value. */
 export const SLOT = Object.fromEntries(Object.keys(ACCEPTED).map((key, slot) => [key, slot]));
 const known = (key: string): key is keyof Flags => Object.hasOwn(ACCEPTED, key);
-/** The word of a text read as a module, which a component and a module always are. */
+/** The word of JavaScript read as a module, which `parseModule` always asks for; a component's scripts are modules to the engine. */
 export const MODULE = 1 << (2 * SLOT.sourceType);
 export const OFFERED: readonly (keyof Flags)[] = ['typescript', 'comments', 'scopes', 'parenthesized', 'errorRecovery'];
 export const OFFERED_CSS: readonly (keyof Flags)[] = ['errorRecovery'];

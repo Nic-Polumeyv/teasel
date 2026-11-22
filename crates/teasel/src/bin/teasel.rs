@@ -75,6 +75,10 @@ fn main() -> ExitCode {
 			"--recover" => flags |= Options::ERROR_RECOVERY,
 			"--stylesheet" => entry = Entry::StyleSheet,
 			"--svelte" => entry = Entry::Svelte,
+			flag if flag.starts_with("--") => {
+				eprintln!("teasel: {flag} is not an option");
+				return ExitCode::FAILURE;
+			}
 			_ => file = Some(arg),
 		}
 	}

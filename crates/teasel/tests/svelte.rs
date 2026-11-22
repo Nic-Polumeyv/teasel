@@ -47,7 +47,7 @@ fn pinned_answers() {
 		Options::COMMENTS | Options::SCOPES,
 		Options::ERROR_RECOVERY | Options::COMMENTS | Options::SCOPES,
 		Options::ERASE | Options::COMMENTS | Options::SCOPES,
-		Options::MODULE | Options::PARENTHESIZED | Options::SCOPES,
+		Options::PARENTHESIZED | Options::SCOPES,
 	];
 	let mut list = Vec::new();
 	files(&root, &root, &mut list);

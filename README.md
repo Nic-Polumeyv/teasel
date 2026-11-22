@@ -14,7 +14,7 @@ npm install @teasel/parser
 
 ## A component
 
-`parse` reads a Svelte component by default and returns its `Root`:
+`parse` reads a Svelte component and returns its `Root`:
 
 ```js
 import { parse } from '@teasel/parser';
