@@ -600,39 +600,27 @@ impl<'a> Walker<'a> {
 				}
 				Some(position) => {
 					let id = attributes.remove(position);
-					match self.attribute_chunk(id).and_then(|chunk| self.chunk_expression(chunk)) {
-						Some(expression) => expression,
-						None => {
-							let chunk = self.attribute_chunk(id).filter(|_| text);
-							match chunk.map(|chunk| *self.tree().node(chunk)) {
-								Some(
-									node @ crate::ast::Node {
-										kind: NodeKind::Text, ..
-									},
-								) => {
-									let src = self.src;
-									let value = self.intern(&src[node.start as usize..node.end as usize]);
-									self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
-								}
-								Some(
-									node @ crate::ast::Node {
-										kind: NodeKind::TextDecoded { data },
-										..
-									},
-								) => self
-									.ast()
-									.add(NodeKind::StringLiteral { value: data }, node.start, node.end),
-								_ => {
-									let node = *self.tree().node(id);
-									self.report_at(
-										node.start,
-										node.end,
-										Code::Expected,
-										Some("an expression as this"),
-									)?;
-									self.placeholder(node.start, node.end)
-								}
-							}
+					// `svelte:element` takes the first chunk of a value of several, as Svelte does
+					let chunk = match self.attribute_of(id).map(|held| held.1) {
+						Some(Held::Chunks(list)) if text => self.tree().list(list).first().copied().flatten(),
+						_ => self.attribute_chunk(id),
+					};
+					let chunk = chunk.map(|chunk| *self.tree().node(chunk));
+					match chunk.map(|node| (node.kind, node)) {
+						Some((NodeKind::ExpressionTag { expression }, _)) => expression,
+						Some((NodeKind::Text, node)) if text => {
+							let src = self.src;
+							let value = self.intern(&src[node.start as usize..node.end as usize]);
+							self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
+						}
+						Some((NodeKind::TextDecoded { data }, node)) if text => {
+							self.ast()
+								.add(NodeKind::StringLiteral { value: data }, node.start, node.end)
+						}
+						_ => {
+							let node = *self.tree().node(id);
+							self.report_at(node.start, node.end, Code::Expected, Some("an expression as this"))?;
+							self.placeholder(node.start, node.end)
 						}
 					}
 				}
