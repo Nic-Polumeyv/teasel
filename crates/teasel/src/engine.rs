@@ -7,7 +7,7 @@ use crate::handed::Raw;
 use crate::svelte;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
-use crate::positions::{Cursor, Positions};
+use crate::positions::Positions;
 use crate::scopes;
 
 /// The answer's words, read in place by the decoder that takes the allocation over.
@@ -216,14 +216,14 @@ fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
 /// at `words`.
 pub fn parse(source: &str, options: Options, entry: Entry) {
 	let positions = Positions::new(source);
-	read(source, options, entry, 0, |ast, roots, end, options, words| {
+	read(source, options, entry, 0, |ast, roots, options, words| {
 		let failed = roots.is_none();
 		prepare(ast, source, &positions, options, failed);
-		// `end`, the roots by number, the options the answer was read with, each view's length, then where
+		// the roots by number, the options the answer was read with, each view's length, then where
 		// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
 		words.clear();
 		let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-		words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
+		words.push(roots.len() as u32);
 		words.extend(roots.iter().map(|root| root.unwrap().index()));
 		words.push((options.0 & !FAILED) | if failed { FAILED } else { 0 });
 		let mut sits = 0u64;
@@ -297,13 +297,13 @@ pub fn entry(index: f64) -> Result<Entry, String> {
 const FAILED: u32 = 1 << 31;
 
 /// Parses with the session's tree of its language, in TypeScript when a component's script tag
-/// says so; `finish` gets the tree, its roots, `end`, the options as they ended up and the words.
+/// says so; `finish` gets the tree, its roots, the options as they ended up and the words.
 pub(crate) fn read<R>(
 	source: &str,
 	options: Options,
 	entry: Entry,
 	offset: u32,
-	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
+	finish: impl FnOnce(&mut Ast, Option<List>, Options, &mut Words) -> R,
 ) -> R {
 	let says = entry == Entry::Svelte && svelte::typescript(source);
 	let options = if !options.typescript() && says {
@@ -320,9 +320,9 @@ pub(crate) fn read<R>(
 			ast
 		});
 		let (mut ast, parsed) = parse_at(source, offset, entry, options, "", reused);
-		let (mut roots, mut end) = match parsed {
-			Ok((roots, end)) => (Some(roots), end),
-			Err(error) => (None, fail(&mut ast, *error)),
+		let mut roots = match parsed {
+			Ok((roots, _)) => Some(roots),
+			Err(error) => fail(&mut ast, *error),
 		};
 		if let Some(list) = roots {
 			if options.has(Options::COMMENTS) {
@@ -336,7 +336,7 @@ pub(crate) fn read<R>(
 						ast.errors.extend(errors);
 						ast.errors.sort_by_key(|error| error.pos);
 					} else {
-						(roots, end) = (None, fail(&mut ast, errors[0]));
+						roots = fail(&mut ast, errors[0]);
 					}
 				}
 			}
@@ -346,7 +346,7 @@ pub(crate) fn read<R>(
 		} else {
 			ast.erased.clear();
 		}
-		let answer = finish(&mut ast, roots, end, options, &mut session.words);
+		let answer = finish(&mut ast, roots, options, &mut session.words);
 		*slot = Some(ast);
 		answer
 	})
@@ -417,10 +417,10 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	}
 }
 
-/// A parse that failed answers as one that recovered from nothing but its error: no roots,
-/// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail(ast: &mut Ast, error: crate::SyntaxError) -> u32 {
+/// A parse that failed answers as one that recovered from nothing but its error: no roots, the
+/// error alone in `errors`, and nothing else listed.
+fn fail(ast: &mut Ast, error: crate::SyntaxError) -> Option<List> {
 	ast.errors.clear();
 	ast.errors.push(error);
-	error.pos
+	None
 }

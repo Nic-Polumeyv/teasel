@@ -18,8 +18,11 @@ const { load } = await import('../dist/engine/addon.js');
 const m = await import('../src/index.ts');
 // the trees are poked as the recipes shape them, past what the types say
 type Any = any;
-const { js, css, svelte } = m;
-const read: (text: string, options?: Any, language?: Any) => Any = m.parse;
+// a component, JavaScript and CSS, each by its own function
+const read: (text: string, options?: Any) => Any = m.parse;
+const js: (text: string, options?: Any) => Any = m.parseModule;
+const css: (text: string, options?: Any) => Any = m.parseCss;
+const tables = await import('../src/children.ts');
 const { scopeOf, referenceOf, parentOf }: Record<'scopeOf' | 'referenceOf' | 'parentOf', (node: Any) => Any> = m;
 // a component's script tag that makes it TypeScript
 const TS = '<script lang="ts"></script>';
@@ -28,22 +31,19 @@ const last = (source: string, options?: Options): Any => read(source, options).n
 const text = (source: string, node: Any) => source.slice(node.start, node.end);
 
 {
-	const parse = (source: string, options?: Options): Any => read(source, options, js);
+	const parse = (source: string, options?: Options): Any => js(source, options);
 	const program = (source: string, options?: Options): Any => parse(source, options).node;
-	const typed = parse('let x: number = 1; // done', { sourceType: 'module', typescript: true, comments: true });
+	const typed = parse('let x: number = 1; // done', { typescript: true, comments: true });
 	assert.equal(typed.node.sourceType, 'module');
-	assert.equal(typed.end, 26);
 	assert.equal(typed.node.body[0].declarations[0].id.typeAnnotation.typeAnnotation.type, 'TSNumberKeyword');
 	assert.equal(typed.node.body[0].trailingComments[0].value, ' done');
 	assert.equal(typed.comments.length, 1);
-	assert.deepEqual(Object.keys(typed), ['node', 'end', 'comments']);
+	assert.deepEqual(Object.keys(typed), ['node', 'comments']);
 	assert.deepEqual(typed.locate(26), { line: 1, column: 26 });
 	assert.equal('loc' in typed.node.body[0] || 'loc' in typed.comments[0], false);
-	assert.deepEqual(Object.keys(parse('x')), ['node', 'end']);
-	assert.equal(program('with (a) {}').body[0].type, 'WithStatement');
-	// a component is the default
+	assert.deepEqual(Object.keys(parse('x')), ['node']);
 	assert.equal(read('x').node.type, 'Root');
-	assert.equal(read('x', {}, svelte).node.fragment.nodes[0].data, 'x');
+	assert.equal(read('x').node.fragment.nodes[0].data, 'x');
 
 	// where a component's expression ends: before the block's own words, `as`, `then`, `,`, outside every bracket it opened
 	const each = (source: string): Any => [text(source, last(source).expression), last(source).context && text(source, last(source).context)];
@@ -72,7 +72,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.deepEqual(recovered.errors, [{ code: 'unexpected_token', args: [], pos: 5, end: 6, line: 1, column: 5 }]);
 	const call = read('{f(a, }', loose).node.fragment.nodes[0].expression;
 	assert.equal(text('{f(a, }', call), 'f(a, ');
-	const declaration = read('{let }', { sourceType: 'module', errorRecovery: true }).node.fragment.nodes[0].declaration;
+	const declaration = read('{let }', { errorRecovery: true }).node.fragment.nodes[0].declaration;
 	assert.equal(declaration.type, 'VariableDeclaration');
 	assert.deepEqual(JSON.parse(JSON.stringify(declaration.declarations[0].id)), { type: 'Identifier', start: 5, end: 5, name: '' });
 	const broken = parse('x = "abc\ny = ', { errorRecovery: true });
@@ -80,13 +80,13 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.deepEqual(parse('x', loose).errors, []);
 	assert.equal('errors' in parse('x'), false);
 	const codes = (source: string, options: Options) => parse(source, { ...options, errorRecovery: true }).errors.map((e: Any) => [e.code, ...e.args]);
-	assert.deepEqual(codes('"use strict"; let a; let a; /a{2,1}/u; eval = 1;', { sourceType: 'script' }), [
+	assert.deepEqual(codes('let a; let a; /a{2,1}/u; eval = 1;', {}), [
 		['redeclaration', 'a'],
 		['regexp_quantifier_order'],
 		['strict_binding', 'eval'],
 	]);
 	assert.deepEqual(codes('class C { static public x }', { typescript: true }), [['modifier_order', 'public', 'static'], ['unexpected_token']]);
-	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true, sourceType: 'module' });
+	const scoped = parse('let = f(a, b)', { errorRecovery: true, scopes: true });
 	assert.equal(scoped.bindings.length, 0);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].id), undefined);
 	assert.equal(referenceOf(scoped.node.body[0].declarations[0].init.callee).binding, null);
@@ -111,14 +111,15 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.throws(() => parse('x', { ranges: true } as Any), TypeError);
 	assert.throws(() => parse('x', { ecmaVersion: 2020 } as Any), TypeError);
 	assert.throws(() => parse('x', { preserveParens: true } as Any), TypeError);
-	assert.throws(() => parse('return', { sourceType: 'module' }), SyntaxError);
-	assert.equal(program('return', { allowReturnOutsideFunction: true }).body[0].type, 'ReturnStatement');
-	assert.equal(program('await').body[0].expression.name, 'await');
-	assert.equal(program('await x', { allowAwaitOutsideFunction: true }).body[0].expression.type, 'AwaitExpression');
+	assert.throws(() => parse('return'), SyntaxError);
 	assert.throws(() => parse('super.x'), SyntaxError);
-	assert.equal(program('super.x', { allowSuperOutsideMethod: true }).body[0].expression.object.type, 'Super');
-	assert.throws(() => parse('export { x }', { sourceType: 'module' }), SyntaxError);
-	assert.equal(program('export { x }', { sourceType: 'module', allowUndeclaredExports: true }).body[0].type, 'ExportNamedDeclaration');
+	assert.throws(() => parse('export { x }'), SyntaxError);
+	// a text is always a module, and the engine's other dials are not the package's to offer
+	for (const option of ['sourceType', 'allowReturnOutsideFunction', 'allowAwaitOutsideFunction', 'allowSuperOutsideMethod', 'allowUndeclaredExports']) {
+		assert.throws(() => parse('x', { [option]: true } as Any), TypeError);
+		assert.throws(() => read('x', { [option]: true } as Any), TypeError);
+	}
+	assert.throws(() => css('a {}', { comments: true } as Any), TypeError);
 	const ts = { typescript: true };
 	assert.doesNotThrow(() => parse('class C { @dec #x = 1; @dec declare y: number; m(@dec p) {} }', ts));
 	assert.doesNotThrow(() => parse('const D = @dec class { @dec #x = 1 }', ts));
@@ -126,7 +127,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.doesNotThrow(() => parse('class C { m(@dec p) {} }', ts));
 	{
 		// a component's answer lists each piece of JavaScript it holds, with its share of the tables
-		const answer = read('<script>let a = 1;</script>{a + b}', { sourceType: 'module', scopes: true });
+		const answer = read('<script>let a = 1;</script>{a + b}', { scopes: true });
 		const [script, expression] = answer.roots;
 		assert.equal(answer.roots.length, 2);
 		assert.equal(script.node.type, 'Program');
@@ -140,7 +141,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		assert.equal(referenceOf(expression.node.left), expression.references[0]);
 	}
 	{
-		const answer = parse('let x = 1; function f(y) { x = y; }', { sourceType: 'module', scopes: true });
+		const answer = parse('let x = 1; function f(y) { x = y; }', { scopes: true });
 		const tree = answer.node;
 		const [x, f, y] = answer.bindings;
 		assert.equal(scopeOf(tree), answer.scopes[0]);
@@ -165,7 +166,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		assert.deepEqual([y.write, y.writeExpr], [true, null]);
 		assert.equal(written.writeExpr, reads[0].node);
 		assert.equal(answer.scopes[0].topLevelAwait, false);
-		const top = parse('g = await 1; g++;', { sourceType: 'module', scopes: true });
+		const top = parse('g = await 1; g++;', { scopes: true });
 		assert.equal(top.scopes[0].topLevelAwait, true);
 		const [assigned, updated] = top.node.body.map((s: Any) => referenceOf(s.expression.left ?? s.expression.argument));
 		assert.equal(assigned.writeExpr, top.node.body[0].expression.right);
@@ -200,7 +201,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		assert.doesNotThrow(() => JSON.stringify(tree.body));
 		assert.deepEqual(Object.keys(x.node), ['type', 'start', 'end', 'name']);
 		assert.equal(scopeOf(tree.body[1]).kind, 'function');
-		const mutated = parse('let o = {}; o.x = 1; g = 2; h.k = 3;', { sourceType: 'module', scopes: true });
+		const mutated = parse('let o = {}; o.x = 1; g = 2; h.k = 3;', { scopes: true });
 		const [o] = mutated.bindings;
 		const [of_o] = mutated.references.filter((r: Any) => r.binding === o);
 		assert.deepEqual([o.write, o.writeExpr], [true, mutated.node.body[0].declarations[0].init]);
@@ -212,11 +213,12 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		assert.equal(referenceOf(mutated.node.body[3].expression.left.object).mutate, true);
 		assert.equal(referenceOf(o.node), o);
 		// declared again: a reference that writes, the binding staying the first declaration
-		const twice = parse('var x; var x = 1; function x() {}', { scopes: true });
-		assert.equal(twice.bindings.length, 1);
-		assert.deepEqual([twice.bindings[0].write, twice.bindings[0].writeExpr], [false, null]);
-		assert.deepEqual(twice.references.map((r: Any) => [r.node.start, r.declares, r.write, r.writeExpr?.start ?? null, r.binding]), [[11, true, true, 15, twice.bindings[0]], [27, true, true, null, twice.bindings[0]]]);
-		assert.equal(referenceOf(twice.node.body[1].declarations[0].id).binding, twice.bindings[0]);
+		const twice = parse('function f() { var x; var x = 1; function x() {} }', { scopes: true });
+		const [, again] = twice.bindings;
+		assert.equal(twice.bindings.length, 2);
+		assert.deepEqual([again.write, again.writeExpr], [false, null]);
+		assert.deepEqual(twice.references.map((r: Any) => [r.node.start, r.declares, r.write, r.writeExpr?.start ?? null, r.binding]), [[26, true, true, 30, again], [42, true, true, null, again]]);
+		assert.equal(referenceOf(twice.node.body[0].body.body[1].declarations[0].id).binding, again);
 		assert.equal(referenceOf(null), undefined);
 		// what the markup declares is a `pattern`, no declaration of JavaScript's naming it
 		const context = last('{#each xs as [a, b]}{/each}', { scopes: true }).context;
@@ -224,11 +226,11 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	}
 	{
 		// a namespace declared twice reopens its scope: both read it, and it names the last
-		const [first, second] = read('namespace A { let a; } namespace A { let b; }', { sourceType: 'module', typescript: true, scopes: true }, js).node.body;
+		const [first, second] = js('namespace A { let a; } namespace A { let b; }', { typescript: true, scopes: true }).node.body;
 		assert.equal(scopeOf(first), scopeOf(second));
 		assert.equal(scopeOf(second).node, second);
 	}
-	assert.throws(() => parse('x', { sourceType: 'nonsense' } as Any), TypeError);
+	assert.throws(() => parse('x', { typescript: 'nonsense' } as Any), TypeError);
 
 	// positions are UTF-16 offsets into the whole component
 	const braces = '{a} {"é"} {b /* c */}', located: Options = { comments: true };
@@ -236,30 +238,28 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.deepEqual(spaced.node.fragment.nodes.map((n: Any) => [n.type, n.start, n.end]), [['ExpressionTag', 0, 3], ['Text', 3, 4], ['ExpressionTag', 4, 9], ['Text', 9, 10], ['ExpressionTag', 10, 21]]);
 	assert.equal(spaced.comments[0].start, 13);
 	assert.deepEqual(spaced.locate(13), { line: 1, column: 13 });
-	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { sourceType: 'module', typescript: 'erase' });
+	const erased = parse('import type T from "t"; export const x: T = (1 as any)!; enum E {}', { typescript: 'erase' });
 	assert.equal(erased.node.body.length, 2);
 	assert.equal(erased.node.body[0].declaration.declarations[0].init.type, 'Literal');
 	assert.equal('typeAnnotation' in erased.node.body[0].declaration.declarations[0].id, false);
 	assert.deepEqual(erased.typescript.map((k: Any) => k.type), ['TSEnumDeclaration']);
 	assert.throws(() => parse('let x: number = 1', { typescript: true, erase: true } as Any), TypeError);
 	const template = '<script>\n  let a = 1;\n</script>\n{a}';
-	const placed = read(template, { sourceType: 'module' });
+	const placed = read(template);
 	const script = placed.node.instance.content;
 	assert.deepEqual([script.start, script.end], [8, 22]);
 	assert.deepEqual([9, 22].map((at) => placed.locate(at)), [{ line: 2, column: 0 }, { line: 3, column: 0 }]);
-	const sheet = read('/* top */ div, span { color: red; }', {}, css);
+	const sheet = css('/* top */ div, span { color: red; }');
 	assert.equal(sheet.node.type, 'StyleSheet');
 	assert.equal(sheet.node.end, 35);
 	assert.deepEqual(sheet.node.children.map((rule: Any) => rule.type), ['Rule']);
 	assert.deepEqual(JSON.parse(JSON.stringify(sheet.node.comments)), [{ type: 'CSSComment', value: ' top ', start: 0, end: 9 }]);
-	assert.throws(() => read('div { color: }', {}, css), (e: Any) => e.code === 'expected' && e.pos === 6);
-	const half = read('a { b: c } div { color: } p { q: r }', { errorRecovery: true }, css);
+	assert.throws(() => css('div { color: }'), (e: Any) => e.code === 'expected' && e.pos === 6);
+	const half = css('a { b: c } div { color: } p { q: r }', { errorRecovery: true });
 	assert.deepEqual(half.errors.map((e: Any) => [e.code, e.pos]), [['expected', 17]]);
 	assert.deepEqual(half.node.children.map((rule: Any) => rule.end), [10]);
 	assert.equal(program('"﻿a"; "bc"; zz').body[2].expression.name, 'zz');
 	assert.throws(() => read(42 as Any), TypeError);
-	assert.throws(() => read('{a}', {}, 'js' as Any), /parse takes `svelte`, `js` or `css`/);
-	assert.throws(() => { (js as Any)[Object.getOwnPropertySymbols(js)[0]] = 1; }, TypeError);
 	const twice = 'let a = 1; f(a)';
 	const whole = JSON.stringify(parse(twice).node);
 	assert.equal(read(`{${twice.slice(11)}}`).node.fragment.nodes[0].expression.type, 'CallExpression');
@@ -368,18 +368,17 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		if (!closed(pattern)) continue;
 		cases--;
 		const flags = pick(FLAGS);
-		assert.equal(valid(() => read(`/${pattern}/${flags}`, {}, js)), valid(() => new RegExp(pattern, flags)), `/${pattern}/${flags}`);
+		assert.equal(valid(() => js(`/${pattern}/${flags}`)), valid(() => new RegExp(pattern, flags)), `/${pattern}/${flags}`);
 	}
 }
 
 // a component: its markup's nodes around the JavaScript ones, one tree
 {
 	const source = '<script lang="ts">\n\tlet items: string[] = [];\n</script>\n\n{#each items as item, i (item)}\n\t<p class:odd={i % 2} on:click={() => item}>{item}</p>\n{:else}\n\tnone\n{/each}\n';
-	const doc = read(source, { sourceType: 'module', scopes: true, comments: true });
+	const doc = read(source, { scopes: true, comments: true });
 	const root = doc.node;
 	assert.equal(root.type, 'Root');
 	assert.equal(root.end, source.length);
-	assert.equal(doc.end, source.length);
 	assert.deepEqual(doc.comments, []);
 	assert.equal(root.instance.context, 'default');
 	assert.equal(root.instance.content.body[0].declarations[0].id.typeAnnotation.type, 'TSTypeAnnotation');
@@ -409,8 +408,6 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	assert.equal(scopeOf(root.fragment).parent, scopeOf(root.instance.content));
 	assert.equal(scopeOf(root.instance.content).parent, scopeOf(root));
 	assert.equal(scopeOf(each.fallback).parent, scopeOf(root.fragment));
-	assert.throws(() => read('<div>', {}, 'host x' as Any), TypeError);
-	assert.throws(() => read('<div>', {}, { wire: 'host x' } as Any), TypeError);
 	assert.throws(() => read('<div>'), { code: 'unclosed', pos: 0 });
 	// under recovery the tree is what could be read, the errors listed with it
 	const loose = read('<div>{#if }<Comp foo={bar}\n</div>', { errorRecovery: true });
@@ -449,11 +446,11 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		for (const key of Object.keys(value)) walk(node ? value : holder, value[key], key === 'comments');
 	};
 	const decoder = readFileSync(new URL('../src/decode.ts', import.meta.url), 'utf8');
-	for (const typescript of [true, 'erase'] as const) walk(undefined, read(decoder, { sourceType: 'module', typescript, comments: true, scopes: true }, js).node);
-	walk(undefined, read('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }, js).node);
+	for (const typescript of [true, 'erase'] as const) walk(undefined, js(decoder, { typescript, comments: true, scopes: true }).node);
+	walk(undefined, js('[1, , 3]; function f(this: T, a: number, b?: string) {} /* c */ // d', { typescript: 'erase', comments: true }).node);
 	const dir = new URL('../../crates/teasel/tests/hosts/svelte/', import.meta.url);
 	for (const file of readdirSync(dir).filter((f) => !f.endsWith('.json'))) {
-		walk(undefined, read(readFileSync(new URL(file, dir), 'utf8'), { sourceType: 'module', comments: true, scopes: true, errorRecovery: true }).node);
+		walk(undefined, read(readFileSync(new URL(file, dir), 'utf8'), { comments: true, scopes: true, errorRecovery: true }).node);
 	}
 	assert.deepEqual(wrong, [], `${name} parents`);
 }
@@ -470,12 +467,12 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	};
 	const texts: [string, Any][] = [
 		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
-		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
+		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', read],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
 		['a\nb\nc\nd\ne', js],
 	];
 	for (const [text, language] of texts) {
-		const answer = read(text, { sourceType: 'module', comments: true }, language);
+		const answer = language(text, language === css ? {} : { comments: true });
 		const offsets: number[] = [];
 		const visit = (value: Any) => {
 			if (value === null || typeof value !== 'object') return;
@@ -488,11 +485,11 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 		assert.ok(offsets.length > 8);
 		for (const at of [...offsets, ...offsets.reverse(), ...Array.from({ length: text.length + 1 }, (_, i) => (i * 7) % (text.length + 1))]) assert.deepEqual(answer.locate(at), scan(text, at), `${text} at ${at}`);
 	}
-	const recovered = read('x = "a\u2028\r\ny = \r(\n', { errorRecovery: true }, js);
+	const recovered = js('x = "a\u2028\r\ny = \r(\n', { errorRecovery: true });
 	assert.ok(recovered.errors.length > 1);
 	for (const error of recovered.errors) assert.deepEqual(recovered.locate(error.pos), { line: error.line, column: error.column });
 	const thrown = '\r\n\u2028\r = ;';
-	assert.throws(() => read(thrown, {}, js), (e: Any) => e.line === 4 && JSON.stringify({ line: e.line, column: e.column }) === JSON.stringify(scan(thrown, e.pos)));
+	assert.throws(() => js(thrown), (e: Any) => e.line === 4 && JSON.stringify({ line: e.line, column: e.column }) === JSON.stringify(scan(thrown, e.pos)));
 	assert.deepEqual(read('{a}\n\n{b}').locate(6), { line: 3, column: 1 });
 	const answer = read('a\nb');
 	for (const offset of [-1, 4, 1.5, NaN, '1' as Any]) assert.throws(() => answer.locate(offset), RangeError);
@@ -505,23 +502,23 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 
 // a lone surrogate escape is the code unit it names, as JavaScript keeps it
 {
-	const values = (source: string) => read(source, { sourceType: 'module' }, js).node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
+	const values = (source: string) => js(source).node.body.map((s: Any) => s.expression.value ?? s.expression.quasis.map((q: Any) => q.value.cooked).join('|'));
 	assert.deepEqual(values("'\\ud83d'; '\\ude00x\\u{dbff}'; '\\ufffd'; '\\ud83d\\ude00'; `a\\ud83d${b}\\udc00`;"), ['\ud83d', '\ude00x\udbff', '�', '😀', 'a\ud83d|\udc00']);
 	assert.deepEqual(values("'\\ud83d'; '\\ufffd'; 'é\\udc00'; '\\ud83d';"), ['\ud83d', '�', 'é\udc00', '\ud83d']);
 	assert.deepEqual(values("'\\ud800😀\\ud800é\\udc00 \\udc00'; 'a\\ud800';"), ['\ud800😀\ud800é\udc00 \udc00', 'a\ud800']);
-	assert.throws(() => read("export { x as '\\ud800' };", { sourceType: 'module' }, js), { code: 'lone_surrogate_in_module_name', pos: 14 });
-	assert.throws(() => read("import { '\\udc00' as y } from 'm';", { sourceType: 'module' }, js), { code: 'lone_surrogate_in_module_name', pos: 9 });
+	assert.throws(() => js("export { x as '\\ud800' };"), { code: 'lone_surrogate_in_module_name', pos: 14 });
+	assert.throws(() => js("import { '\\udc00' as y } from 'm';"), { code: 'lone_surrogate_in_module_name', pos: 9 });
 }
 
 // a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
 {
 	const deep = { code: 'nesting_depth' };
 	for (const scopes of [false, true]) {
-		assert.throws(() => read('a' + '.b'.repeat(9_999), { scopes }, js), deep);
-		assert.throws(() => read('new '.repeat(9_999) + 'x', { scopes }, js), deep);
-		assert.throws(() => read('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }, js), deep);
+		assert.throws(() => js('a' + '.b'.repeat(9_999), { scopes }), deep);
+		assert.throws(() => js('new '.repeat(9_999) + 'x', { scopes }), deep);
+		assert.throws(() => js('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }), deep);
 		assert.throws(() => read('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }), deep);
-		assert.equal(read('x', { scopes }, js).node.body.length, 1);
+		assert.equal(js('x', { scopes }).node.body.length, 1);
 	}
 	const sheets = `<style>${'a {'.repeat(501)}</style><style>${'a {'.repeat(501)}${'}'.repeat(501)}</style>`;
 	assert.deepEqual(read(sheets, { errorRecovery: true }).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
@@ -548,11 +545,11 @@ if (name !== 'native') {
 	})();
 	assert.ok(restarted, `${name} the engine started over`);
 	assert.equal(read('<a>{x}</a>').node.fragment.nodes[0].name, 'a');
-	assert.equal(read('a { b: c }', {}, css).node.children[0].type, 'Rule');
+	assert.equal(css('a { b: c }').node.children[0].type, 'Rule');
 	// a source that grows the memory past 256 MiB leaves it to the instance the next parse replaces
 	const { engine } = await import('#engine');
 	const memory = () => (engine.tree(false, true).find((view) => typeof view === 'object') as Uint32Array).buffer.byteLength;
-	assert.equal(read(`/*${'c'.repeat(1 << 27)}*/`, {}, js).node.body.length, 0);
+	assert.equal(js(`/*${'c'.repeat(1 << 27)}*/`).node.body.length, 0);
 	assert.ok(memory() > 1 << 28, `${name} grew to ${memory()}`);
 	assert.equal(read('<a>{x}</a>').node.fragment.nodes[0].name, 'a');
 	assert.ok(memory() < 1 << 28, `${name} shrank to ${memory()}`);
@@ -561,7 +558,7 @@ if (name !== 'native') {
 // the tests read the source; the published build must answer the same once its specifiers are rewritten
 {
 	const built = await import('../dist/index.js');
-	assert.equal(built.parse('let x = 1', {}, built.js).node.body.length, 1, `${name} dist`);
+	assert.equal(built.parseModule('let x = 1').node.body.length, 1, `${name} dist`);
 	assert.equal((built.parse('<p>{x}</p>').node.fragment.nodes[0] as Any).name, 'p', `${name} dist`);
 }
 
@@ -569,10 +566,10 @@ if (name !== 'native') {
 {
 	const { engine } = await import('#engine');
 	const made = generate(JSON.parse(engine.layout()));
-	assert.deepEqual(JSON.parse(JSON.stringify(js.children)), made.children, 'run node scripts/children.ts');
-	assert.deepEqual([...js.extras], made.extras, 'run node scripts/children.ts');
-	assert.deepEqual(JSON.parse(JSON.stringify(css.children)), made.stylesheet, 'run node scripts/children.ts');
-	assert.deepEqual(JSON.parse(JSON.stringify(svelte.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');
+	assert.deepEqual(JSON.parse(JSON.stringify(tables.children)), made.children, 'run node scripts/children.ts');
+	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
+	assert.deepEqual(JSON.parse(JSON.stringify(tables.stylesheet)), made.stylesheet, 'run node scripts/children.ts');
+	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');
 }
 
 // what children names is what the answers hold: over every fixture, a key whose value is a node or a
@@ -602,29 +599,29 @@ if (name !== 'native') {
 	};
 	const fixtures = new URL('../../crates/teasel/tests/', import.meta.url);
 	const files = (dir: string, ext: string) => readdirSync(new URL(dir, fixtures)).filter((file) => file.endsWith(ext)).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
-	const check = (table: typeof js.children, what: string, byHand = false) => {
+	const check = (table: typeof m.children, what: string, byHand = false) => {
 		for (const [type, keys] of seen) {
 			assert.ok(type in table, `${what}: ${type} is not in children`);
-			for (const key of keys) assert.ok(table[type].includes(key) || js.extras.includes(key), `${what}: ${type}.${key} holds nodes but children does not name it`);
+			for (const key of keys) assert.ok(table[type].includes(key) || m.extras.includes(key), `${what}: ${type}.${key} holds nodes but children does not name it`);
 		}
 		// js's table comes from the layout, so a stale entry there is impossible; css's and Svelte's are spelled by hand
-		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in js.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
+		const unseen = Object.entries(table).flatMap(([type, keys]) => (listed.has(type) && !(byHand && type in tables.children) ? keys.filter((key) => !listed.get(type)!.has(key)).map((key) => `${type}.${key}`) : []));
 		if (byHand) assert.deepEqual(unseen, [], `${what}: children names fields no fixture holds a node or a list in`);
 		seen.clear();
 		listed.clear();
 	};
 	const parses = (text: string, options: Options) => {
 		try {
-			return read(text, options, js).node;
+			return js(text, options).node;
 		} catch (e) {
 			if (e instanceof SyntaxError) return null;
 			throw e;
 		}
 	};
-	for (const text of files('fixtures/js/', '.js')) observe(parses(text, { sourceType: 'module', comments: true, errorRecovery: true }));
-	check(js.children, 'js fixtures');
-	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { sourceType: 'module', typescript: true, comments: true, errorRecovery: true }));
-	check(js.children, 'ts fixtures');
+	for (const text of files('fixtures/js/', '.js')) observe(parses(text, { comments: true, errorRecovery: true }));
+	check(tables.children, 'js fixtures');
+	for (const text of files('fixtures/ts/', '.ts')) observe(parses(text, { typescript: true, comments: true, errorRecovery: true }));
+	check(tables.children, 'ts fixtures');
 	for (const text of files('hosts/svelte/', '.svelte')) {
 		try {
 			observe(read(text, { comments: true, scopes: true, errorRecovery: true }).node);
@@ -632,19 +629,19 @@ if (name !== 'native') {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(svelte.children, 'svelte fixtures', true);
+	check(m.children, 'svelte fixtures', true);
 	for (const text of files('fixtures/css/', '.css')) {
 		try {
-			observe(read(text, { comments: true }, css).node);
+			observe(css(text).node);
 		} catch (e) {
 			if (!(e instanceof SyntaxError)) throw e;
 		}
 	}
-	check(css.children, 'css fixtures', true);
-	assert.ok('Rule' in svelte.children && 'Identifier' in svelte.children && 'EachBlock' in svelte.children);
-	assert.ok(!('Host' in js.children) && !('EachBlock' in js.children));
-	assert.ok(Object.isFrozen(svelte.children) && Object.isFrozen(svelte.children.Program) && Object.isFrozen(css.children.Rule));
-	assert.deepEqual([css.children.StyleSheet, svelte.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
+	check(tables.stylesheet, 'css fixtures', true);
+	assert.ok('Rule' in m.children && 'Identifier' in m.children && 'EachBlock' in m.children);
+	assert.ok(!('Host' in tables.children) && !('EachBlock' in tables.children));
+	assert.ok(Object.isFrozen(m.children) && Object.isFrozen(m.children.Program) && Object.isFrozen(tables.stylesheet.Rule));
+	assert.deepEqual([tables.stylesheet.StyleSheet, m.children.StyleSheet], [['children', 'comments'], ['attributes', 'children', 'comments']]);
 	const cut = read('<script lang="ts"></script>{#snippet x<T,}{/snippet}', { errorRecovery: true }).node.fragment.nodes[0];
 	assert.equal(cut.typeParams, 'T,');
 }
@@ -655,9 +652,9 @@ if (name !== 'native') {
 	const sources = (dir: string) => readdirSync(new URL(dir, fixtures)).filter((file) => !file.endsWith('.json')).map((file) => readFileSync(new URL(`${dir}${file}`, fixtures), 'utf8'));
 	const acorn = ['regex', 'bigint', 'directive'];
 	for (const [dir, options, where] of [
-		['js/', { sourceType: 'module', scopes: true }, acorn],
-		['ts/', { sourceType: 'module', typescript: true, scopes: true }, ['regex', 'bigint']],
-		['ts/', { sourceType: 'module', typescript: 'erase', scopes: true }, [...acorn, 'decorators']],
+		['js/', { scopes: true }, acorn],
+		['ts/', { typescript: true, scopes: true }, ['regex', 'bigint']],
+		['ts/', { typescript: 'erase', scopes: true }, [...acorn, 'decorators']],
 	] as const) {
 		const shapes = new Map<string, string>();
 		const walk = (value: Any) => {
@@ -671,7 +668,7 @@ if (name !== 'native') {
 		};
 		for (const text of sources(dir)) {
 			try {
-				walk(read(text, options, js).node);
+				walk(js(text, options).node);
 			} catch (e) {
 				if (!(e instanceof SyntaxError)) throw e;
 			}
@@ -717,18 +714,22 @@ function types(text: string) {
 	expect<Equal<AST.Root['fragment'], Fragment>>();
 	expect<Equal<AST.Script['content'], Program>>();
 
-	// a component by default, JavaScript and CSS by their language
+	// a component, a module and a stylesheet, each by its function
 	const doc = m.parse(text, {});
 	expect<Equal<typeof doc.node, AST.Root>>();
-	expect<Equal<ReturnType<typeof m.parse<Program>>['node'], Program>>();
-	const program = m.parse(text, {}, js);
+	const program = m.parseModule(text);
 	expect<Equal<typeof program.node, Program>>();
-	m.parse(text, {}, svelte).node.fragment.nodes[0]?.type satisfies AST.FragmentNode['type'] | undefined;
-	m.parse(text, {}, css).node.type satisfies string;
-	// the accessors take an attached comment and a component's nodes, and a piece's root has a component's node for a parent
-	m.parentOf(m.parse(text, {}, js).node.body[0].leadingComments![0]);
+	doc.node.fragment.nodes[0]?.type satisfies AST.FragmentNode['type'] | undefined;
+	const sheet = m.parseCss(text);
+	expect<Equal<typeof sheet.node.type, 'StyleSheet'>>();
+	// @ts-expect-error a stylesheet read on its own has no element around it
+	sheet.node.attributes;
+	// the accessors take an attached comment and a component's nodes, and a script's program has a component's node for a parent
+	m.parentOf(m.parseModule(text).node.body[0].leadingComments![0]);
 	m.scopeOf(doc.node);
 	m.parentOf(doc.node.instance!.content)?.type === 'Script';
-	// @ts-expect-error a language is `svelte`, `js` or `css`
-	m.parse(text, {}, 'js');
+	// @ts-expect-error a component is always a module
+	m.parse(text, { sourceType: 'module' });
+	// @ts-expect-error a stylesheet has no comments to attach
+	m.parseCss(text, { comments: true });
 }
