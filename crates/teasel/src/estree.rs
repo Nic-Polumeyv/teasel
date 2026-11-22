@@ -371,12 +371,6 @@ impl<'a> Writer<'a> {
 		self.json.marked(self.ast.str(id), self.ast.strings.marks_of(id));
 	}
 
-	pub(crate) fn raw(&mut self, id: NodeId) {
-		let node = self.ast.node(id);
-		self.key("raw");
-		self.slice(node.start, node.end);
-	}
-
 	/// Follows a kind's recipe over the record at `base`, a `repr(C, u32)` enum's payload; the
 	/// caller ends the node, unless a child stood in for it: false then.
 	fn run(&mut self, id: NodeId, ops: &[Op], base: *const u8) -> bool {
@@ -547,7 +541,6 @@ impl<'a> Writer<'a> {
 						self.json.null();
 					}
 				}
-				Op::Raw => self.raw(id),
 				Op::BigInt => {
 					let node = self.ast.node(id);
 					let raw = &self.source[node.start as usize..node.end as usize - 1];

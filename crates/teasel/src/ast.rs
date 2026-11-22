@@ -311,8 +311,7 @@ crate::layout::record! {
 }
 
 crate::layout::record! {
-	/// `len` items from `start` on: a node takes each of its comments one after the other, a host
-	/// node its fields.
+	/// `len` items from `start` on: a node takes each of its comments one after the other.
 	#[derive(Debug, Default, Clone, Copy)]
 	pub struct Run {
 		pub start: u32,

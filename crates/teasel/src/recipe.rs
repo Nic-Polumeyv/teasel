@@ -62,8 +62,6 @@ pub enum Op {
 	Splice(Slot),
 	/// A number literal's value: the float, or null when not finite.
 	Float(&'static str, Slot),
-	/// `raw`: the node's source text.
-	Raw,
 	/// `bigint`: the literal's decimal digits.
 	BigInt,
 	/// A regular expression literal's value, null in JSON because JSON cannot hold one.
@@ -153,7 +151,6 @@ impl Op {
 			Edge(k, f, end) => ("edge", k, Some(f), Rest::Bool(end)),
 			Splice(f) => ("splice", "", Some(f), Rest::Nothing),
 			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
-			Raw => ("raw", "", None, Rest::Nothing),
 			BigInt => ("bigint", "", None, Rest::Nothing),
 			BigIntValue(k) => ("bigintvalue", k, None, Rest::Nothing),
 			RegExp(k, pattern, flags) => ("regexp", k, Some(pattern), Rest::Second(flags)),
@@ -212,7 +209,7 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 	let mut i = 0;
 	while i < ops.len() {
 		let fits = match ops[i] {
-			Type(_) | Bare(_) | Inner(..) | Comments(_) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_)
+			Type(_) | Bare(_) | Inner(..) | Comments(_) | BigInt | BigIntValue(_) | ConstBool(..) | Null(_)
 			| EmptyList(_) | Keep(_) => true,
 			Node(_, slot) | Through(slot) | Splice(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
@@ -276,12 +273,12 @@ pub static KINDS: ByKind = {
 		Program: &[Type("Program"), List("body", at!(body)), BoolNames("sourceType", at!(module), &["module", "script"])],
 		Identifier: &[Type("Identifier"), Str("name", at!(name))],
 		PrivateIdentifier: &[Type("PrivateIdentifier"), Str("name", at!(name))],
-		NumberLiteral: &[Type("Literal"), Float("value", at!(value)), Raw],
-		BigIntLiteral: &[Type("Literal"), BigIntValue("value"), Raw, BigInt],
-		StringLiteral: &[Type("Literal"), Str("value", at!(value)), Raw],
-		BooleanLiteral: &[Type("Literal"), Bool("value", at!(value)), Raw],
-		NullLiteral: &[Type("Literal"), Null("value"), Raw],
-		RegExpLiteral: &[Type("Literal"), RegExp("value", at!(pattern), at!(flags)), Raw, Object("regex", &[Str("pattern", at!(pattern)), Str("flags", at!(flags))])],
+		NumberLiteral: &[Type("Literal"), Float("value", at!(value)), Inner("raw", 0, 0)],
+		BigIntLiteral: &[Type("Literal"), BigIntValue("value"), Inner("raw", 0, 0), BigInt],
+		StringLiteral: &[Type("Literal"), Str("value", at!(value)), Inner("raw", 0, 0)],
+		BooleanLiteral: &[Type("Literal"), Bool("value", at!(value)), Inner("raw", 0, 0)],
+		NullLiteral: &[Type("Literal"), Null("value"), Inner("raw", 0, 0)],
+		RegExpLiteral: &[Type("Literal"), RegExp("value", at!(pattern), at!(flags)), Inner("raw", 0, 0), Object("regex", &[Str("pattern", at!(pattern)), Str("flags", at!(flags))])],
 		TemplateLiteral: &[Type("TemplateLiteral"), List("expressions", at!(expressions)), List("quasis", at!(quasis))],
 		TemplateElement: &[Type("TemplateElement"), Object("value", &[Str("raw", at!(raw)), Opt("cooked", at!(cooked))]), Bool("tail", at!(tail))],
 		TaggedTemplateExpression: &[Type("TaggedTemplateExpression"), Node("tag", at!(tag)), Node("quasi", at!(quasi))],
@@ -406,8 +403,8 @@ pub static KINDS: ByKind = {
 		ParameterProperty: &[Keep("TSParameterProperty"), Through(at!(parameter)), Type("TSParameterProperty"), Node("parameter", at!(parameter))],
 		Decorator: &[Keep("Decorator"), Type("Decorator"), Node("expression", at!(expression))],
 		Fragment: &[Bare("Fragment"), List("nodes", at!(nodes))],
-		Text: &[Type("Text"), Raw, Inner("data", 0, 0)],
-		TextDecoded: &[Type("Text"), Raw, Str("data", at!(data))],
+		Text: &[Type("Text"), Inner("raw", 0, 0), Inner("data", 0, 0)],
+		TextDecoded: &[Type("Text"), Inner("raw", 0, 0), Str("data", at!(data))],
 		MarkupComment: &[Type("Comment"), Inner("data", 4, 3)],
 		ExpressionTag: &[Type("ExpressionTag"), Node("expression", at!(expression))],
 		HtmlTag: &[Type("HtmlTag"), Node("expression", at!(expression))],

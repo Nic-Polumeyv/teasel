@@ -1,6 +1,5 @@
-//! Svelte: a component read by one walker, its markup, blocks and tags written as rows, the
-//! JavaScript inside read by the parser into the same tree; and CSS, a component's style element
-//! or a stylesheet on its own.
+//! Svelte: a component read by one walker, its markup, blocks and tags and the JavaScript
+//! inside them in one tree; and CSS, a component's style element or a stylesheet on its own.
 
 mod blocks;
 mod css;
@@ -29,8 +28,7 @@ pub(crate) fn parse_component(src: &str, options: Options, reused: Option<Box<As
 	(walker.ast.take().unwrap(), root)
 }
 
-/// The whole source as a CSS stylesheet; see `Walker::stylesheet`. Its rows are numbered among
-/// Svelte's, by the same names.
+/// The whole source as a CSS stylesheet; see `Walker::stylesheet`.
 pub(crate) fn parse_stylesheet(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
 	let mut walker = Walker::new(src, src.len() as u32, options, reused);
 	let root = walker.stylesheet();
@@ -80,9 +78,8 @@ enum Frame {
 	Block(Open),
 }
 
-/// The cursor over a component's source, or a stylesheet's, and the tree it writes: the rows,
-/// numbered by shape, and the JavaScript read into it; what it is inside, and what the element
-/// being read holds so far.
+/// The cursor over a component's source, or a stylesheet's, and the tree it writes; what it is
+/// inside, and what the element being read holds so far.
 pub(crate) struct Walker<'a> {
 	pub(crate) src: &'a str,
 	/// The source's length before the whitespace that ends it was cut: where the root ends.

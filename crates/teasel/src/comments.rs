@@ -85,9 +85,9 @@ impl Attacher<'_> {
 			let n = self.ast.node(node);
 			(n.start, n.end)
 		};
-		let host = self.is_host(node);
+		let markup = self.ast.node(node).kind.is_svelte();
 		while self.peek().is_some_and(|c| self.start(c) < start) {
-			if host {
+			if markup {
 				self.next += 1;
 			} else {
 				self.take(node, Place::Leading);
@@ -117,7 +117,7 @@ impl Attacher<'_> {
 		}
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
-		if host || parent_end == Some(end) {
+		if markup || parent_end == Some(end) {
 			return;
 		}
 		if parent.is_some_and(|p| self.is_last_in(p, node)) {
@@ -125,7 +125,7 @@ impl Attacher<'_> {
 			while self.peek().is_some_and(|c| self.start(c) < parent_end) {
 				self.take(node, Place::Trailing);
 			}
-		} else if parent.is_some_and(|p| self.is_host(p)) {
+		} else if parent.is_some_and(|p| self.ast.node(p).kind.is_svelte()) {
 			// the last JavaScript before Svelte's own syntax resumes takes what lies between
 			let mut from = end;
 			while let Some(c) = self.peek() {
@@ -184,10 +184,6 @@ impl Attacher<'_> {
 				}
 			}
 		}
-	}
-
-	fn is_host(&self, node: NodeId) -> bool {
-		self.ast.node(node).kind.is_svelte()
 	}
 
 	fn only_separators(&self, from: u32, to: u32) -> bool {

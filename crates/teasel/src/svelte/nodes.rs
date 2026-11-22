@@ -1,5 +1,4 @@
-//! Svelte's nodes as the walker writes them: each a row of the tree, its type and fields named
-//! by number, numbered by shape; and what a walk over them follows.
+//! Text and fragments, the nodes every part of the walker writes.
 
 use std::borrow::Cow;
 

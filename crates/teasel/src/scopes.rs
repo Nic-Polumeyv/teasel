@@ -941,7 +941,7 @@ impl<'a> Binder<'a> {
 		});
 		if let Some(existing) = existing {
 			let scope = here.scope;
-			let opened_by_host = match self.out.scopes[scope as usize] {
+			let opened_by_markup = match self.out.scopes[scope as usize] {
 				Scope {
 					kind: ScopeKind::Fragment,
 					..
@@ -953,7 +953,7 @@ impl<'a> Binder<'a> {
 				} => self.kind(n).is_svelte(),
 				_ => false,
 			};
-			if opened_by_host && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
+			if opened_by_markup && !kind.is_var() && !self.out.bindings[existing as usize].kind.is_var() {
 				let n = *self.ast.node(node);
 				self.out
 					.errors

@@ -42,6 +42,7 @@ export interface Layout {
 	records: Record<'comments' | 'attached' | 'errors' | 'spans' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
+	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's name, its record's size and how its rows are spelled. */
 	recipes: { kinds: RawOp[][]; rows: [name: string, size: number, ops: RawOp[]][]; adds?: RawOp[][]; erased?: RawOp[] };
 }
 
@@ -467,8 +468,8 @@ interface Spelling<E, St> {
 	kept(key: string): St;
 }
 
-// `raw` and `bigint` are keys of their own name
-const key_of = (op: Op) => (op.op === 'raw' || op.op === 'bigint' ? op.op : op.key);
+// `bigint` is a key of its own name
+const key_of = (op: Op) => (op.op === 'bigint' ? op.op : op.key);
 
 // an optional's tag word sits among its value's words, which follow their order around it
 const tagged = ({ tag }: Tagged, at: number) => [at + tag * 4, at + (tag === 0 ? 4 : 0)];
@@ -552,8 +553,6 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.pick(B.eq(B.byte(op.at), B.lit(1)), B.lit(op.value), B.lit(op.other));
 		case 'float':
 			return B.finite(B.numbers(B.word(op.at)));
-		case 'raw':
-			return B.slice(0, 0);
 		case 'inner':
 			return B.slice(op.at, op.at2);
 		case 'bigint':
@@ -932,7 +931,7 @@ const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[]): Builder {
 	const slow: Builder = (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	const facts = (config & FACTS) !== 0, erase = (config & ERASE) !== 0;
-	if (ops.length === 0 || ops.some((op) => op.op === 'splice')) return slow;
+	if (ops.some((op) => op.op === 'splice')) return slow;
 	const word = (at: number) => `N[b + ${(C.kind + at) >> 2}]`;
 	const byte = (at: number) => `(${word(at)} >>> ${((C.kind + at) & 3) << 3} & 255)`;
 	const B = new Source(word, byte, facts, C.words, C.kind);
@@ -948,7 +947,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 	const type = bare || head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
 	const props = bare ? [`type: ${type}`] : [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
-	B.shared = ops.filter((op) => op.op === 'raw' || (op.op === 'inner' && op.at === 0 && op.at2 === 0)).length > 1;
+	B.shared = ops.filter((op) => op.op === 'inner' && op.at === 0 && op.at2 === 0).length > 1;
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];

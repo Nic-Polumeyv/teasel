@@ -528,7 +528,7 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 	assert.deepEqual(read(sheets, { errorRecovery: true }).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
 }
 
-// a component parses after the engine started over: the fresh instance numbers its shapes anew
+// a component parses after the engine started over
 if (name !== 'native') {
 	let restarted = false;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up

@@ -144,7 +144,7 @@ pub(super) enum Block {
 	Snippet,
 }
 
-// the slots of each block's node, in the order its rows hold them
+// the slots a block's parts wait in while it is read
 const TEST: usize = 0;
 const CONSEQUENT: usize = 1;
 const BRANCHES: usize = 2;
