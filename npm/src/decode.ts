@@ -1269,13 +1269,11 @@ function line_of(starts: number[], offset: number, lo: number, hi: number) {
 // tried: a closure per answer, 1.2x slower a call, and as an own property it is a key and fails structuredClone
 class Answer {
 	node: unknown;
-	end: number;
 	readonly #text: string;
 	#starts: number[] | undefined = undefined;
 	#line = 0;
-	constructor(node: unknown, end: number, text: string) {
+	constructor(node: unknown, text: string) {
 		this.node = node;
-		this.end = end;
 		this.#text = text;
 	}
 	locate(offset: number) {
@@ -1296,7 +1294,7 @@ class Answer {
  */
 export function decode(words: Uint32Array, source: string, engine: Views): Decoded {
 	const C = compile(engine);
-	const lens = 2 + words[1];
+	const lens = 1 + words[0];
 	const what = words[lens];
 	const typescript = (what & TS_OPTION) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
@@ -1392,7 +1390,7 @@ export function decode(words: Uint32Array, source: string, engine: Views): Decod
 	}
 	let answer: Decoded;
 	try {
-		answer = new Answer(failed ? null : build(S, words[2], undefined), words[0], source);
+		answer = new Answer(failed ? null : build(S, words[1], undefined), source);
 		if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 		if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 		if (!failed && erase) answer.typescript = kept(S);

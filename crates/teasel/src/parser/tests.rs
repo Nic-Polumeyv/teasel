@@ -258,7 +258,7 @@ fn the_session_writes_the_same_words_again() {
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
 	parse("a +", options, Entry::Program);
 	let failed = words();
-	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
+	assert_eq!((failed[0], failed[1 + failed[0] as usize] & 1), (0, 1));
 	parse(source, options, Entry::Program);
 	let first = words();
 	parse("a + b", options, Entry::Program);
@@ -266,7 +266,7 @@ fn the_session_writes_the_same_words_again() {
 	parse(source, options, Entry::Program);
 	let again = words();
 	// but for the first saying its buffers are new to the decoder
-	let what = 2 + first[1] as usize;
+	let what = 1 + first[0] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(
 		(&first[..what], &first[what + 1..]),
@@ -791,7 +791,6 @@ fn phases() {
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
-	let end = source.len() as u32;
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole parse: positions, parse, comments, encode, finish", &mut || {
@@ -818,11 +817,8 @@ fn phases() {
 		});
 	}
 	best("Json write", &mut || {
-		let _ = Writer::new(&ast, &source, &positions, options.with(Options::COMMENTS)).answer(
-			Entry::Program,
-			Some(roots),
-			end,
-		);
+		let _ = Writer::new(&ast, &source, &positions, options.with(Options::COMMENTS))
+			.answer(Entry::Program, Some(roots));
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",

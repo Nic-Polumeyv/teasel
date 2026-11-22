@@ -63,7 +63,7 @@ parseCss('a { color: red }').node;                           // a StyleSheet
 
 ## The answer
 
-Each of the three returns an object, the answer. It always has `node`, the tree, and `end`, the end of the text. Every other key is there only when its option is on:
+Each of the three returns an object, the answer. It always has `node`, the tree. Every other key is there only when its option is on:
 
 - `comments`: `comments` lists every comment in source order, and the same objects go in `leadingComments`, `trailingComments` and `innerComments` on the nodes. A component's `Root` lists its scripts' comments whatever the option.
 - `scopes`: `scopes`, `bindings` and `references`, and for a component `roots`. See below.

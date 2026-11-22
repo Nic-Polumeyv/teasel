@@ -19,8 +19,8 @@ pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> Strin
 		"offset {offset} is not a character boundary"
 	);
 	let positions = Positions::new(source);
-	engine::read(source, options, entry, offset, |ast, roots, end, options, _| {
-		Writer::new(ast, source, &positions, options).answer(entry, roots, end)
+	engine::read(source, options, entry, offset, |ast, roots, options, _| {
+		Writer::new(ast, source, &positions, options).answer(entry, roots)
 	})
 }
 
@@ -55,8 +55,8 @@ impl<'a> Writer<'a> {
 	}
 
 	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
-	/// when the parse failed, then `end` and what the options add.
-	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32) -> String {
+	/// when the parse failed, then what the options add.
+	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>) -> String {
 		self.json.object();
 		match roots {
 			None => {
@@ -66,9 +66,6 @@ impl<'a> Writer<'a> {
 			Some(roots) if entry == Entry::Params => self.list("node", roots),
 			Some(roots) => self.field("node", self.ast.list(roots)[0].unwrap()),
 		}
-		self.key("end");
-		let end = self.positions.offset(&mut self.cursor, end);
-		self.json.int(end);
 		self.trailers(roots.is_none());
 		self.json.end();
 		self.json.finish()

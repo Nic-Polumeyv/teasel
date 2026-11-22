@@ -152,8 +152,6 @@ export interface Recovered {
 /** What a parse returns: the node, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;
-	/** The end of the text. */
-	end: number;
 	/**
 	 * The line of `offset`, counting from 1, and its column, counting UTF-16 units from 0, in the
 	 * text parsed. A line ends at `\n`, `\r\n`, a lone `\r`,
