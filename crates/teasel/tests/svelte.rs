@@ -56,7 +56,10 @@ fn every_prefix_answers() {
 		for (end, _) in source.char_indices().chain([(source.len(), ' ')]) {
 			for recover in [false, true] {
 				let recovery = if recover { Options::ERROR_RECOVERY } else { 0 };
-				svelte(&source[..end], Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery);
+				svelte(
+					&source[..end],
+					Options::MODULE | Options::COMMENTS | Options::SCOPES | recovery,
+				);
 			}
 		}
 	}
@@ -78,9 +81,12 @@ fn files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
 
 /// FNV-1a over the answers' bytes: no dependency, and a change anywhere in a tree shows.
 fn hash(texts: &[String]) -> u64 {
-	texts.iter().flat_map(|text| text.bytes().chain([0])).fold(0xcbf29ce484222325u64, |h, b| {
-		(h ^ u64::from(b)).wrapping_mul(0x100000001b3)
-	})
+	texts
+		.iter()
+		.flat_map(|text| text.bytes().chain([0]))
+		.fold(0xcbf29ce484222325u64, |h, b| {
+			(h ^ u64::from(b)).wrapping_mul(0x100000001b3)
+		})
 }
 
 #[test]
@@ -172,7 +178,13 @@ fn unfinished_input() {
 	for source in ["<script / ></script>", "<script / é></script>"] {
 		assert!(parse(source, true).contains("\"type\":\"Root\""));
 	}
-	assert!(parse("<a on:x={@}/>", false).contains("\"node\":null"));
+	// JavaScript that fails on its first token
+	let first = parse("<a on:x={)}/>", false);
+	assert!(first.contains("\"node\":null"), "{first}");
+	assert!(
+		first.contains(&format!("\"code\":{},", Code::UnexpectedToken as u32)),
+		"{first}"
+	);
 	let elements = format!("{}x{}", "<a>".repeat(40_000), "</a>".repeat(40_000));
 	let blocks = format!("{}{}", "{#if a}".repeat(40_000), "{/if}".repeat(40_000));
 	for deep in [elements, blocks] {
@@ -291,7 +303,10 @@ fn a_marker_read_halfway_is_another_word() {
 #[test]
 fn markers_stand_where_they_may() {
 	let answer = svelte("<textarea>a {x}</textarea>", Options::MODULE);
-	assert!(!answer.contains("error") && answer.contains("\"type\":\"ExpressionTag\""), "{answer}");
+	assert!(
+		!answer.contains("error") && answer.contains("\"type\":\"ExpressionTag\""),
+		"{answer}"
+	);
 	let answer = svelte("<textarea>{#if a}b{/if}</textarea>", Options::MODULE);
 	assert!(
 		answer.contains(&format!(
@@ -323,7 +338,10 @@ fn a_reserved_prefix_needs_a_rule() {
 // a slot is Svelte's but inside an element with `shadowrootmode`
 #[test]
 fn a_slot_in_a_shadow_root_is_an_element() {
-	let answer = svelte("<div data-x><slot/></div><div shadowrootmode><slot/></div>", Options::MODULE);
+	let answer = svelte(
+		"<div data-x><slot/></div><div shadowrootmode><slot/></div>",
+		Options::MODULE,
+	);
 	assert_eq!(answer.matches("\"type\":\"SlotElement\"").count(), 1, "{answer}");
 	assert!(
 		answer.find("\"type\":\"SlotElement\"").unwrap() < answer.find("shadowrootmode").unwrap(),
@@ -348,10 +366,18 @@ fn an_unread_field_is_null_or_absent() {
 #[test]
 fn svelte_rules() {
 	let parse = |text: &str| svelte(text, Options::MODULE | Options::SCOPES);
-	let code = |answer: &str, code: Code, arg: &str| answer.contains(&format!(r#""code":{},"args":["{arg}"]"#, code as u8));
+	let code =
+		|answer: &str, code: Code, arg: &str| answer.contains(&format!(r#""code":{},"args":["{arg}"]"#, code as u8));
 	let answer = parse("<br><!DOCTYPE html><div></div>");
-	assert!(!answer.contains("\"code\"") && answer.matches("\"type\":\"RegularElement\"").count() == 3, "{answer}");
-	assert!(code(&parse("<div {@html x}></div>"), Code::Placement, "{@html} among attributes"));
+	assert!(
+		!answer.contains("\"code\"") && answer.matches("\"type\":\"RegularElement\"").count() == 3,
+		"{answer}"
+	);
+	assert!(code(
+		&parse("<div {@html x}></div>"),
+		Code::Placement,
+		"{@html} among attributes"
+	));
 	assert!(parse("<div {@attach x}></div>").contains("\"type\":\"AttachTag\""));
 	let answer = parse("<a in:fade out:fly transition:t/>");
 	assert!(
@@ -365,14 +391,25 @@ fn svelte_rules() {
 	assert!(!parse("<a on:x on:x/>").contains("\"code\""));
 	// `let:` declares its name in the element's scope
 	let answer = parse("<C let:x>{x}</C>");
-	assert!(answer.contains("\"binding\":0") && !answer.contains("\"binding\":null"), "{answer}");
+	assert!(
+		answer.contains("\"binding\":0") && !answer.contains("\"binding\":null"),
+		"{answer}"
+	);
 	let answer = parse("<svelte:head><title>a</title></svelte:head><title>b</title>");
 	assert!(
 		answer.matches("\"type\":\"TitleElement\"").count() == 1 && answer.contains("\"type\":\"SvelteHead\""),
 		"{answer}"
 	);
-	assert!(code(&parse("<svelte:window/><svelte:window/>"), Code::Duplicate, "svelte:window"));
-	assert!(code(&parse("<div><svelte:window/></div>"), Code::Placement, "svelte:window"));
+	assert!(code(
+		&parse("<svelte:window/><svelte:window/>"),
+		Code::Duplicate,
+		"svelte:window"
+	));
+	assert!(code(
+		&parse("<div><svelte:window/></div>"),
+		Code::Placement,
+		"svelte:window"
+	));
 }
 
 // a repeating branch's node ends where the next branch or the close starts; after a branch read

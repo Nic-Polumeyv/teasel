@@ -428,7 +428,8 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	for (const text of ['<a x="', '<a /*', '<script>"</script>', '{#if', '<div class="{a']) {
 		assert.equal(read(text, { errorRecovery: true, comments: true, scopes: true }).node.type, 'Root', `${name} ${text}`);
 	}
-	assert.throws(() => read('<a on:x={@}/>'), (e: Any) => e instanceof SyntaxError, `${name}`);
+	// JavaScript that fails on its first token
+	assert.throws(() => read('<a on:x={)}/>'), (e: Any) => e instanceof SyntaxError && (e as Any).code === 'unexpected_token' && (e as Any).pos === 9, `${name}`);
 }
 // every node's parent is the node it sits in, objects without a type passed through, and a listed
 // comment's the node it is attached to; a list born at its size has no holes
@@ -470,7 +471,7 @@ const text = (source: string, node: Any) => source.slice(node.start, node.end);
 	};
 	const texts: [string, Any][] = [
 		['a\r\nb\rc\u2028d\u2029e\n"𝒳" // é\r\n/* x\r\ny\u2028*/ f\r', js],
-		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
+		['<script>\r\n\tlet a = "𝒳"; // é\r\n</script>\r\n<p class="x\ry">{a}\u2028{b}<!-- c\r\n --></p>\r<p>{a /* 𝒳 */}\r\n</p>\r<style>\n\tp { color: red } /* \r */\n</style>\n', svelte],
 		['p {\r\n\tcolor: red;\r}\n/* 𝒳\r\n */ a { b: c }', css],
 		['a\nb\nc\nd\ne', js],
 	];
