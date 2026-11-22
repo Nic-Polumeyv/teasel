@@ -7,9 +7,7 @@ const utf8 = new TextDecoder();
 interface Exports {
 	readonly memory: WebAssembly.Memory;
 	alloc(len: number): number;
-	parse(ptr: number, len: number, capacity: number, flags: number, entry: number, offset: number, stop_ptr: number, stop_len: number, stop_capacity: number, grammar: number): number;
-	grammar_new(ptr: number, len: number, capacity: number): number;
-	grammar_about(handle: number): void;
+	parse(ptr: number, len: number, capacity: number, flags: number, language: number): number;
 	words_ptr(): number;
 	words_len(): number;
 	text_ptr(): number;
@@ -56,7 +54,7 @@ async function fetched() {
 	}
 }
 
-// a panic traps the instance for good: a fresh one takes over, and grammars are read again in it
+// a panic traps the instance for good: a fresh one takes over, numbering the shapes of host nodes anew
 let generation = 0;
 // the instance is spent, and the next call starts the fresh one: where a stack overflow is caught there may be no stack left to start it
 let spent = false;
@@ -99,46 +97,17 @@ function layout() {
 	return layout_text;
 }
 
-class Grammar {
-	readonly definition: string;
-	at = 0;
-	generation = -1;
-	constructor(definition: string) {
-		this.definition = definition;
-		this.handle();
-	}
-	handle() {
-		if (this.generation !== generation) {
-			this.at = guarded(() => opened(wasm.grammar_new(...bytes(this.definition))));
-			this.generation = generation;
-		}
-		return this.at;
-	}
-}
-
-// 0 is the error answer at `text_ptr`: a grammar the engine cannot take
-function opened(handle: number) {
-	if (handle === 0) throw new Error(text());
-	return handle;
-}
-
 const engine: Engine = {
-	parse(source, flags, entry, offset, stop, grammar) {
+	parse(source, flags, language) {
 		// a memory never shrinks, so one a huge source grew past 256 MiB goes with its instance, which costs 0.9 ms to replace
 		if (wasm.memory.buffer.byteLength > 1 << 28) {
 			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 			generation++;
 		}
-		const handle = grammar === undefined ? 0 : (grammar as Grammar).handle();
-		if (guarded(() => wasm.parse(...bytes(source), flags, entry, offset, ...bytes(stop), handle)) !== 0) throw new Error(text());
+		if (guarded(() => wasm.parse(...bytes(source), flags, language)) !== 0) throw new Error(text());
 		// the layout comes first: writing it can grow the memory and detach a view taken before
 		layout();
 		return words();
-	},
-	grammar: (definition) => new Grammar(definition),
-	about(grammar) {
-		guarded(() => wasm.grammar_about((grammar as Grammar).handle()));
-		return text();
 	},
 	get generation() {
 		return generation;

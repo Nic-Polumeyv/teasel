@@ -1,7 +1,7 @@
 {
 	"name": "@teasel/parser",
 	"version": "0.0.24",
-	"description": "A JavaScript and TypeScript parser in Rust. It answers in ESTree.",
+	"description": "A Svelte parser in Rust: a component's tree, its JavaScript and TypeScript in ESTree, and plain JavaScript and CSS too.",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -15,7 +15,6 @@
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": "./dist/index.js",
-		"./grammar": "./dist/grammar.js",
 		"./teasel.wasm": "./dist/teasel.wasm",
 		"./package.json": "./package.json"
 	},

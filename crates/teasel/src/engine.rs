@@ -4,10 +4,10 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::host::{self, Grammar};
+use crate::host;
 use crate::json::Json;
 use crate::parser::{Entry, parse_at};
-use crate::positions::{Cursor, Positions};
+use crate::positions::Positions;
 use crate::scopes;
 
 /// The answer's words, read in place by the decoder that takes the allocation over.
@@ -163,18 +163,13 @@ pub fn layout_json() -> String {
 	w.key("ts");
 	texts(&mut w, view_names(true));
 	w.end();
-	w.key("names");
-	texts(&mut w, host::grammar::own::NAMES.iter().copied());
-	w.key("stylesheet");
-	children_table(&mut w, host::stylesheet_children());
-	// what the walker written for Svelte answers with, as `about` tells of a grammar
-	w.key("svelte");
-	w.object();
-	w.key("children");
-	children_table(&mut w, host::svelte::children());
+	// the names the hosts' rows number, a stylesheet's and a Svelte component's alike
 	w.key("names");
 	texts(&mut w, host::svelte::NAMES.iter().copied());
-	w.end();
+	w.key("stylesheet");
+	children_table(&mut w, host::stylesheet_children());
+	w.key("svelte");
+	children_table(&mut w, host::svelte::children());
 	w.key("recipes");
 	w.object();
 	w.key("kinds");
@@ -202,20 +197,6 @@ pub fn layout_json() -> String {
 	w.finish()
 }
 
-/// What the decoder learns of a grammar once, as JSON: every type of node its documents hold, each
-/// with the fields that hold nodes (see `Grammar::children`), and its names by the numbers the
-/// hosts' rows give them.
-pub fn about(grammar: &Grammar) -> String {
-	let mut w = Json::default();
-	w.object();
-	w.key("children");
-	children_table(&mut w, grammar.children());
-	w.key("names");
-	texts(&mut w, grammar.names.iter().copied());
-	w.end();
-	w.finish()
-}
-
 fn children_table(w: &mut Json, table: Vec<(&'static str, Vec<&'static str>)>) {
 	w.object();
 	for (ty, fields) in table {
@@ -231,51 +212,31 @@ fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
 	w.end();
 }
 
-/// One entry at a UTF-16 offset, as JavaScript counts; with a grammar, the whole source as a
-/// document of its language. Its words at `words`; an offset the source has no place for is refused.
-pub fn parse(
-	source: &str,
-	options: Options,
-	entry: Entry,
-	start: f64,
-	stop: &str,
-	grammar: Option<&Grammar>,
-) -> Result<(), String> {
+/// The whole source as `entry` reads it: a program, a stylesheet or a Svelte component. Its words
+/// at `words`.
+pub fn parse(source: &str, options: Options, entry: Entry) {
 	let positions = Positions::new(source);
-	let offset = positions.byte_offset(start)?;
-	if !source.is_char_boundary(offset as usize) {
-		return Err(format!("offset {start} is inside a surrogate pair"));
-	}
-	read(
-		source,
-		options,
-		entry,
-		offset,
-		stop,
-		grammar,
-		|ast, roots, end, options, words| {
-			let failed = roots.is_none();
-			prepare(ast, source, &positions, options, failed);
-			// `end`, the roots by number, the options the answer was read with, each view's length, then where
-			// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
-			words.clear();
-			let roots = roots.map_or(&[][..], |roots| ast.list(roots));
-			words.extend_from_slice(&[positions.offset(&mut Cursor::default(), end), roots.len() as u32]);
-			words.extend(roots.iter().map(|root| root.unwrap().index()));
-			words.push((options.0 & !FAILED) | if failed { FAILED } else { 0 });
-			let mut sits = 0u64;
-			let mut note = |_, buffer: Option<&mut dyn Raw>| {
-				words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
-				if let Some(buffer) = buffer {
-					sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
-						.wrapping_mul(0x9e37_79b9_7f4a_7c15);
-				}
-			};
-			ast.views(options.typescript(), &mut note);
-			words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
-		},
-	);
-	Ok(())
+	read(source, options, entry, 0, |ast, roots, options, words| {
+		let failed = roots.is_none();
+		prepare(ast, source, &positions, options, failed);
+		// the roots by number, the options the answer was read with, each view's length, then where
+		// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
+		words.clear();
+		let roots = roots.map_or(&[][..], |roots| ast.list(roots));
+		words.push(roots.len() as u32);
+		words.extend(roots.iter().map(|root| root.unwrap().index()));
+		words.push((options.0 & !FAILED) | if failed { FAILED } else { 0 });
+		let mut sits = 0u64;
+		let mut note = |_, buffer: Option<&mut dyn Raw>| {
+			words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
+			if let Some(buffer) = buffer {
+				sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
+					.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+			}
+		};
+		ast.views(options.typescript(), &mut note);
+		words.extend_from_slice(&[sits as u32, (sits >> 32) as u32]);
+	});
 }
 
 /// What every parse on a thread reuses: the trees, emptied, and the answer's buffers.
@@ -290,8 +251,6 @@ struct Session {
 
 thread_local! {
 	static SESSION: std::cell::RefCell<Session> = std::cell::RefCell::new(Session::default());
-	/// Grammars by their JSON, read once each.
-	static GRAMMARS: std::cell::RefCell<Vec<(&'static str, &'static Grammar)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 pub fn reset_session() {
@@ -323,54 +282,30 @@ fn view_names(typescript: bool) -> Vec<&'static str> {
 	names
 }
 
-/// The number of the grammar its JSON describes, from 1: read once per thread and kept for good,
-/// as its names are.
-pub fn grammar(text: &str) -> Result<u32, String> {
-	GRAMMARS.with(|grammars| {
-		let mut grammars = grammars.borrow_mut();
-		if let Some(at) = grammars.iter().position(|(known, _)| *known == text) {
-			return Ok(at as u32 + 1);
-		}
-		let text = crate::host::grammar::keep(text);
-		let grammar: &'static Grammar = Box::leak(Box::new(Grammar::read(text)?));
-		grammars.push((text, grammar));
-		Ok(grammars.len() as u32)
-	})
-}
-
-/// The grammar of that number on this thread.
-pub fn grammar_at(number: u32) -> Option<&'static Grammar> {
-	GRAMMARS.with(|grammars| {
-		let at = (number as usize).wrapping_sub(1);
-		grammars.borrow().get(at).map(|&(_, grammar)| grammar)
-	})
-}
-
+/// The language of a number: 0 JavaScript, 1 CSS, 2 Svelte.
 pub fn entry(index: f64) -> Result<Entry, String> {
-	Entry::from_index(index as u32)
-		.filter(|_| f64::from(index as u32) == index)
-		.ok_or_else(|| format!("{index} is no entry"))
+	match index {
+		0.0 => Ok(Entry::Program),
+		1.0 => Ok(Entry::StyleSheet),
+		2.0 => Ok(Entry::Svelte),
+		_ => Err(format!("{index} is no language")),
+	}
 }
 
-/// On the answer's word beside the options as they ended up, a document's language being the
-/// grammar's to tell: the parse failed.
+/// On the answer's word beside the options as they ended up, a component's script tags telling
+/// whether it is TypeScript: the parse failed.
 const FAILED: u32 = 1 << 31;
 
-/// Parses with the session's tree of its language, in TypeScript when the grammar says so of a
-/// script tag; `finish` gets the tree, its roots, `end`, the options as they ended up and the words.
+/// Parses with the session's tree of its language, in TypeScript when a component's script tag
+/// says so; `finish` gets the tree, its roots, the options as they ended up and the words.
 pub(crate) fn read<R>(
 	source: &str,
 	options: Options,
 	entry: Entry,
 	offset: u32,
-	stop: &str,
-	grammar: Option<&Grammar>,
-	finish: impl FnOnce(&mut Ast, Option<List>, u32, Options, &mut Words) -> R,
+	finish: impl FnOnce(&mut Ast, Option<List>, Options, &mut Words) -> R,
 ) -> R {
-	let says = match grammar {
-		Some(grammar) => host::typescript(source, grammar),
-		None => entry == Entry::Svelte && host::svelte::typescript(source),
-	};
+	let says = entry == Entry::Svelte && host::svelte::typescript(source);
 	let options = if !options.typescript() && says {
 		options.with(Options::TYPESCRIPT)
 	} else {
@@ -384,17 +319,10 @@ pub(crate) fn read<R>(
 			ast.clear();
 			ast
 		});
-		let (mut ast, parsed) = match grammar {
-			Some(grammar) => {
-				let (mut ast, root) = host::parse_document(source, grammar, options, reused);
-				let parsed = root.map(|root| (ast.add_list(&[Some(root)]), source.len() as u32));
-				(ast, parsed)
-			}
-			None => parse_at(source, offset, entry, options, stop, reused),
-		};
-		let (mut roots, mut end) = match parsed {
-			Ok((roots, end)) => (Some(roots), end),
-			Err(error) => (None, fail(&mut ast, *error)),
+		let (mut ast, parsed) = parse_at(source, offset, entry, options, "", reused);
+		let mut roots = match parsed {
+			Ok((roots, _)) => Some(roots),
+			Err(error) => fail(&mut ast, *error),
 		};
 		if let Some(list) = roots {
 			if options.has(Options::COMMENTS) {
@@ -408,7 +336,7 @@ pub(crate) fn read<R>(
 						ast.errors.extend(errors);
 						ast.errors.sort_by_key(|error| error.pos);
 					} else {
-						(roots, end) = (None, fail(&mut ast, errors[0]));
+						roots = fail(&mut ast, errors[0]);
 					}
 				}
 			}
@@ -418,7 +346,7 @@ pub(crate) fn read<R>(
 		} else {
 			ast.erased.clear();
 		}
-		let answer = finish(&mut ast, roots, end, options, &mut session.words);
+		let answer = finish(&mut ast, roots, options, &mut session.words);
 		*slot = Some(ast);
 		answer
 	})
@@ -489,10 +417,10 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	}
 }
 
-/// A parse that failed answers as one that recovered from nothing but its error: no roots,
-/// `end` at the error, the error alone in `errors`, and nothing else listed.
-fn fail(ast: &mut Ast, error: crate::SyntaxError) -> u32 {
+/// A parse that failed answers as one that recovered from nothing but its error: no roots, the
+/// error alone in `errors`, and nothing else listed.
+fn fail(ast: &mut Ast, error: crate::SyntaxError) -> Option<List> {
 	ast.errors.clear();
 	ast.errors.push(error);
-	error.pos
+	None
 }

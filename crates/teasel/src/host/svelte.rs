@@ -1,11 +1,10 @@
-//! Svelte read by a walker written for it: its tags, blocks and directives as plain matches, the
-//! same rows the Svelte grammar's walker writes, named by the same numbers.
+//! Svelte: its tags, blocks and directives as plain matches over `core`, the host's rows named
+//! by the numbers of `NAMES`.
 
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 
-use super::core::{Attribute, Core, Pool, closes, closing_tag, reserved, tag_carries, valid_name};
-use super::grammar::{Name, Shapes, component_name, own};
+use super::core::{Attribute, Core, Name, Pool, Shapes, closes, closing_tag, own, reserved, tag_carries, valid_name};
 use crate::ast::{Ast, HostGroup, List, NodeId, NodeKind, Opens, Value, VariableKind};
 use crate::error::Code;
 use crate::interner::StrId;
@@ -15,16 +14,16 @@ use crate::parser::{Entry as JsEntry, Options, Result};
 
 macro_rules! named {
 	($($name:ident)*) => {
-		/// The names of Svelte's types and fields, numbered after the walker's own, as the Svelte grammar numbers them.
+		/// The names of Svelte's types and fields, numbered after `own`.
 		#[allow(non_upper_case_globals, dead_code)]
-		pub mod n {
+		pub(crate) mod n {
 			use super::{Name, own};
 			#[allow(non_camel_case_types)]
 			#[repr(u32)]
 			enum Number {
 				$($name),*
 			}
-			$(pub const $name: Name = Name(own::NAMES.len() as u32 + Number::$name as u32);)*
+			$(pub(crate) const $name: Name = Name(own::NAMES.len() as u32 + Number::$name as u32);)*
 			pub(super) const OWN: &[&str] = &[$(stringify!($name)),*];
 		}
 	};
@@ -42,8 +41,8 @@ named! {
 
 const COUNT: usize = own::NAMES.len() + n::OWN.len();
 
-/// Every name by its number: the walker's own, then Svelte's.
-pub const NAMES: [&str; COUNT] = {
+/// Every name by its number: `own`'s, then Svelte's.
+pub(crate) const NAMES: [&str; COUNT] = {
 	let mut out = [""; COUNT];
 	let mut i = 0;
 	while i < own::NAMES.len() {
@@ -64,7 +63,7 @@ pub const NAMES: [&str; COUNT] = {
 
 /// Every type of node a document holds, each with the fields that hold nodes or lists of them:
 /// what a walk over a document follows.
-pub fn children() -> Vec<(&'static str, Vec<&'static str>)> {
+pub(crate) fn children() -> Vec<(&'static str, Vec<&'static str>)> {
 	let element = ["attributes", "fragment"];
 	let mut out: Vec<(&'static str, Vec<&'static str>)> = vec![
 		("Root", vec!["css", "js", "module", "instance", "fragment"]),
@@ -125,18 +124,20 @@ pub fn children() -> Vec<(&'static str, Vec<&'static str>)> {
 }
 
 /// Whether the document is TypeScript: a script tag says `lang="ts"`.
-pub fn typescript(src: &str) -> bool {
+pub(crate) fn typescript(src: &str) -> bool {
 	tag_carries(src, "script", &[("lang", Some("ts"))])
 }
 
 thread_local! {
 	/// The shapes of Svelte's rows, numbered for good as the walker meets them.
-	static SHAPES: RefCell<Shapes> = RefCell::default();
+	pub(super) static SHAPES: RefCell<Shapes> = RefCell::default();
 }
 
 /// Parses a Svelte document: the host's tree with the JavaScript inside it, positions of the
 /// whole source. Returns the tree and its root.
 pub(crate) fn parse_document(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
+	// a component's scripts are modules
+	let options = options.with(Options::MODULE);
 	SHAPES.with(|shapes| {
 		let full = src.len() as u32;
 		let cut = src.trim_end_matches(is_space);
@@ -261,7 +262,7 @@ const fn piece(
 	}
 }
 
-/// Every marker of more than its `{`, in the order the grammar writes them.
+/// Every marker of more than its `{`, in the order they are tried.
 static PIECES: [Piece; 20] = [
 	piece(Construct::If, Which::Open, &["#if"], true, "{#if}"),
 	piece(Construct::If, Which::Branch(0), &[":else", "if"], true, "{:else if}"),
@@ -614,6 +615,21 @@ fn own_rule(name: &str) -> Option<Rule> {
 	})
 }
 
+/// A component name: capitalized, or a dotted path of identifiers.
+fn component_name(name: &str) -> bool {
+	let mut chars = name.chars();
+	let Some(first) = chars.next() else { return false };
+	if first.is_uppercase() {
+		return chars.all(|c| is_id_continue(c) || c == '.');
+	}
+	if !is_id_start(first) || !name.contains('.') {
+		return false;
+	}
+	let mut parts = name.split('.');
+	parts.next().is_some_and(|part| part.chars().all(is_id_continue))
+		&& parts.all(|part| !part.is_empty() && part.chars().all(is_id_continue))
+}
+
 fn is_void(name: &str) -> bool {
 	name.starts_with('!')
 		|| matches!(
@@ -789,7 +805,7 @@ impl<'a> Walker<'a> {
 		let full = self.full;
 		let base = self.ast().host_keys.len() as u32;
 		let at = self.ast().host_groups.len() as u32;
-		// the fragment's own scope inside the one the instance script opens, the grammar's `scope` around both
+		// the fragment's own scope inside the one the instance script opens, one scope around both
 		for (from, node) in [(count - 1, Some(fragment)), (from, node)] {
 			self.ast().host_groups.push(HostGroup {
 				inside: List::EMPTY,

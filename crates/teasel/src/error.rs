@@ -30,7 +30,7 @@ codes! {
 	Unclosed,
 	/// A closing tag, block or bracket with nothing open; `args` names it.
 	UnexpectedClose,
-	/// A name a host's grammar cannot take; `args` names it.
+	/// A tag name Svelte cannot take, one under its reserved `svelte:` say; `args` names it.
 	InvalidName,
 	/// A thing that may appear once appears again; `args` names it.
 	Duplicate,

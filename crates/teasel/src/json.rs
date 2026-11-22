@@ -195,7 +195,7 @@ fn even_on_tie(value: f64, digits: &mut [u8]) {
 	}
 }
 
-pub(crate) fn write_json_string(out: &mut String, s: &str) {
+fn write_json_string(out: &mut String, s: &str) {
 	out.push('"');
 	escape_json(out, s);
 	out.push('"');

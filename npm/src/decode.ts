@@ -3,7 +3,7 @@
 
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
-import { SLOT, type Options } from './options.ts';
+import { SLOT, type Flags } from './options.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -42,10 +42,12 @@ export interface Layout {
 	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
-	/** The names the engine gives host nodes' types and fields itself, the first of every grammar's. */
+	/** The names of host nodes' types and fields, a stylesheet's and a Svelte component's, by the numbers their rows give them. */
 	names: string[];
 	/** Each type of node a stylesheet holds with the fields that hold nodes. */
 	stylesheet: Record<string, string[]>;
+	/** Each type of node a Svelte component holds but JavaScript's, with the fields that hold nodes. */
+	svelte: Record<string, string[]>;
 	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's name, its record's size and how its rows are spelled. */
 	recipes: { kinds: RawOp[][]; rows: [name: string, size: number, ops: RawOp[]][]; adds?: RawOp[][]; erased?: RawOp[] };
 }
@@ -98,7 +100,7 @@ interface Rows {
 	build: Row;
 	words: number;
 }
-/** A grammar's names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
+/** The hosts' names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
 interface Hosts {
 	names: readonly string[];
 	ops: (Op[] | undefined)[];
@@ -122,9 +124,8 @@ interface Compiled {
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
-	/** By a grammar's names, and the stylesheet's own; dropped once the engine starts over, which numbers shapes anew. */
-	hosts: WeakMap<readonly string[], Hosts>;
-	sheet: Hosts | undefined;
+	/** Dropped once the engine starts over, which numbers shapes anew. */
+	hosts: Hosts | undefined;
 	generation: number | undefined;
 }
 
@@ -216,8 +217,7 @@ function compile(engine: Views): Compiled {
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
-		hosts: new WeakMap(),
-		sheet: undefined,
+		hosts: undefined,
 		generation: engine.generation,
 	};
 	compiled.set(engine, made);
@@ -1200,24 +1200,19 @@ function comments(S: State, parent: Decoded | undefined): Decoded[] {
 	return out;
 }
 
-// what is made of a grammar's shapes; an engine that started over numbers them anew
-function hosts(C: Compiled, engine: Views, names: readonly string[] | undefined): Hosts {
+// what is made of the hosts' shapes; an engine that started over numbers them anew
+function hosts(C: Compiled, engine: Views): Hosts {
 	if (C.generation !== engine.generation) {
 		C.generation = engine.generation;
-		C.hosts = new WeakMap();
-		C.sheet = undefined;
+		C.hosts = undefined;
 	}
-	const made = (names: readonly string[]): Hosts => ({ names, ops: [], builders: [] });
-	if (names === undefined) return (C.sheet ??= made(C.layout.names));
-	let known = C.hosts.get(names);
-	if (known === undefined) C.hosts.set(names, (known = made(names)));
-	return known;
+	return (C.hosts ??= { names: C.layout.names, ops: [], builders: [] });
 }
 
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a document's grammar said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
-const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
+// `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a component's script tag said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
+const slot = (key: keyof Flags, index = 3) => index << (2 * SLOT[key]);
 const FAILED = 1 << 31, TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
@@ -1274,13 +1269,11 @@ function line_of(starts: number[], offset: number, lo: number, hi: number) {
 // tried: a closure per answer, 1.2x slower a call, and as an own property it is a key and fails structuredClone
 class Answer {
 	node: unknown;
-	end: number;
 	readonly #text: string;
 	#starts: number[] | undefined = undefined;
 	#line = 0;
-	constructor(node: unknown, end: number, text: string) {
+	constructor(node: unknown, text: string) {
 		this.node = node;
-		this.end = end;
 		this.#text = text;
 	}
 	locate(offset: number) {
@@ -1296,13 +1289,12 @@ class Answer {
 }
 
 /**
- * The answer of the last parse, `listed` for the parameter list entry: `words` are `end`, the
- * roots by number, the options it was read with and each view's length; the tree itself is read
- * in place. `names` are those of the grammar a document was read by.
+ * The answer of the last parse: `words` are `end`, the roots by number, the options it was read
+ * with and each view's length; the tree itself is read in place.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, listed: boolean, names?: readonly string[]): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views): Decoded {
 	const C = compile(engine);
-	const lens = 2 + words[1];
+	const lens = 1 + words[0];
 	const what = words[lens];
 	const typescript = (what & TS_OPTION) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
@@ -1318,7 +1310,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 	const rows = tree[at.errors] as Uint32Array;
 	const config = (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
-	const X = hosts(C, engine, names);
+	const X = hosts(C, engine);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
 	if (S === undefined || moved || G.tree !== tree) {
@@ -1398,14 +1390,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 	}
 	let answer: Decoded;
 	try {
-		let node: Decoded | Decoded[] | null = null;
-		if (!failed) {
-			if (listed) {
-				node = [];
-				for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
-			} else node = build(S, words[2], undefined);
-		}
-		answer = new Answer(node, words[0], source);
+		answer = new Answer(failed ? null : build(S, words[1], undefined), source);
 		if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 		if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 		if (!failed && erase) answer.typescript = kept(S);

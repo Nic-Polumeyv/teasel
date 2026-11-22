@@ -237,11 +237,12 @@ fn the_crate_entry_reads_a_stylesheet() {
 }
 
 #[test]
-fn an_entry_is_one_of_its_numbers() {
-	assert_eq!(crate::engine::entry(6.0), Ok(Entry::StyleSheet));
-	for index in [7.0, -1.0, 6.5, f64::NAN] {
+fn a_language_is_one_of_its_numbers() {
+	assert_eq!(crate::engine::entry(1.0), Ok(Entry::StyleSheet));
+	assert_eq!(crate::engine::entry(2.0), Ok(Entry::Svelte));
+	for index in [3.0, -1.0, 1.5, f64::NAN] {
 		assert!(
-			crate::engine::entry(index).unwrap_err().contains(" is no entry"),
+			crate::engine::entry(index).unwrap_err().contains(" is no language"),
 			"{index}"
 		);
 	}
@@ -255,17 +256,17 @@ fn the_session_writes_the_same_words_again() {
 	let source = "let x = /* a */ 1; function f(y) { return x + y; } // b";
 	let words = || crate::engine::words(|words| words.to_vec());
 	// a failed parse answers words too, flagged as such; its first one settles the error buffer
-	parse("a +", options, Entry::Expression, 0.0, "", None).unwrap();
+	parse("a +", options, Entry::Program);
 	let failed = words();
-	assert_eq!((failed[1], failed[2 + failed[1] as usize] & 1), (0, 1));
-	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
+	assert_eq!((failed[0], failed[1 + failed[0] as usize] & 1), (0, 1));
+	parse(source, options, Entry::Program);
 	let first = words();
-	let _ = parse("a + b", options, Entry::Expression, 0.0, "", None);
-	let _ = parse("a +", options, Entry::Expression, 0.0, "", None);
-	parse(source, options, Entry::Program, 0.0, "", None).unwrap();
+	parse("a + b", options, Entry::Program);
+	parse("a +", options, Entry::Program);
+	parse(source, options, Entry::Program);
 	let again = words();
 	// but for the first saying its buffers are new to the decoder
-	let what = 2 + first[1] as usize;
+	let what = 1 + first[0] as usize;
 	assert_eq!(first[what] & !1, again[what] & !1);
 	assert_eq!(
 		(&first[..what], &first[what + 1..]),
@@ -790,22 +791,16 @@ fn phases() {
 	});
 	let (mut ast, roots) = whole(&source, options);
 	crate::comments::attach(&mut ast, &source, roots, 0);
-	let end = source.len() as u32;
 	{
 		let options = Options(Options::MODULE | Options::COMMENTS);
 		best("whole parse: positions, parse, comments, encode, finish", &mut || {
-			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::parse(&source, options, Entry::Program);
 		});
 		let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES);
 		best("whole parse with scopes", &mut || {
-			crate::engine::parse(&source, options, Entry::Program, 0.0, "", None).unwrap();
+			crate::engine::parse(&source, options, Entry::Program);
 		});
 	}
-	let grammar = crate::engine::grammar(
-		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
-	)
-	.unwrap();
-	let grammar = crate::engine::grammar_at(grammar);
 	let document = format!(
 		"<script>let items = [1,2,3];</script>\n{}",
 		"{#each items as item}<p class=\"row\" onclick={() => f(item)}>{item + 1}</p>{/each}\n".repeat(200)
@@ -818,16 +813,12 @@ fn phases() {
 		),
 	] {
 		best(&format!("host: 200 each blocks, {label}"), &mut || {
-			crate::engine::parse(&document, Options(flags), Entry::Program, 0.0, "", grammar).unwrap();
+			crate::engine::parse(&document, Options(flags), Entry::Svelte);
 		});
 	}
 	best("Json write", &mut || {
-		let names = crate::host::grammar::own::NAMES;
-		let _ = Writer::new(&ast, &source, &positions, names, options.with(Options::COMMENTS)).answer(
-			Entry::Program,
-			Some(roots),
-			end,
-		);
+		let _ = Writer::new(&ast, &source, &positions, options.with(Options::COMMENTS))
+			.answer(Entry::Program, Some(roots));
 	});
 	eprintln!(
 		"nodes {} lists {} strings {} comments {}",
@@ -1169,23 +1160,8 @@ fn alloc_probe() {
 #[test]
 #[ignore]
 fn host_alloc_probe() {
-	let grammar = crate::engine::grammar(
-		&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hosts/svelte/host.json")).unwrap(),
-	)
-	.unwrap();
-	let grammar = crate::engine::grammar_at(grammar);
 	let count = |src: &str| {
-		let parse = || {
-			crate::engine::parse(
-				src,
-				crate::Options(crate::Options::MODULE),
-				Entry::Program,
-				0.0,
-				"",
-				grammar,
-			)
-			.unwrap()
-		};
+		let parse = || crate::engine::parse(src, crate::Options(crate::Options::MODULE), Entry::Svelte);
 		parse();
 		let before = ALLOCATIONS.load(std::sync::atomic::Ordering::Relaxed);
 		parse();
