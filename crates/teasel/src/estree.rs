@@ -31,6 +31,8 @@ pub struct Writer<'a> {
 	positions: &'a Positions,
 	cursor: Cursor,
 	options: Options,
+	/// The answer is a component's or a stylesheet's: its scopes list their roots.
+	markup: bool,
 	/// The node being written names something bound by another node: no scope facts on it.
 	name_only: bool,
 	/// What erasure left in place, in emission order.
@@ -48,6 +50,7 @@ impl<'a> Writer<'a> {
 			positions,
 			cursor: Cursor::default(),
 			options,
+			markup: false,
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
@@ -57,6 +60,7 @@ impl<'a> Writer<'a> {
 	/// An answer as JSON: the roots as `node`, one node or the patterns of a parameter list, null
 	/// when the parse failed, then `end` and what the options add.
 	pub(crate) fn answer(mut self, entry: Entry, roots: Option<List>, end: u32) -> String {
+		self.markup = matches!(entry, Entry::Svelte | Entry::StyleSheet);
 		self.json.object();
 		match roots {
 			None => {
@@ -170,7 +174,7 @@ impl<'a> Writer<'a> {
 		self.rows("scopes", &scopes.scopes, 0);
 		self.rows("bindings", &scopes.bindings, 1);
 		self.rows("references", &scopes.references, 2);
-		if !self.ast.host_rows.is_empty() {
+		if self.markup {
 			self.rows("roots", &scopes.roots, 3);
 		}
 	}
@@ -422,6 +426,24 @@ impl<'a> Writer<'a> {
 				Op::Pair(key, slot) => {
 					self.key(key);
 					self.json.ints(&get::<[u32; 2]>(base, slot));
+				}
+				Op::Item(key, slot, place) => self.opt(key, self.ast.nth(get(base, slot), place as u32)),
+				Op::ItemKey(key, slot, place) => self.opt_key(key, self.ast.nth(get(base, slot), place as u32)),
+				Op::Slice(key, slot) => {
+					let span = self.ast.slice_of(get(base, slot));
+					self.key(key);
+					self.slice(span.start, span.end);
+				}
+				Op::SliceKey(key, slot) => {
+					if let Some(id) = get::<Option<crate::ast::SliceId>>(base, slot) {
+						let span = self.ast.slice_of(id);
+						self.key(key);
+						self.slice(span.start, span.end);
+					}
+				}
+				Op::Comments(key) => {
+					self.key(key);
+					self.comment_list(0..self.ast.comments.len() as u32);
 				}
 				Op::Strs(key, slot) => {
 					let [start, len] = get::<[u32; 2]>(base, slot);

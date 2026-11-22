@@ -53,6 +53,11 @@ impl NodeId {
 	}
 }
 
+/// A slice of the source in `Ast::slices`, by its index plus one so an `Option<SliceId>` is the
+/// same four bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SliceId(std::num::NonZero<u32>);
+
 /// A bit per node.
 #[derive(Debug, Default)]
 pub struct NodeSet(Handed<u64>);
@@ -338,6 +343,9 @@ pub struct Ast {
 	pub numbers: Handed<f64>,
 	pub lists: Handed<Option<NodeId>>,
 	pub host_strings: Handed<StrId>,
+	/// The slices of the source a node holds that are not its own text, in bytes until the answer
+	/// maps them.
+	pub slices: Handed<Span>,
 	pub host_groups: Vec<HostGroup>,
 	pub strings: Interner,
 	pub comments: Vec<Comment>,
@@ -428,6 +436,7 @@ impl Ast {
 	pub fn clear(&mut self) {
 		self.host_scopes.clear();
 		self.host_strings.clear();
+		self.slices.clear();
 		self.host_groups.clear();
 		self.nodes.clear();
 		self.numbers.clear();
@@ -506,6 +515,7 @@ impl Ast {
 		out("host_keys", Some(&mut self.host_keys));
 		out("host_vals", Some(&mut self.host_vals));
 		out("host_strings", Some(&mut self.host_strings));
+		out("slices", Some(&mut self.slices));
 		match &mut self.scopes {
 			Some(scopes) => scopes.views(out),
 			None => crate::scopes::Scopes::no_views(out),
@@ -590,6 +600,16 @@ impl Ast {
 				_ => {}
 			}
 		}
+	}
+
+	/// Keeps a slice of the source for a node to hold.
+	pub fn slice(&mut self, start: u32, end: u32) -> SliceId {
+		self.slices.push(Span { start, end });
+		SliceId(std::num::NonZero::new(self.slices.len() as u32).unwrap())
+	}
+
+	pub fn slice_of(&self, id: SliceId) -> Span {
+		self.slices[id.0.get() as usize - 1]
 	}
 
 	pub fn node(&self, id: NodeId) -> &Node {
@@ -1300,6 +1320,44 @@ crate::layout::kinds! {
 			content: NodeId,
 			attributes: List,
 			module: bool,
+		},
+		IfBlock {
+			test: NodeId,
+			consequent: NodeId,
+			/// Its `{:else if}` nodes.
+			branches: List,
+			alternate: Option<NodeId>,
+		},
+		ElseIf {
+			test: NodeId,
+			consequent: NodeId,
+		},
+		EachBlock {
+			expression: NodeId,
+			/// Its context, index, key and fallback, each when written.
+			parts: List,
+			body: NodeId,
+		},
+		AwaitBlock {
+			expression: NodeId,
+			/// Its value, then, error, catch and pending, each when written.
+			parts: List,
+		},
+		KeyBlock {
+			expression: NodeId,
+			fragment: NodeId,
+		},
+		SnippetBlock {
+			expression: NodeId,
+			type_params: Option<SliceId>,
+			parameters: List,
+			fragment: NodeId,
+		},
+		Root {
+			css: Option<NodeId>,
+			/// Its module script and its instance script, each when written.
+			scripts: List,
+			fragment: NodeId,
 		},
 	}
 }

@@ -33,6 +33,8 @@ pub fn layout_json() -> String {
 			Ty::U32 => "u32",
 			Ty::OptU32 => "?u32",
 			Ty::Pair => "pair",
+			Ty::Slice => "slice",
+			Ty::OptSlice => "?slice",
 			Ty::Enum(_) => "enum",
 			Ty::OptEnum(_) => "?enum",
 			Ty::Struct(_) => "struct",
@@ -102,6 +104,7 @@ pub fn layout_json() -> String {
 			w.int(match rest {
 				Rest::Second(slot) => slot.at as u32,
 				Rest::Cut(_, back) => back as u32,
+				Rest::Place(place) => place as u32,
 				_ => 0,
 			});
 			match rest {
@@ -222,7 +225,8 @@ pub fn parse(source: &str, options: Options, entry: Entry) {
 	let positions = Positions::new(source);
 	read(source, options, entry, 0, |ast, roots, end, options, words| {
 		let failed = roots.is_none();
-		prepare(ast, source, &positions, options, failed);
+		let markup = matches!(entry, Entry::Svelte | Entry::StyleSheet);
+		prepare(ast, source, &positions, options, failed, markup);
 		// `end`, the roots by number, the options the answer was read with, each view's length, then where
 		// the tree's buffers sit folded into two words: the decoder keeps its views while that holds
 		words.clear();
@@ -359,9 +363,9 @@ pub(crate) fn read<R>(
 /// What the decoder reading the tree in place needs beside it: every node's span as JavaScript
 /// counts it, the nodes erasure leaves out, the comments, the errors and the strings' UTF-16
 /// starts; a failed parse prepares its error row alone.
-fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool) {
+fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options, failed: bool, markup: bool) {
 	if !failed {
-		prepare_tree(ast, positions, options);
+		prepare_tree(ast, positions, options, markup);
 	}
 	ast.error_rows.clear();
 	if failed || options.has(Options::ERROR_RECOVERY) {
@@ -397,7 +401,7 @@ fn prepare(ast: &mut Ast, source: &str, positions: &Positions, options: Options,
 	}
 }
 
-fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
+fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options, markup: bool) {
 	positions.map_nodes(&ast.nodes, &mut ast.spans);
 	let (mut rare, mut late) = (std::mem::take(&mut ast.rare), std::mem::take(&mut ast.late));
 	rare.reset(ast.nodes.len());
@@ -416,7 +420,8 @@ fn prepare_tree(ast: &mut Ast, positions: &Positions, options: Options) {
 	}
 	(ast.rare, ast.late) = (rare, late);
 	positions.map_values(&mut ast.host_vals);
-	if options.has(Options::COMMENTS) || !ast.host_rows.is_empty() {
+	positions.map_slices(&mut ast.slices);
+	if options.has(Options::COMMENTS) || markup {
 		positions.map_comments(&ast.comments, &mut ast.comment_rows);
 	}
 }

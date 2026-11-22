@@ -46,6 +46,16 @@ pub enum Op {
 	Pair(&'static str, Slot),
 	/// Two words as the run of interned strings they name.
 	Strs(&'static str, Slot),
+	/// A list's item by its place, null when missing.
+	Item(&'static str, Slot, u8),
+	/// The same, left out when missing.
+	ItemKey(&'static str, Slot, u8),
+	/// A slice of the source.
+	Slice(&'static str, Slot),
+	/// The same, left out when missing.
+	SliceKey(&'static str, Slot),
+	/// Every comment read, as the answer lists them.
+	Comments(&'static str),
 	/// A number literal's value: the float, or null when not finite.
 	Float(&'static str, Slot),
 	/// `raw`: the node's source text.
@@ -101,6 +111,8 @@ pub enum Rest {
 	Other(&'static str),
 	/// How far short of the node's start and of its end `inner` reads.
 	Cut(u8, u8),
+	/// Which item of its list `item` reads.
+	Place(u8),
 	Ops(&'static [Op]),
 }
 
@@ -129,6 +141,11 @@ impl Op {
 			Int(k, f) => ("int", k, Some(f), Rest::Nothing),
 			Pair(k, f) => ("pair", k, Some(f), Rest::Nothing),
 			Strs(k, f) => ("strs", k, Some(f), Rest::Nothing),
+			Item(k, f, place) => ("item", k, Some(f), Rest::Place(place)),
+			ItemKey(k, f, place) => ("itemkey", k, Some(f), Rest::Place(place)),
+			Slice(k, f) => ("slice", k, Some(f), Rest::Nothing),
+			SliceKey(k, f) => ("slicekey", k, Some(f), Rest::Nothing),
+			Comments(k) => ("comments", k, None, Rest::Nothing),
 			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
 			Raw => ("raw", "", None, Rest::Nothing),
 			BigInt => ("bigint", "", None, Rest::Nothing),
@@ -189,13 +206,15 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 	let mut i = 0;
 	while i < ops.len() {
 		let fits = match ops[i] {
-			Type(_) | Bare(_) | Inner(..) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_) | EmptyList(_)
-			| Keep(_) => true,
+			Type(_) | Bare(_) | Inner(..) | Comments(_) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_)
+			| EmptyList(_) | Keep(_) => true,
 			Node(_, slot) | Through(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
 			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32),
 			Maybe(_, slot) | Extra(_, ExtraSlot(slot)) => matches!(slot.ty, Ty::OptNode | Ty::OptList | Ty::OptEnum(_)),
-			List(_, slot) | Params(_, slot) => matches!(slot.ty, Ty::List),
+			List(_, slot) | Params(_, slot) | Item(_, slot, _) | ItemKey(_, slot, _) => matches!(slot.ty, Ty::List),
+			Slice(_, slot) => matches!(slot.ty, Ty::Slice),
+			SliceKey(_, slot) => matches!(slot.ty, Ty::OptSlice),
 			OptListKey(_, slot) => matches!(slot.ty, Ty::OptList),
 			Bool(_, slot) | BoolNames(_, slot, _) => matches!(slot.ty, Ty::Bool),
 			Str(_, slot) => matches!(slot.ty, Ty::Str),
@@ -405,6 +424,13 @@ pub static KINDS: ByKind = {
 		SvelteElement: &[Type("SvelteElement"), Str("name", at!(name)), Node("tag", at!(tag)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
 		SvelteComponent: &[Type("SvelteComponent"), Str("name", at!(name)), Node("expression", at!(expression)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
 		Script: &[Type("Script"), BoolNames("context", at!(module), &["module", "default"]), Node("content", at!(content)), List("attributes", at!(attributes))],
+		IfBlock: &[Type("IfBlock"), Node("test", at!(test)), Node("consequent", at!(consequent)), List("branches", at!(branches)), Opt("alternate", at!(alternate))],
+		ElseIf: &[Type("ElseIf"), Node("test", at!(test)), Node("consequent", at!(consequent))],
+		EachBlock: &[Type("EachBlock"), Node("expression", at!(expression)), Item("context", at!(parts), 0), ItemKey("index", at!(parts), 1), ItemKey("key", at!(parts), 2), Node("body", at!(body)), ItemKey("fallback", at!(parts), 3)],
+		AwaitBlock: &[Type("AwaitBlock"), Node("expression", at!(expression)), Item("value", at!(parts), 0), Item("then", at!(parts), 1), Item("error", at!(parts), 2), Item("catch", at!(parts), 3), Item("pending", at!(parts), 4)],
+		KeyBlock: &[Type("KeyBlock"), Node("expression", at!(expression)), Node("fragment", at!(fragment))],
+		SnippetBlock: &[Type("SnippetBlock"), Node("expression", at!(expression)), SliceKey("typeParams", at!(type_params)), List("parameters", at!(parameters)), Node("fragment", at!(fragment))],
+		Root: &[Type("Root"), Opt("css", at!(css)), EmptyList("js"), Null("options"), Comments("comments"), ItemKey("module", at!(scripts), 0), ItemKey("instance", at!(scripts), 1), Node("fragment", at!(fragment))],
 	};
 	assert!(named == VARIANTS.len(), "every kind has one recipe");
 	kinds

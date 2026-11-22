@@ -38,6 +38,7 @@
 ?enum
 ?list
 ?node
+?slice
 ?str
 ?u32
 AccessorProperty
@@ -435,6 +436,8 @@ isExport
 is_abstract
 is_override
 is_static
+item
+itemkey
 js
 keep
 keepif
@@ -535,6 +538,8 @@ shape
 shorthand
 size
 slice
+slicekey
+slices
 source
 sourceType
 span

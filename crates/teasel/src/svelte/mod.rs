@@ -11,12 +11,12 @@ mod nodes;
 
 use std::cell::RefCell;
 
-use self::blocks::{Group, Open};
+use self::blocks::Open;
 pub(crate) use self::js::typescript;
 use self::markup::Once;
 use self::nodes::Shapes;
 pub(crate) use self::nodes::{NAMES, children, n, stylesheet_children};
-use crate::ast::{Ast, ElementType, HostGroup, List, NodeId, NodeKind, Opens, Value};
+use crate::ast::{Ast, ElementType, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::lexer::scan::{find, is_space};
@@ -116,7 +116,6 @@ pub(crate) struct Walker<'a> {
 	/// The element the browser closed last, what closed it and how deep the stack was then.
 	autoclosed: Option<(&'a str, &'a str, usize)>,
 	nodes: Pool<NodeId>,
-	groups: Pool<Group>,
 	/// The kinds and names the attributes of the element being read must not repeat.
 	seen: Vec<(Once, StrId)>,
 }
@@ -148,7 +147,6 @@ impl<'a> Walker<'a> {
 			keyword: 0,
 			autoclosed: None,
 			nodes: Pool::default(),
-			groups: Pool::default(),
 			seen: Vec::new(),
 		}
 	}
@@ -334,50 +332,9 @@ impl<'a> Walker<'a> {
 			unreachable!()
 		};
 		let fragment = self.fragment(nodes);
-		let mut fields = [(n::fragment, Value::Null); 7];
-		let mut count = 4;
-		fields[..4].copy_from_slice(&[
-			(n::css, css.map_or(Value::Null, Value::Node)),
-			(n::js, Value::Nodes(List::EMPTY)),
-			(n::options, Value::Null),
-			(n::comments, Value::Comments),
-		]);
-		if let Some(module) = module {
-			fields[count] = (n::module, Value::Node(module));
-			count += 1;
-		}
-		let from = count;
-		if let Some(instance) = instance {
-			fields[count] = (n::instance, Value::Node(instance));
-			count += 1;
-		}
-		fields[count] = (n::fragment, Value::Node(fragment));
-		count += 1;
-		// the scope belongs to the instance script's program, or to the fragment
-		let node = match instance {
-			Some(script) => match self.tree().node(script).kind {
-				NodeKind::Script { content, .. } => Some(content),
-				_ => None,
-			},
-			None => Some(fragment),
-		};
+		let scripts = self.ast().add_list(&[module, instance]);
 		let full = self.full;
-		let base = self.ast().host_keys.len() as u32;
-		let at = self.ast().host_groups.len() as u32;
-		// the fragment's own scope inside the one the instance script opens, one scope around both
-		for (from, node) in [(count - 1, Some(fragment)), (from, node)] {
-			self.ast().host_groups.push(HostGroup {
-				inside: List::EMPTY,
-				from: base + from as u32,
-				until: base + count as u32,
-				node,
-			});
-		}
-		let scope = Some(Opens {
-			outside: List::EMPTY,
-			groups: (at, 2),
-		});
-		Ok(self.opening(n::Root, 0, full, &fields[..count], scope))
+		Ok(self.ast().add(NodeKind::Root { css, scripts, fragment }, 0, full))
 	}
 
 	fn text_node(&mut self) {

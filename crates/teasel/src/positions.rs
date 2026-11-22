@@ -55,6 +55,17 @@ impl Positions {
 		}
 	}
 
+	pub(crate) fn map_slices(&self, slices: &mut [crate::ast::Span]) {
+		if self.gaps.is_empty() {
+			return;
+		}
+		let mut cursor = Cursor::default();
+		for slice in slices {
+			slice.start = self.offset(&mut cursor, slice.start);
+			slice.end = self.offset(&mut cursor, slice.end);
+		}
+	}
+
 	/// The UTF-16 offset each line of `source` starts at, the first line's 0: a line ends at
 	/// `\n`, at `\r` not before `\n`, and at U+2028 and U+2029.
 	fn lines<'a>(&'a self, source: &'a str) -> impl Iterator<Item = u32> + 'a {

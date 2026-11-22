@@ -520,7 +520,7 @@ pub fn analyze(ast: &mut Ast, entry: Entry, roots: List) {
 	let root = ast.list(roots).first().copied().flatten();
 	match entry {
 		Entry::Program | Entry::Svelte => {
-			if let NodeKind::Host(_) = ast.node(root.unwrap()).kind {
+			if ast.node(root.unwrap()).kind.is_svelte() {
 				return analyze_with(ast, ScopeKind::Module, root, |b| {
 					b.visit(root.unwrap(), Mode::Expression)
 				});
@@ -1253,6 +1253,17 @@ impl<'a> Binder<'a> {
 		}
 	}
 
+	/// A body: its fragment's scope, where what its block names for it is declared.
+	fn body(&mut self, pattern: Option<NodeId>, fragment: Option<NodeId>) {
+		let Some(fragment) = fragment else { return };
+		self.enter(ScopeKind::Fragment, Some(fragment), false);
+		if let Some(pattern) = pattern {
+			self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+		}
+		self.field_value(fragment);
+		self.exit();
+	}
+
 	/// What a node of Svelte's holds, as an expression, unless an open scope declares it.
 	fn held(&mut self, child: NodeId) {
 		let declared = self
@@ -1354,6 +1365,92 @@ impl<'a> Binder<'a> {
 			} => {
 				self.field_value(content);
 				self.held_all(attributes);
+			}
+			IfBlock {
+				test,
+				consequent,
+				branches,
+				alternate,
+			} => {
+				self.field_value(test);
+				self.body(None, Some(consequent));
+				self.held_all(branches);
+				self.body(None, alternate);
+			}
+			ElseIf {
+				test: expression,
+				consequent: fragment,
+			}
+			| KeyBlock { expression, fragment } => {
+				self.field_value(expression);
+				self.body(None, Some(fragment));
+			}
+			EachBlock {
+				expression,
+				parts,
+				body,
+			} => {
+				self.field_value(expression);
+				let [context, index, key, fallback] = [0, 1, 2, 3].map(|place| self.ast.nth(parts, place));
+				// the key is read where the item is known, when the block names one
+				let names = context.is_some() || index.is_some();
+				if let (false, Some(key)) = (names, key) {
+					self.field_value(key);
+				}
+				self.enter(ScopeKind::Fragment, Some(body), false);
+				for pattern in [context, index].into_iter().flatten() {
+					self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+				}
+				if let (true, Some(key)) = (names, key) {
+					self.field_value(key);
+				}
+				self.field_value(body);
+				self.exit();
+				self.body(None, fallback);
+			}
+			AwaitBlock { expression, parts } => {
+				self.field_value(expression);
+				let [value, then, error, catch, pending] = [0, 1, 2, 3, 4].map(|place| self.ast.nth(parts, place));
+				self.body(value, then);
+				self.body(error, catch);
+				self.body(None, pending);
+			}
+			// a snippet's name is declared around it, its parameters in its body
+			SnippetBlock {
+				expression,
+				parameters,
+				fragment,
+				..
+			} => {
+				self.root(expression, |b| b.visit(expression, Mode::Declare(BindingKind::Pattern)));
+				self.enter(ScopeKind::Fragment, Some(fragment), false);
+				for place in 0..parameters.len {
+					if let Some(pattern) = self.ast.nth(parameters, place) {
+						self.root(pattern, |b| b.visit(pattern, Mode::Declare(BindingKind::Pattern)));
+					}
+				}
+				self.field_value(fragment);
+				self.exit();
+			}
+			Root { css, scripts, fragment } => {
+				if let Some(css) = css {
+					self.field_value(css);
+				}
+				let [module, instance] = [0, 1].map(|place| self.ast.nth(scripts, place));
+				if let Some(module) = module {
+					self.field_value(module);
+				}
+				// the fragment's own scope inside the one the instance script opens, a second of the
+				// fragment's when there is none
+				match instance.map(|script| self.kind(script)) {
+					Some(Script { content, .. }) => self.enter(ScopeKind::Script, Some(content), false),
+					_ => self.enter(ScopeKind::Fragment, Some(fragment), false),
+				}
+				if let Some(instance) = instance {
+					self.field_value(instance);
+				}
+				self.body(None, Some(fragment));
+				self.exit();
 			}
 			Identifier { .. } => match mode {
 				Mode::Expression => self.reference(id, false, false),

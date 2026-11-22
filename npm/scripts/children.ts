@@ -5,11 +5,12 @@ import { holds_nodes, operations, type Layout } from '../src/decode.ts';
 /** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
 export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; stylesheet: Record<string, string[]>; svelte: Record<string, string[]> } {
 	const extra_fields = layout.extras?.fields ?? [];
-	const table = (kinds: Layout['recipes']['kinds']) => {
+	// Svelte's root lists the scripts it never has, `js`, and its comments are not its children
+	const table = (kinds: Layout['recipes']['kinds'], svelte = false) => {
 		const children: Record<string, string[]> = {};
 		for (const raw of kinds) {
 			const ops = operations(raw);
-			const keys = ops.filter(holds_nodes).map((op) => {
+			const keys = ops.filter((op) => (svelte ? op.op === 'emptylist' || (holds_nodes(op) && op.op !== 'comments') : holds_nodes(op))).map((op) => {
 				if (op.op === 'object') throw new Error(`${op.key} nests nodes`);
 				return op.key;
 			});
@@ -24,7 +25,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	// JavaScript's kinds, then Svelte's from its first on
 	const first = layout.kinds.indexOf('Fragment');
 	const children = table(layout.recipes.kinds.slice(0, first));
-	const svelte = { ...layout.svelte, ...table(layout.recipes.kinds.slice(first)) };
+	const svelte = { ...layout.svelte, ...table(layout.recipes.kinds.slice(first), true) };
 	const adds = (layout.recipes.adds ?? []).flat();
 	const extras: string[] = [];
 	for (const field of extra_fields) {
