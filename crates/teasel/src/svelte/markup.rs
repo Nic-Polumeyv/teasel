@@ -301,13 +301,13 @@ impl<'a> Walker<'a> {
 		self.ast().add(kind, start, end)
 	}
 
-	pub(crate) fn attribute_named(&self, id: NodeId, name: &str) -> bool {
+	pub(super) fn attribute_named(&self, id: NodeId, name: &str) -> bool {
 		self.attribute_of(id)
 			.is_some_and(|(held, _)| self.tree().str(held) == name)
 	}
 
 	/// The one chunk of an attribute's value, when it has one.
-	pub(crate) fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
+	pub(super) fn attribute_chunk(&self, id: NodeId) -> Option<NodeId> {
 		match self.attribute_of(id)?.1 {
 			Held::Tag(tag) => Some(tag),
 			Held::Chunks(list) => match self.tree().list(list) {
@@ -319,7 +319,7 @@ impl<'a> Walker<'a> {
 	}
 
 	/// The text of `name="text"`.
-	pub(crate) fn attribute_text(&self, id: NodeId) -> Option<&str> {
+	pub(super) fn attribute_text(&self, id: NodeId) -> Option<&str> {
 		let Held::Chunks(_) = self.attribute_of(id)?.1 else {
 			return None;
 		};
@@ -327,14 +327,14 @@ impl<'a> Walker<'a> {
 	}
 
 	/// Whether a `<` at `i` starts a tag: a name, a closing tag or a comment follows.
-	pub(crate) fn tag_start(&self, i: usize) -> bool {
+	pub(super) fn tag_start(&self, i: usize) -> bool {
 		let bytes = self.src.as_bytes();
 		bytes[i] == b'<' && !matches!(bytes.get(i + 1), Some(b) if !b.is_ascii_alphabetic() && *b != b'/' && *b != b'!')
 	}
 
 	/// Where the first closing tag of `name` starts and where it ends, from the cursor; the length
 	/// twice when there is none.
-	pub(crate) fn closing(&self, name: &str) -> (u32, u32) {
+	pub(super) fn closing(&self, name: &str) -> (u32, u32) {
 		let bytes = self.src.as_bytes();
 		let mut at = self.at as usize;
 		// found by `str::find`, a pass over Svelte's tests took 1% longer
@@ -350,7 +350,7 @@ impl<'a> Walker<'a> {
 		}
 	}
 
-	pub(crate) fn tag_name(&mut self, attribute: bool) -> Result<&'a str> {
+	pub(super) fn tag_name(&mut self, attribute: bool) -> Result<&'a str> {
 		let start = self.at;
 		if start >= self.len() {
 			if attribute && self.recovering() {
@@ -411,7 +411,7 @@ impl<'a> Walker<'a> {
 
 	/// `name`, `name=value` or `name="text"`: a plain attribute, as a script tag or a verbatim
 	/// element takes them.
-	pub(crate) fn static_attribute(&mut self) -> Result<Option<Attribute>> {
+	pub(super) fn static_attribute(&mut self) -> Result<Option<Attribute>> {
 		let start = self.at;
 		let name = self.tag_name(true)?;
 		if name.is_empty() {
@@ -431,7 +431,7 @@ impl<'a> Walker<'a> {
 		Ok(Some((node, Some((Once::Attribute, name_id)))))
 	}
 
-	pub(crate) fn comment_between_attributes(&mut self) -> bool {
+	pub(super) fn comment_between_attributes(&mut self) -> bool {
 		let start = self.at;
 		let (kind, len) = if self.matches("//") {
 			(CommentKind::Line, self.rest().find('\n').unwrap_or(self.rest().len()))
@@ -859,6 +859,24 @@ impl<'a> Walker<'a> {
 	}
 
 	// ── attributes
+
+	/// A text's `data`: its source, or what its character references decode to.
+	fn text_data(&self, id: NodeId) -> Option<&str> {
+		let node = self.tree().node(id);
+		match node.kind {
+			NodeKind::Text => Some(&self.src[node.start as usize..node.end as usize]),
+			NodeKind::TextDecoded { data } => Some(self.tree().str(data)),
+			_ => None,
+		}
+	}
+
+	/// The text of a value between two of its tags, when there is any.
+	fn flush_text(&mut self, from: u32, to: u32, chunks: &mut Vec<NodeId>) {
+		if to > from {
+			let text = self.text_chunk(from, to, true);
+			chunks.push(text);
+		}
+	}
 
 	/// The expression node of a chunk written as one, `{expression}`.
 	fn chunk_expression(&self, chunk: NodeId) -> Option<NodeId> {

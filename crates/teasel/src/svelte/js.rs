@@ -105,7 +105,7 @@ pub(crate) fn reserved(word: &str) -> bool {
 impl<'a> Walker<'a> {
 	/// One expression read strictly, so that recovery cannot stand in for what is not one, and
 	/// taken back unless `keep` says it ended where it should.
-	pub(crate) fn trial(&mut self, stop: &str, keep: impl FnOnce(&mut Self) -> bool) -> Option<List> {
+	pub(super) fn trial(&mut self, stop: &str, keep: impl FnOnce(&mut Self) -> bool) -> Option<List> {
 		let (start, comments, mark) = (self.at, self.tree().comments.len(), self.tree().mark());
 		let options = self.options;
 		self.options = options.without(Options::ERROR_RECOVERY);
@@ -124,7 +124,7 @@ impl<'a> Walker<'a> {
 
 	/// The JavaScript at the cursor, read by the parser into the same tree; the
 	/// cursor moves past it.
-	pub(crate) fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
+	pub(super) fn js(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
 		if self.options.typescript() {
 			self.js_in::<true>(entry, stop)
 		} else {
@@ -164,11 +164,11 @@ impl<'a> Walker<'a> {
 	}
 
 	/// The one root a JavaScript entry read.
-	pub(crate) fn first(&self, roots: List) -> NodeId {
+	pub(super) fn first(&self, roots: List) -> NodeId {
 		self.tree().nth(roots, 0).unwrap()
 	}
 
-	pub(crate) fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
+	pub(super) fn program(&mut self, start: u32, end: u32) -> Result<NodeId> {
 		if self.options.typescript() {
 			self.program_in::<true>(start, end)
 		} else {
@@ -188,13 +188,13 @@ impl<'a> Walker<'a> {
 	}
 
 	/// An empty identifier standing where one could not be read.
-	pub(crate) fn placeholder(&mut self, start: u32, end: u32) -> NodeId {
+	pub(super) fn placeholder(&mut self, start: u32, end: u32) -> NodeId {
 		let name = self.intern("");
 		self.ast().add(NodeKind::Identifier { name }, start, end)
 	}
 
 	/// An identifier the walker reads itself, as a node.
-	pub(crate) fn identifier(&mut self) -> Result<NodeId> {
+	pub(super) fn identifier(&mut self) -> Result<NodeId> {
 		let start = self.at;
 		match self.char() {
 			Some(c) if is_id_start(c) => self.at += c.len_utf8() as u32,
