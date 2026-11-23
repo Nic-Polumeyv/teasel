@@ -4,37 +4,19 @@
 
 use super::checks::{Binding, SCOPE_ARROW, SCOPE_FUNCTION, SCOPE_TS_MODULE, function_flags};
 use super::parse::{Ctx, MAX_DEPTH, Parser};
-use super::{BROKEN, ESCAPED, Kind, LexError, Lexer, NEWLINE_BEFORE, Token};
+use super::{ESCAPED, Kind, LexError, NEWLINE_BEFORE, Token};
 use crate::ast::{
 	Accessibility, Clause, Extras, FieldKind, Keyword as TsKeyword, Kind as ImportKind, List, MethodKind, Modifier,
 	NodeId, NodeKind, SignatureKind, UnaryOperator, VariableKind,
 };
 use crate::error::{Code, SyntaxError};
-use crate::interner::{FastMap, FastSet, StrId};
-
-/// How a list that may be an arrow's parameters is read.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Role {
-	Parameters,
-	Expression,
-	Typed(u32),
-	Unsure,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Slash {
-	Divide,
-	Regex,
-	Unsure,
-}
+use crate::interner::{FastMap, StrId};
 
 /// What TypeScript keeps across a parse, apart from what a rewind puts back.
 #[derive(Default)]
 pub struct Ts {
 	pub(super) state: State,
-	not_arrow: FastSet<(u32, bool)>,
 	colon_after_body: FastMap<u32, bool>,
-	roles: FastMap<u32, Role>,
 	/// How many speculations ran, for the counts.
 	pub snapshots: u64,
 	pub rewinds: u64,
@@ -46,14 +28,8 @@ impl Ts {
 	pub(super) fn clear(&mut self) {
 		self.state = State::default();
 		// a cleared table writes all of its control bytes, empty or not
-		if !self.not_arrow.is_empty() {
-			self.not_arrow.clear();
-		}
 		if !self.colon_after_body.is_empty() {
 			self.colon_after_body.clear();
-		}
-		if !self.roles.is_empty() {
-			self.roles.clear();
 		}
 	}
 }
@@ -68,8 +44,8 @@ pub(super) struct State {
 	in_abstract_class: bool,
 	classes: Vec<ClassFrame>,
 	elements: Vec<ElementFrame>,
-	arrow_return_type: Option<NodeId>,
-	needs_colon_at: Option<u32>,
+	pub(super) arrow_return_type: Option<NodeId>,
+	pub(super) needs_colon_at: Option<u32>,
 	body_needs_colon: bool,
 	pub(super) outer_kind: Option<ImportKind>,
 	export_kind: Option<ImportKind>,
@@ -270,7 +246,6 @@ pub(super) struct Snap {
 	ctx: Ctx,
 	arrow_at: u32,
 	arrow_for_await: bool,
-	parens: u32,
 	bare_arrow: bool,
 }
 
@@ -517,7 +492,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			ctx: self.ctx,
 			arrow_at: self.arrow_at,
 			arrow_for_await: self.arrow_for_await,
-			parens: self.parens,
 			bare_arrow: self.bare_arrow,
 		}
 	}
@@ -584,7 +558,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.ctx = s.ctx;
 		self.arrow_at = s.arrow_at;
 		self.arrow_for_await = s.arrow_for_await;
-		self.parens = s.parens;
 		self.bare_arrow = s.bare_arrow;
 	}
 

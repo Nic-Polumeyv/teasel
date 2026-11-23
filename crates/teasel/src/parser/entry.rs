@@ -174,7 +174,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		let module = options.has(Options::MODULE);
 		let comments = std::mem::take(&mut ast.comments);
 		scratch.errors.clear();
-		scratch.paren_marks.clear();
 		// a walker asks with a few short texts, the same one many times in a row
 		if scratch.stops_of != stop {
 			scratch.stops_of.clear();
@@ -392,7 +391,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			self.scratch.items.truncate(base);
 			return List::EMPTY;
 		}
-		self.check_arrow_head(false, outer);
+		self.check_arrow_head(base, false, outer);
 		self.enter_scope(super::checks::function_flags(false, false) | super::checks::SCOPE_ARROW);
 		let list = self.list(base);
 		self.check_params(list, false);
@@ -429,9 +428,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			&& self.ast.nodes.len() <= self.tree_limit
 			&& (self.stops.is_empty() || self.tok.kind == Kind::Eof || !self.starts_a_stop(self.tok))
 		{
-			if prev.kind == Kind::ParenL {
-				self.mark_paren(prev.start);
-			}
 			self.unmatched = false;
 			self.stop_hit = false;
 			match BRACKET[self.tok.kind as usize] {
@@ -451,21 +447,8 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.tracked_slow(prev, first);
 	}
 
-	/// The counts after the `(` at `at`: a list read again as parameters starts from them.
-	fn mark_paren(&mut self, at: u32) {
-		let after = Brackets {
-			unmatched: false,
-			stop_hit: false,
-			..self.brackets()
-		};
-		self.scratch.paren_marks.push((at, after));
-	}
-
 	#[inline(never)]
 	fn tracked_slow(&mut self, prev: Token, first: bool) {
-		if prev.kind == Kind::ParenL {
-			self.mark_paren(prev.start);
-		}
 		// a keyword spelled with an escape, read as that keyword, is an error where it stood
 		if self.recover
 			&& prev.flags & ESCAPED != 0

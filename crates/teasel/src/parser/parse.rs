@@ -1,7 +1,7 @@
 //! LANE PROTOTYPE, milestone 1: JavaScript expressions read in the new shape into teasel's own
 //! tree. Tokens carry no text, parse functions return the node, an error is recorded once and
-//! the input ends, binary operators are one precedence loop, and a list in parentheses is read
-//! once and turned into parameters in place when `=>` follows.
+//! the input ends, binary operators are one precedence loop, and a list in parentheses that may
+//! be an arrow function's parameters is read in the role its tokens tell.
 //!
 //! Not here: functions and arrows with block bodies, classes, statements, TypeScript, recovery,
 //! scopes, the `parenthesized` option, stop words. Meeting one sets `unsupported`.
@@ -14,7 +14,7 @@ use crate::ast::{
 	AssignmentOperator, Ast, BinaryOperator, List, LogicalOperator, NodeId, NodeKind, PropertyKind, UnaryOperator,
 	UpdateOperator,
 };
-use crate::interner::StrId;
+use crate::interner::{FastMap, FastSet, StrId};
 
 /// The lists being read, innermost last: one buffer for every list of a parse.
 #[derive(Default)]
@@ -29,8 +29,13 @@ pub struct Scratch {
 	pub(super) errors: Vec<SyntaxError>,
 	/// The host's stop tokens: where each stands in the text they were given in, and whether it is a word.
 	pub(super) stop_ranges: Vec<(u32, u32, bool)>,
-	/// The bracket counts after each `(` read while they are counted: a list read again as parameters starts from them.
-	pub(super) paren_marks: Vec<(u32, super::entry::Brackets)>,
+	/// The role of each list in parentheses that a scan of its tokens told, by where its `(` is.
+	pub(super) roles: FastMap<u32, Role>,
+	/// The lists, by their `(` or `<`, whose head failed as an arrow's, on a conditional's spine
+	/// or not.
+	pub(super) not_arrow: FastSet<(u32, bool)>,
+	/// The brackets open during a scan: closer, opener, what a `/` is after the closer.
+	frames: Vec<(Kind, u32, Slash)>,
 	/// What the parser held when the error it is unwinding from was met: recovery reads on from there.
 	pub(super) met: super::entry::Met,
 	/// The first bytes the host's stops start with, one bit each: a token starting with none is no stop.
@@ -48,6 +53,69 @@ const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 }
 
 /// The facts of the literal being read, where it may yet be a pattern.
 pub(super) type Errors = Option<Facts>;
+
+/// How a list that may be an arrow's parameters is read.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Role {
+	Parameters,
+	Expression,
+	/// A `:` at the offset follows the closer: only reading the type after it tells.
+	Typed(u32),
+	/// The tokens do not tell: the head is tried as an arrow's.
+	Unsure,
+}
+
+/// What a `/` is after a token.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Slash {
+	Divide,
+	Regex,
+	/// Only the parser can tell.
+	Unsure,
+}
+
+/// The next token of a scan, none where the text does not lex.
+fn look(lexer: &mut Lexer) -> Option<Token> {
+	let t = lexer.next(false);
+	if lexer.error.is_some() {
+		return None;
+	}
+	Some(t)
+}
+
+/// What the token after a list's closer makes the list.
+fn after_closer<const TS: bool>(follower: Token) -> Role {
+	match follower.kind {
+		Kind::Arrow if follower.flags & NEWLINE_BEFORE == 0 => Role::Parameters,
+		Kind::Colon if TS => Role::Typed(follower.start),
+		_ => Role::Expression,
+	}
+}
+
+/// Whether `next`, the first byte after a list's first name, starts a token that makes the list
+/// an expression: not `,`, `)`, `=`, a byte that may start no token, nor with TypeScript `:`, `?`
+/// or a word.
+#[inline(always)]
+fn operator_follows<const TS: bool>(next: Option<u8>) -> bool {
+	match next {
+		Some(
+			b'.' | b'[' | b'(' | b'+' | b'-' | b'*' | b'/' | b'%' | b'&' | b'|' | b'^' | b'!' | b'~' | b'<' | b'>',
+		) => true,
+		Some(b';' | b'}' | b']' | b'{' | b'"' | b'\'' | b'`') => true,
+		Some(b':' | b'?') => !TS,
+		Some(b) => !TS && (b.is_ascii_alphanumeric() || b == b'_' || b == b'$'),
+		None => false,
+	}
+}
+
+/// What a `/` is after a `++`, `--` or TypeScript `!` read where a `/` would be `slash`.
+fn postfix(slash: Slash, token: Token) -> Slash {
+	match slash {
+		Slash::Divide if token.flags & NEWLINE_BEFORE == 0 => Slash::Divide,
+		Slash::Unsure => Slash::Unsure,
+		_ => Slash::Regex,
+	}
+}
 
 /// What the function being read is, and whether `in` is an operator where the cursor stands.
 #[derive(Clone, Copy, Default)]
@@ -80,11 +148,14 @@ pub struct Parser<'a, const COUNT: bool, const TS: bool = false> {
 	pub(super) yield_pos: u32,
 	pub(super) await_pos: u32,
 	pub(super) await_ident_pos: u32,
-	/// How many expressions in parentheses were read: a list holding one is no parameter list
-	/// as it was read.
-	pub(super) parens: u32,
 	/// The node just read is an arrow function not in parentheses: nothing continues it.
 	pub(super) bare_arrow: bool,
+	/// A list's one bracket item is being read once: a list in it that may be parameters gives
+	/// that read up.
+	pub(super) covering: bool,
+	/// The tables of lists' roles and failed heads hold this read's only: what a read before
+	/// left in them is forgotten when a list first asks, not when a read starts.
+	pub(super) lists_forgotten: bool,
 	pub(super) ctx: Ctx,
 	pub(super) module: bool,
 	pub(super) strict: bool,
@@ -289,8 +360,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
-			parens: 0,
 			bare_arrow: false,
+			covering: false,
+			lists_forgotten: false,
 			ctx: Ctx {
 				can_await: module,
 				..Ctx::default()
@@ -1172,20 +1244,13 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 				Kind::ParenL if calls => {
 					let open = self.tok.start;
 					self.bump(true);
-					if maybe_arrow && TS {
-						if let Some(arrow) = self.ts_decided_arrow(start, open, true) {
+					if maybe_arrow {
+						if let Some(arrow) = self.decided_arrow(start, open, true) {
 							return arrow;
 						}
 						if self.error {
 							return base;
 						}
-					} else if maybe_arrow {
-						let (node, arrow) = self.async_call(base, start, open);
-						if arrow || self.error {
-							return node;
-						}
-						base = node;
-						continue;
 					}
 					let items = self.arguments();
 					let arguments = self.list(items);
@@ -1348,11 +1413,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 				self.ast.add(NodeKind::NumberLiteral { value }, start, t.end)
 			}
 			Kind::ParenL => {
-				let expr = if TS && self.arrow_at == start {
-					self.ts_paren(start)
-				} else {
-					self.paren(start)
-				};
+				let expr = self.paren(start);
 				if let Some(e) = errors
 					&& !self.error
 				{
@@ -1551,55 +1612,278 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 
 	// ── lists that may be an arrow function's parameters
 
-	/// The arrow function whose parameters, already patterns, are the items from `base` on; its
-	/// `=>` is read.
-	pub(super) fn arrow(&mut self, start: u32, base: usize, is_async: bool) -> NodeId {
-		let params = self.list(base);
-		let old = self.take_yield_await();
-		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
-		let frame = if TS {
-			self.arrow_start(start);
-			Some(self.function_start(super::ts::FunctionKind::Arrow))
-		} else {
-			None
-		};
-		let outer = self.ctx;
-		let expression = self.tok.kind != Kind::BraceL;
-		self.ctx = Ctx {
-			function: true,
-			is_async,
-			generator: false,
-			can_await: is_async,
-			no_in: expression && outer.no_in,
-			for_await: expression && outer.for_await,
-		};
-		let body = self.function_body(start, None, params, true, false);
-		self.ctx = outer;
-		self.restore_yield_await(old);
-		let node = self.add(
-			NodeKind::ArrowFunctionExpression {
-				params,
-				body,
-				expression,
-				is_async,
-			},
-			start,
-		);
-		if let Some(frame) = frame {
-			self.function_end(node, frame);
+	/// A list in parentheses, its `(` at the cursor: an arrow function's parameters when it is
+	/// one, else the expression inside.
+	pub(super) fn paren(&mut self, start: u32) -> NodeId {
+		let can_arrow = self.arrow_at == start;
+		self.bump(true);
+		if can_arrow
+			&& self.may_be_parameters()
+			&& let Some(read) = self.arrow_list(start)
+		{
+			return read;
 		}
-		self.bare_arrow = true;
-		node
+		let no_in = std::mem::replace(&mut self.ctx.no_in, false);
+		let base = self.scratch.items.len();
+		let first = self.tok.start;
+		let mut errors = Some(Facts::default());
+		let mut more = false;
+		loop {
+			let item = if more {
+				self.element(&mut errors)
+			} else {
+				self.assign_with(&mut errors)
+			};
+			self.scratch.items.push(Some(item));
+			if self.tok.kind != Kind::Comma || self.error {
+				break;
+			}
+			self.bump(true);
+			more = true;
+		}
+		if more && let Some(e) = &mut errors {
+			e.settle_as_operand();
+		}
+		let last = self.prev_end;
+		self.ctx.no_in = no_in;
+		if !self.error && self.tok.kind != Kind::ParenR {
+			self.fail();
+		}
+		if self.error {
+			self.scratch.items.truncate(base);
+			return NodeId::at(0);
+		}
+		self.bump(false);
+		let held = errors.unwrap();
+		if held.pending() {
+			self.raise_expression_errors(&held);
+			self.scratch.items.truncate(base);
+			return NodeId::at(0);
+		}
+		let value = if more {
+			let expressions = self.list(base);
+			self.ast.add(NodeKind::SequenceExpression { expressions }, first, last)
+		} else {
+			self.scratch.items.pop().unwrap().unwrap()
+		};
+		if self.options.has(crate::parser::Options::PARENTHESIZED) {
+			self.ast.set_parenthesized(value);
+		}
+		value
 	}
 
-	pub(super) fn take_yield_await(&mut self) -> (u32, u32, u32) {
-		let old = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
-		old
+	/// A list that may be an arrow's parameters, its `(` read: the arrow, or the value in
+	/// parentheses where one read tells which; none for a list read next as an expression.
+	#[inline(always)]
+	fn arrow_list(&mut self, start: u32) -> Option<NodeId> {
+		if self.covering {
+			return Some(self.fail());
+		}
+		// a list of names holds a level while it is read, before its role is asked
+		if self.tok.kind == Kind::Ident && self.depth + 1 > MAX_DEPTH {
+			return Some(self.raise(self.tok.start, Code::NestingDepth));
+		}
+		let read = match self.tok.kind {
+			Kind::ParenR => return Some(self.empty_list(start)),
+			Kind::Ident => {
+				let next = self.lexer.peek_byte();
+				if operator_follows::<TS>(next) {
+					return None;
+				}
+				if matches!(next, Some(b',' | b')')) && self.plain_name(true) {
+					self.name_list(start, next == Some(b')'))
+				} else {
+					None
+				}
+			}
+			Kind::BraceL | Kind::BracketL => {
+				if self.lists().roles.contains_key(&start) {
+					None
+				} else {
+					self.bracket_item(start)
+				}
+			}
+			_ => None,
+		};
+		if read.is_some() || self.error {
+			return Some(read.unwrap_or(NodeId::at(0)));
+		}
+		self.decided_arrow(start, start, false)
 	}
 
-	pub(super) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
-		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
+	/// `()`, its `)` at the cursor: an arrow function's parameters when `=>` follows, or with
+	/// TypeScript a return type or a body; else an error at the `)`.
+	fn empty_list(&mut self, start: u32) -> NodeId {
+		let close = self.tok;
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		self.bump(false);
+		if self.tok.kind == Kind::Arrow || (TS && matches!(self.tok.kind, Kind::Colon | Kind::BraceL)) {
+			(self.yield_pos, self.await_pos) = (0, 0);
+			let base = self.scratch.items.len();
+			self.close_arrow_head();
+			if self.error {
+				return NodeId::at(0);
+			}
+			self.check_arrow_head(base, false, outer);
+			if self.error {
+				return NodeId::at(0);
+			}
+			return self.arrow(start, base, false);
+		}
+		// a token that does not lex after it: the parser in use reads that token for the arrow
+		if !self.lexer.recover && self.lexer.error.is_some() {
+			return self.fail();
+		}
+		let error = SyntaxError::new(close.start, Code::UnexpectedToken).to(close.end);
+		if !self.softly(error) {
+			return NodeId::at(0);
+		}
+		// under recovery an empty identifier stands in the parentheses
+		let name = self.ast.strings.intern("");
+		let value = self.ast.add(NodeKind::Identifier { name }, close.start, close.start);
+		if self.options.has(crate::parser::Options::PARENTHESIZED) {
+			self.ast.set_parenthesized(value);
+		}
+		value
+	}
+
+	/// A list of plain names, the first followed by `,` or `)` (`one`: it is the only one),
+	/// read once: a name is the same `Identifier` as a parameter and as an operand, so only what
+	/// follows the list is left to decide. The arrow or the value in parentheses; none for any
+	/// other list, the parser back after its `(`.
+	fn name_list(&mut self, start: u32, one: bool) -> Option<NodeId> {
+		let back = (TS || !one).then(|| (self.tok_snap(), self.ast.mark()));
+		let base = self.scratch.items.len();
+		self.depth += 1;
+		let plain = loop {
+			if !self.plain_name(self.scratch.items.len() == base) {
+				break false;
+			}
+			let name = self.ident();
+			if self.error {
+				return Some(name);
+			}
+			self.scratch.items.push(Some(name));
+			if self.tok.kind == Kind::ParenR {
+				break true;
+			}
+			if self.tok.kind != Kind::Comma {
+				break false;
+			}
+			self.bump(true);
+		};
+		self.depth -= 1;
+		if plain {
+			self.bump(false);
+			if self.tok.kind == Kind::Arrow && !self.newline() {
+				let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+				(self.yield_pos, self.await_pos) = (0, 0);
+				self.close_arrow_head();
+				if self.error {
+					return Some(NodeId::at(0));
+				}
+				self.check_arrow_head(base, false, outer);
+				if self.error {
+					return Some(NodeId::at(0));
+				}
+				return Some(self.arrow(start, base, false));
+			}
+			if !(TS && self.tok.kind == Kind::Colon) {
+				let value = if self.scratch.items.len() - base > 1 {
+					let first = self.ast.node(self.scratch.items[base].unwrap()).start;
+					let last = self.ast.node(self.scratch.items.last().unwrap().unwrap()).end;
+					let expressions = self.list(base);
+					self.ast.add(NodeKind::SequenceExpression { expressions }, first, last)
+				} else {
+					self.scratch.items.pop().unwrap().unwrap()
+				};
+				if self.options.has(crate::parser::Options::PARENTHESIZED) {
+					self.ast.set_parenthesized(value);
+				}
+				return Some(value);
+			}
+		}
+		let (back, mark) = back.unwrap();
+		self.restore_tokens(back);
+		self.ast.truncate(mark);
+		self.scratch.items.truncate(base);
+		None
+	}
+
+	/// The token at the cursor is a name that reads the same as a parameter and as an operand,
+	/// and a `,` or `)` follows it (`seen`: that is known).
+	#[inline(always)]
+	fn plain_name(&self, seen: bool) -> bool {
+		let t = self.tok;
+		t.kind == Kind::Ident
+			&& t.flags & ESCAPED == 0
+			&& !matches!(
+				&self.src.as_bytes()[t.start as usize..t.end as usize],
+				b"yield" | b"await"
+			) && (seen || matches!(self.lexer.peek_byte(), Some(b',' | b')')))
+	}
+
+	/// A list whose first item starts with a bracket, read once when that item is all it holds
+	/// and holds no list that may be parameters: as an expression its text is also a pattern's,
+	/// so what follows the `)` tells which it is. None for any other list, the parser back after
+	/// its `(`.
+	// the tokens alone, a scan to the `)` of every such list: test262 266.5 -> 283.6 per token
+	fn bracket_item(&mut self, start: u32) -> Option<NodeId> {
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		(self.yield_pos, self.await_pos) = (0, 0);
+		let base = self.scratch.items.len();
+		let read = self.attempt(|p| {
+			let covering = std::mem::replace(&mut p.covering, true);
+			let no_in = std::mem::replace(&mut p.ctx.no_in, false);
+			let mut errors = Some(Facts::default());
+			let item = p.assign_with(&mut errors);
+			p.ctx.no_in = no_in;
+			p.covering = covering;
+			if p.error {
+				return (item, false);
+			}
+			if p.tok.kind != Kind::ParenR {
+				p.fail();
+				return (item, false);
+			}
+			p.bump(false);
+			let facts = errors.unwrap();
+			if p.tok.kind == Kind::Arrow && !p.newline() {
+				if facts.trailing_comma.is_some() || !p.binding_shaped(item, true) {
+					p.fail();
+				}
+				return (item, true);
+			}
+			if TS && p.tok.kind == Kind::Colon || facts.pending() {
+				p.fail();
+			}
+			(item, false)
+		});
+		let Some((item, arrow)) = read else {
+			(self.yield_pos, self.await_pos) = (outer.0, outer.1);
+			return self.error.then_some(NodeId::at(0));
+		};
+		if arrow {
+			self.rebind(item);
+			self.scratch.items.push(Some(item));
+			self.close_arrow_head();
+			if self.error {
+				return Some(NodeId::at(0));
+			}
+			self.check_arrow_head(base, false, outer);
+			if self.error {
+				return Some(NodeId::at(0));
+			}
+			return Some(self.arrow(start, base, false));
+		}
+		// not an arrow: the list's yields and awaits are its surroundings'
+		let inner = (self.yield_pos, self.await_pos);
+		self.yield_pos = if outer.0 != 0 { outer.0 } else { inner.0 };
+		self.await_pos = if outer.1 != 0 { outer.1 } else { inner.1 };
+		if self.options.has(crate::parser::Options::PARENTHESIZED) {
+			self.ast.set_parenthesized(item);
+		}
+		Some(item)
 	}
 
 	/// Whether what was read as an expression is written as a binding is: the same text read as
@@ -1677,47 +1961,157 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 	}
 
-	/// The list whose `(` is at `open`, read as expressions into the items from `base` on, is an
-	/// arrow function's parameters: `=>` stands at the cursor. Bindings are what the parser in
-	/// use reads there, so a list that is not written as bindings is read again as them, for
-	/// the error they give.
-	fn arrow_from_list(
-		&mut self,
-		start: u32,
-		open: u32,
-		base: usize,
-		is_async: bool,
-		shaped: bool,
-		outer: (u32, u32, u32),
-	) -> NodeId {
-		let shaped = shaped
-			&& (base..self.scratch.items.len()).all(|i| {
-				let item = self.scratch.items[i].unwrap();
-				match self.ast.node(item).kind {
-					NodeKind::SpreadElement { argument } => {
-						i + 1 == self.scratch.items.len() && self.binding_atom_shaped(argument)
-					}
-					_ => self.binding_shaped(item, true),
-				}
-			});
-		if !shaped {
-			self.scratch.items.truncate(base);
-			return self.reread_as_parameters(start, open, is_async, outer);
+	/// A list that may be an arrow's parameters, its `(` at `at` read: the arrow when it is one.
+	/// `is_async`: the list follows `async`, where it may be a call's arguments.
+	pub(super) fn decided_arrow(&mut self, start: u32, at: u32, is_async: bool) -> Option<NodeId> {
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let colon = match self.list_role(at, is_async) {
+			Role::Parameters => None,
+			Role::Expression => return None,
+			Role::Typed(colon) => Some(Some(colon)),
+			Role::Unsure => Some(None),
+		};
+		if let Some(colon) = colon {
+			let arrow = self.try_arrow_head(start, at, colon, is_async, false);
+			if self.error {
+				return Some(NodeId::at(0));
+			}
+			return arrow;
 		}
-		for i in base..self.scratch.items.len() {
-			let item = self.scratch.items[i].unwrap();
-			self.rebind(item);
-		}
-		self.bump(true);
-		self.check_arrow_head(is_async, outer);
+		let base = self.read_arrow_params(is_async);
 		if self.error {
-			return NodeId::at(0);
+			return Some(NodeId::at(0));
 		}
-		self.arrow(start, base, is_async)
+		self.check_arrow_head(base, is_async, outer);
+		if self.error {
+			return Some(NodeId::at(0));
+		}
+		Some(self.arrow(start, base, is_async))
 	}
 
-	/// What an arrow's parameters may not hold, checked once its head is read.
-	pub(super) fn check_arrow_head(&mut self, is_async: bool, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
+	/// An arrow's head tried at `<` (`generic`) or after a list's `(` at `at`: a list whose role
+	/// the type after the `:` at `colon` tells, or one its tokens do not tell.
+	pub(super) fn try_arrow_head(
+		&mut self,
+		start: u32,
+		at: u32,
+		colon: Option<u32>,
+		is_async: bool,
+		generic: bool,
+	) -> Option<NodeId> {
+		let spine = TS && self.scratch.ts.state.needs_colon_at == Some(start);
+		if self.lists().not_arrow.contains(&(at, spine)) {
+			return None;
+		}
+		if TS
+			&& let Some(colon) = colon
+			&& !self.arrow_after_type(colon, is_async, spine)
+		{
+			if self.error {
+				return None;
+			}
+			self.scratch.not_arrow.insert((at, spine));
+			return None;
+		}
+		let before = spine.then(|| self.snapshot());
+		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		let mut head = self.attempt(|p| {
+			if !(TS && generic) {
+				return (None, p.read_arrow_params(is_async));
+			}
+			let type_parameters = p.parse_type_parameters(super::ts::TypeParameterModifiers::Const);
+			p.expect(Kind::ParenL, true);
+			(Some(type_parameters), p.read_arrow_params(is_async))
+		});
+		if self.error {
+			return None;
+		}
+		if TS
+			&& head.is_some()
+			&& self.scratch.ts.state.arrow_return_type.is_some()
+			&& let Some(before) = before
+			&& !self.colon_after_body(is_async)
+		{
+			if self.error {
+				return None;
+			}
+			if let Some((_, base)) = head {
+				self.scratch.items.truncate(base);
+			}
+			self.restore(before);
+			head = None;
+		}
+		let Some((type_parameters, base)) = head else {
+			self.restore_yield_await(outer);
+			self.scratch.not_arrow.insert((at, spine));
+			return None;
+		};
+		self.check_arrow_head(base, is_async, outer);
+		if self.error {
+			return None;
+		}
+		let arrow = self.arrow(start, base, is_async);
+		if self.error {
+			return Some(arrow);
+		}
+		if type_parameters.is_some() {
+			self.ast.extras.entry(arrow).type_parameters = type_parameters;
+		}
+		Some(arrow)
+	}
+
+	/// An arrow's parameters after their `(`, through `=>`, read as bindings: where they start
+	/// among the items.
+	fn read_arrow_params(&mut self, is_async: bool) -> usize {
+		(self.yield_pos, self.await_pos) = (0, 0);
+		if is_async {
+			self.await_ident_pos = 0;
+		}
+		let base = self.scratch.items.len();
+		let held = !matches!(self.tok.kind, Kind::ParenR | Kind::Ellipsis);
+		if held {
+			self.depth += 1;
+			if self.depth > MAX_DEPTH {
+				self.raise(self.tok.start, Code::NestingDepth);
+				return base;
+			}
+		}
+		self.modifiers_ok = false;
+		self.binding_items(Kind::ParenR, false);
+		if held {
+			self.depth -= 1;
+		}
+		if self.error {
+			return base;
+		}
+		self.close_arrow_head();
+		base
+	}
+
+	/// After an arrow's parameters: with TypeScript its return type, then `=>` on the same line.
+	#[inline(always)]
+	fn close_arrow_head(&mut self) {
+		if TS {
+			self.arrow_return_type();
+			if self.error {
+				return;
+			}
+		}
+		if matches!(self.tok.kind, Kind::Eof | Kind::BraceR) || self.newline() {
+			self.fail();
+			return;
+		}
+		self.expect(Kind::Arrow, true);
+	}
+
+	/// What an arrow's parameters, the items from `base` on, may not hold, checked once its head
+	/// is read.
+	pub(super) fn check_arrow_head(
+		&mut self,
+		base: usize,
+		is_async: bool,
+		(yield_pos, await_pos, await_ident_pos): (u32, u32, u32),
+	) {
 		self.check_yield_await_in_default_params();
 		if self.error {
 			return;
@@ -1730,208 +2124,294 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		if is_async {
 			self.await_ident_pos = await_ident_pos;
 		}
+		if TS {
+			for i in base..self.scratch.items.len() {
+				if let Some(param) = self.scratch.items[i]
+					&& self.ident_is(param, "this")
+				{
+					let at = self.ast.node(param).start;
+					self.raise(at, Code::InvalidAssignmentTarget);
+					return;
+				}
+			}
+		}
 	}
 
-	/// Whether a list that read whole as expressions, from `first` on, may be parameters by its
-	/// first tokens, as the parser in use tells: a pattern's bracket, or a name that a `,`, `=`
-	/// or the `)` follows.
-	fn heads(&self, first: Token, _base: usize) -> bool {
+	/// The arrow function whose parameters, already patterns, are the items from `base` on; its
+	/// `=>` is read.
+	pub(super) fn arrow(&mut self, start: u32, base: usize, is_async: bool) -> NodeId {
+		let params = self.list(base);
+		let old = self.take_yield_await();
+		self.enter_scope(function_flags(is_async, false) | SCOPE_ARROW);
+		let frame = if TS {
+			self.arrow_start(start);
+			Some(self.function_start(super::ts::FunctionKind::Arrow))
+		} else {
+			None
+		};
+		let outer = self.ctx;
+		let expression = self.tok.kind != Kind::BraceL;
+		self.ctx = Ctx {
+			function: true,
+			is_async,
+			generator: false,
+			can_await: is_async,
+			no_in: expression && outer.no_in,
+			for_await: expression && outer.for_await,
+		};
+		let body = self.function_body(start, None, params, true, false);
+		self.ctx = outer;
+		self.restore_yield_await(old);
+		let node = self.add(
+			NodeKind::ArrowFunctionExpression {
+				params,
+				body,
+				expression,
+				is_async,
+			},
+			start,
+		);
+		if let Some(frame) = frame {
+			self.function_end(node, frame);
+		}
+		self.bare_arrow = true;
+		node
+	}
+
+	pub(super) fn take_yield_await(&mut self) -> (u32, u32, u32) {
+		let old = (self.yield_pos, self.await_pos, self.await_ident_pos);
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
+		old
+	}
+
+	pub(super) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
+		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
+	}
+
+	// ── the role of a list, told by its tokens
+
+	/// Whether the first token of a list, at the cursor, may start an arrow's parameters.
+	#[inline(always)]
+	fn may_be_parameters(&self) -> bool {
+		matches!(
+			self.tok.kind,
+			Kind::ParenR | Kind::Ident | Kind::BraceL | Kind::BracketL | Kind::Ellipsis
+		) || (TS && self.tok.kind == Kind::This)
+	}
+
+	/// How the list whose `(` is at `open` is read, its first token at the cursor; `call` when
+	/// it follows `async`, where it may be arguments. The tokens are read by a lexer of their own.
+	fn list_role(&mut self, open: u32, call: bool) -> Role {
+		let first = self.tok;
 		match first.kind {
-			Kind::BracketL | Kind::BraceL => true,
-			Kind::Ident => {
-				let mut lexer = Lexer::new(self.src, self.module, false);
-				lexer.set_pos(first.end as usize);
-				let second = lexer.next(false);
-				lexer.error.is_none() && matches!(second.kind, Kind::ParenR | Kind::Comma | Kind::Eq)
-			}
-			_ => false,
+			Kind::ParenR | Kind::Ident => {}
+			Kind::This if TS => {}
+			Kind::Ellipsis if !call => return Role::Parameters,
+			Kind::Ellipsis | Kind::BracketL | Kind::BraceL => return self.scanned_role(open),
+			_ => return Role::Expression,
 		}
-	}
-
-	/// The list after the `(` at `open` read as an arrow function's parameters from the start,
-	/// what was read of it as expressions forgotten.
-	#[cold]
-	#[inline(never)]
-	fn reread_as_parameters(&mut self, start: u32, open: u32, is_async: bool, outer: (u32, u32, u32)) -> NodeId {
-		self.error = false;
-		self.err = None;
-		self.lexer.rewind(open as usize + 1);
-		while self.lexer.comments.last().is_some_and(|comment| comment.start > open) {
-			self.lexer.comments.pop();
-		}
-		self.prev_end = open + 1;
-		self.tok = self.lexer.next(true);
-		if self.track {
-			if let Some(at) = self.scratch.paren_marks.iter().rposition(|&(pos, _)| pos == open) {
-				let brackets = self.scratch.paren_marks[at].1;
-				self.scratch.paren_marks.truncate(at);
-				self.set_brackets(brackets);
-			}
-			let paren = Token {
-				start: open,
-				end: open + 1,
-				kind: Kind::ParenL,
-				flags: 0,
+		let mut lexer = self.scout();
+		let Some(token) = look(&mut lexer) else {
+			return Role::Unsure;
+		};
+		if first.kind == Kind::ParenR {
+			return match token.kind {
+				Kind::Arrow => Role::Parameters,
+				Kind::Colon if TS && call => Role::Typed(token.start),
+				Kind::Colon | Kind::BraceL if TS && !call => Role::Parameters,
+				_ => Role::Expression,
 			};
-			self.tracked(paren, false);
 		}
-		(self.yield_pos, self.await_pos) = (0, 0);
-		if is_async {
-			self.await_ident_pos = 0;
-		}
-		let base = self.scratch.items.len();
-		let held = !matches!(self.tok.kind, Kind::ParenR | Kind::Ellipsis);
-		if held {
-			self.depth += 1;
-			if self.depth > MAX_DEPTH {
-				return self.raise(self.tok.start, Code::NestingDepth);
+		match token.kind {
+			Kind::ParenR => match look(&mut lexer) {
+				Some(token) => after_closer::<TS>(token),
+				None => Role::Unsure,
+			},
+			Kind::Comma | Kind::Eq => self.scanned_role(open),
+			Kind::Colon if TS => Role::Parameters,
+			Kind::Question if TS => match look(&mut lexer) {
+				Some(token) => match token.kind {
+					Kind::Colon | Kind::Comma | Kind::Eq | Kind::ParenR => Role::Parameters,
+					_ => Role::Expression,
+				},
+				None => Role::Unsure,
+			},
+			Kind::Ident if TS && self.is_modifier_word(first) => {
+				match &self.src[token.start as usize..token.end as usize] {
+					"as" | "satisfies" if token.flags & ESCAPED == 0 => Role::Expression,
+					_ => Role::Parameters,
+				}
 			}
+			_ => Role::Expression,
 		}
-		self.binding_items(Kind::ParenR, false);
-		if held {
-			self.depth -= 1;
-		}
-		if self.error {
-			return NodeId::at(0);
-		}
-		if matches!(self.tok.kind, Kind::Eof | Kind::BraceR) || self.newline() || self.tok.kind != Kind::Arrow {
-			return self.fail();
-		}
-		self.bump(true);
-		self.check_arrow_head(is_async, outer);
-		if self.error {
-			return NodeId::at(0);
-		}
-		self.arrow(start, base, is_async)
 	}
 
-	/// Whether the list whose `(` is at `open` closes and `=>` follows on its line: what the
-	/// tokens tell without the grammar. False where they do not tell.
+	/// The tables of lists' roles and failed heads, with what a read before left in them forgotten.
+	#[inline(always)]
+	fn lists(&mut self) -> &mut Scratch {
+		if !self.lists_forgotten {
+			self.forget_lists();
+		}
+		self.scratch
+	}
+
+	// forgotten by `begin` for every read: test262 +0.15%, its files 15 tokens each
 	#[cold]
 	#[inline(never)]
-	fn arrow_follows(&self, open: u32, call: bool) -> bool {
-		#[derive(Clone, Copy, PartialEq)]
-		enum Slash {
-			Divide,
-			Regex,
-			Unsure,
+	fn forget_lists(&mut self) {
+		self.lists_forgotten = true;
+		// a cleared table writes all of its control bytes, empty or not
+		if !self.scratch.roles.is_empty() {
+			self.scratch.roles.clear();
 		}
+		if !self.scratch.not_arrow.is_empty() {
+			self.scratch.not_arrow.clear();
+		}
+	}
+
+	/// A lexer of its own after the token at the cursor, reading as the parser's does: a
+	/// recovering one reads past what it records.
+	fn scout(&self) -> Lexer<'a> {
 		let mut lexer = Lexer::new(self.src, self.module, false);
 		lexer.strict = self.lexer.strict;
-		lexer.set_pos(open as usize + 1);
-		// what the first tokens tell: some start only parameters, some never do
-		let first = lexer.next(true);
-		if lexer.error.is_some() {
-			return false;
+		lexer.at_sign = self.lexer.at_sign;
+		lexer.recover = self.lexer.recover;
+		lexer.set_pos(self.lexer.pos());
+		lexer
+	}
+
+	fn is_modifier_word(&self, t: Token) -> bool {
+		t.kind == Kind::Ident
+			&& matches!(
+				&self.src[t.start as usize..t.end as usize],
+				"public" | "private" | "protected" | "readonly" | "static" | "abstract" | "declare" | "override" | "accessor"
+			)
+	}
+
+	/// The role of the list whose `(` is at `open` that its first tokens leave open: what follows
+	/// its closer, as a scan through it tells, kept for every list it closes on the way.
+	#[cold]
+	#[inline(never)]
+	fn scanned_role(&mut self, open: u32) -> Role {
+		if let Some(&role) = self.lists().roles.get(&open) {
+			return role;
 		}
-		match first.kind {
-			Kind::ParenR => return lexer.next(false).kind == Kind::Arrow && lexer.error.is_none(),
-			Kind::Ellipsis if !call => return true,
-			Kind::Ellipsis | Kind::BracketL | Kind::BraceL => {}
-			Kind::Ident => {
-				let second = lexer.next(false);
-				if lexer.error.is_some() {
-					return false;
-				}
-				match second.kind {
-					Kind::ParenR => {
-						let third = lexer.next(false);
-						return lexer.error.is_none() && third.kind == Kind::Arrow && third.flags & NEWLINE_BEFORE == 0;
-					}
-					Kind::Comma | Kind::Eq => {}
-					_ => return false,
-				}
-			}
-			_ => return false,
-		}
-		lexer.set_pos(open as usize + 1);
-		// each open bracket: its closer, and what a `/` is after it
-		let mut frames: Vec<(Kind, Slash)> = vec![(Kind::ParenR, Slash::Divide)];
+		let mut lexer = self.scout();
+		self.scan(&mut lexer, open, self.tok).unwrap_or(Role::Unsure)
+	}
+
+	/// Reads through the closer of the list whose `(` is at `open` and the token after it,
+	/// keeping the role of every list closed on the way, and of that one when a read that may go
+	/// back asks: no other read asks it again. None when a token cannot be read without
+	/// parsing: a `/` only the parser can place, or text that does not lex.
+	fn scan(&mut self, lexer: &mut Lexer<'a>, open: u32, first: Token) -> Option<Role> {
+		let mut frames = std::mem::take(&mut self.scratch.frames);
+		frames.clear();
+		frames.push((Kind::ParenR, open, Slash::Divide));
 		let mut slash = Slash::Regex;
+		let mut closed: Option<u32> = None;
 		let (mut prev, mut prev2) = (Kind::ParenL, Kind::Eof);
-		loop {
-			let mut token = lexer.next(false);
-			if lexer.error.is_some() {
-				return false;
+		let mut prev_word_await = false;
+		let mut unread = Some(first);
+		let role = loop {
+			let mut token = match unread.take() {
+				Some(first) => first,
+				None => match look(lexer) {
+					Some(t) => t,
+					None => break None,
+				},
+			};
+			if let Some(at) = closed.take() {
+				let role = after_closer::<TS>(token);
+				if !frames.is_empty() || self.speculating > 0 {
+					self.scratch.roles.insert(at, role);
+				}
+				if frames.is_empty() {
+					break Some(role);
+				}
 			}
-			if frames.is_empty() {
-				return token.kind == Kind::Arrow && token.flags & NEWLINE_BEFORE == 0;
-			}
+			let mut word_await = false;
 			match token.kind {
 				Kind::Slash | Kind::SlashEq => match slash {
 					Slash::Regex => {
 						token = lexer.regex(token);
 						if lexer.error.is_some() {
-							return false;
+							break None;
 						}
 						slash = Slash::Divide;
 					}
 					Slash::Divide => slash = Slash::Regex,
-					Slash::Unsure => return false,
+					Slash::Unsure => break None,
 				},
 				Kind::Template => {
 					if token.flags & BROKEN != 0 {
-						return false;
+						break None;
 					}
 					slash = Slash::Divide;
 				}
 				Kind::TemplateHead => {
-					frames.push((Kind::Template, Slash::Divide));
+					frames.push((Kind::Template, token.start, Slash::Divide));
 					slash = Slash::Regex;
 				}
 				Kind::ParenL => {
 					let statement = matches!(
 						prev,
 						Kind::If | Kind::While | Kind::For | Kind::With | Kind::Switch | Kind::Catch
-					) && !matches!(prev2, Kind::Dot | Kind::QuestionDot);
-					frames.push((Kind::ParenR, if statement { Slash::Regex } else { Slash::Divide }));
+					) && !matches!(prev2, Kind::Dot | Kind::QuestionDot)
+						|| (prev2 == Kind::For && prev_word_await);
+					frames.push((
+						Kind::ParenR,
+						token.start,
+						if statement { Slash::Regex } else { Slash::Divide },
+					));
 					slash = Slash::Regex;
 				}
 				Kind::BracketL => {
-					frames.push((Kind::BracketR, Slash::Divide));
+					frames.push((Kind::BracketR, token.start, Slash::Divide));
 					slash = Slash::Regex;
 				}
 				Kind::BraceL => {
-					frames.push((Kind::BraceR, Slash::Unsure));
+					frames.push((Kind::BraceR, token.start, Slash::Unsure));
 					slash = Slash::Regex;
 				}
 				Kind::ParenR | Kind::BracketR | Kind::BraceR => {
-					let Some((closer, after)) = frames.pop() else { return false };
-					if closer == Kind::Template && token.kind == Kind::BraceR {
+					let Some(frame) = frames.pop() else { break None };
+					if frame.0 == Kind::Template && token.kind == Kind::BraceR {
 						let chunk = lexer.template_continue(token);
 						if chunk.flags & BROKEN != 0 || lexer.error.is_some() {
-							return false;
+							break None;
 						}
 						if chunk.kind == Kind::TemplateTail {
 							slash = Slash::Divide;
 						} else {
-							frames.push((closer, after));
+							frames.push(frame);
 							slash = Slash::Regex;
 						}
-					} else if closer != token.kind {
-						return false;
+					} else if frame.0 != token.kind {
+						break None;
 					} else {
-						slash = after;
+						if token.kind == Kind::ParenR {
+							closed = Some(frame.1);
+						}
+						slash = frame.2;
 					}
 				}
-				Kind::Eof => return false,
+				Kind::Eof => break None,
 				kind if (kind == Kind::Ident || kind.is_keyword()) && matches!(prev, Kind::Dot | Kind::QuestionDot) => {
 					slash = Slash::Divide;
 				}
+				Kind::Void | Kind::Const if TS => slash = Slash::Unsure,
 				Kind::Ident => {
 					let word = &self.src.as_bytes()[token.start as usize..token.end as usize];
+					word_await = word == b"await" && token.flags & ESCAPED == 0;
 					slash = match word {
-						b"yield" | b"await" | b"of" | b"let" => Slash::Unsure,
+						b"yield" | b"await" | b"of" | b"let" if token.flags & ESCAPED == 0 => Slash::Unsure,
 						_ => Slash::Divide,
 					};
 				}
-				Kind::PlusPlus | Kind::MinusMinus => {
-					slash = match slash {
-						Slash::Divide if token.flags & NEWLINE_BEFORE == 0 => Slash::Divide,
-						Slash::Unsure => Slash::Unsure,
-						_ => Slash::Regex,
-					};
-				}
+				Kind::PlusPlus | Kind::MinusMinus => slash = postfix(slash, token),
+				Kind::Bang if TS => slash = postfix(slash, token),
+				Kind::Gt | Kind::GtGt | Kind::GtGtGt if TS => slash = Slash::Unsure,
 				kind => {
 					let ends = matches!(
 						kind,
@@ -1947,130 +2427,17 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			}
 			prev2 = prev;
 			prev = token.kind;
-		}
-	}
-
-	/// A list in parentheses, its `(` at the cursor: an arrow function's parameters when `=>`
-	/// follows, else the expression inside.
-	pub(super) fn paren(&mut self, start: u32) -> NodeId {
-		let can_arrow = self.arrow_at == start;
-		self.bump(true);
-		let no_in = std::mem::replace(&mut self.ctx.no_in, false);
-		let base = self.scratch.items.len();
-		let first_token = self.tok;
-		let first = first_token.start;
-		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		let parens = self.parens;
-		if can_arrow {
-			if self.tok.kind == Kind::Ident && self.depth + 1 > MAX_DEPTH {
-				return self.raise(self.tok.start, Code::NestingDepth);
-			}
-			(self.yield_pos, self.await_pos) = (0, 0);
-			// what only parameters may hold: nothing, a rest, a comma before the `)`
-			if self.tok.kind == Kind::ParenR {
-				return self.empty_list(start, outer, no_in);
-			}
-			if self.tok.kind == Kind::Ellipsis {
-				self.ctx.no_in = no_in;
-				return self.reread_as_parameters(start, start, false, outer);
-			}
-		}
-		let mut errors = Some(Facts::default());
-		let mut more = false;
-		loop {
-			if can_arrow && (self.tok.kind == Kind::Ellipsis || (more && self.tok.kind == Kind::ParenR)) {
-				self.ctx.no_in = no_in;
-				self.scratch.items.truncate(base);
-				if self.arrow_follows(start, false) {
-					return self.reread_as_parameters(start, start, false, outer);
-				}
-				return self.fail();
-			}
-			let item = if more {
-				self.element(&mut errors)
-			} else {
-				self.assign_with(&mut errors)
-			};
-			self.scratch.items.push(Some(item));
-			if self.tok.kind != Kind::Comma || self.error {
-				break;
-			}
-			self.bump(true);
-			more = true;
-		}
-		if more && let Some(e) = &mut errors {
-			e.settle_as_operand();
-		}
-		let last = self.prev_end;
-		self.ctx.no_in = no_in;
-		if !self.error && self.tok.kind != Kind::ParenR {
-			self.fail();
-		}
-		if self.error {
-			self.scratch.items.truncate(base);
-			// a limit taken for a wrong guess multiplied the reads: each level read the levels under it again
-			if can_arrow && self.lexer.error.is_none() && !self.limit_hit() && self.arrow_follows(start, false) {
-				return self.reread_as_parameters(start, start, false, outer);
-			}
-			return NodeId::at(0);
-		}
-		self.bump(false);
-		if can_arrow {
-			if self.tok.kind == Kind::Arrow && !self.newline() && self.heads(first_token, base) {
-				return self.arrow_from_list(start, start, base, false, self.parens == parens, outer);
-			}
-			// not an arrow: the list's yields and awaits are its surroundings'
-			let inner = (self.yield_pos, self.await_pos);
-			self.yield_pos = if outer.0 != 0 { outer.0 } else { inner.0 };
-			self.await_pos = if outer.1 != 0 { outer.1 } else { inner.1 };
-		}
-		self.parens += 1;
-		let held = errors.unwrap();
-		if held.pending() {
-			self.raise_expression_errors(&held);
-			self.scratch.items.truncate(base);
-			return NodeId::at(0);
-		}
-		let value = if more {
-			let expressions = self.list(base);
-			self.ast.add(NodeKind::SequenceExpression { expressions }, first, last)
-		} else {
-			self.scratch.items.pop().unwrap().unwrap()
+			prev_word_await = word_await;
 		};
-		if self.options.has(crate::parser::Options::PARENTHESIZED) {
-			self.ast.set_parenthesized(value);
-		}
-		value
-	}
-
-	/// `()` where an arrow function may start: its parameters, or an error at the `)`.
-	#[inline(never)]
-	fn empty_list(&mut self, start: u32, outer: (u32, u32, u32), no_in: bool) -> NodeId {
-		self.ctx.no_in = no_in;
-		let close = self.tok;
-		self.bump(false);
-		if self.tok.kind != Kind::Arrow {
-			let end = close.end;
-			let error = SyntaxError::new(close.start, Code::UnexpectedToken).to(end);
-			if !self.softly(error) {
-				return NodeId::at(0);
+		if role.is_none() {
+			for frame in &frames {
+				if frame.0 == Kind::ParenR {
+					self.scratch.roles.insert(frame.1, Role::Unsure);
+				}
 			}
-			// under recovery an empty identifier stands in the parentheses
-			let name = self.ast.strings.intern("");
-			let value = self.ast.add(NodeKind::Identifier { name }, close.start, close.start);
-			self.parens += 1;
-			if self.options.has(crate::parser::Options::PARENTHESIZED) {
-				self.ast.set_parenthesized(value);
-			}
-			return value;
 		}
-		if self.newline() {
-			return self.fail();
-		}
-		let base = self.scratch.items.len();
-		self.bump(true);
-		self.check_arrow_head(false, outer);
-		self.arrow(start, base, false)
+		self.scratch.frames = frames;
+		role
 	}
 
 	/// A call's arguments after their `(`, through the `)`: where they start in the scratch
@@ -2113,9 +2480,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 				{
 					e.trailing_comma = Some(self.tok.start);
 				}
-				if self.tok.kind == Kind::Comma {
-					self.parens += 1;
-				}
 				spread
 			} else {
 				self.element(errors)
@@ -2127,52 +2491,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 		self.bump(false);
 		base
-	}
-
-	/// `async(` read: a call's arguments, or an async arrow function's parameters.
-	#[cold]
-	#[inline(never)]
-	fn async_call(&mut self, callee: NodeId, start: u32, open: u32) -> (NodeId, bool) {
-		let no_in = std::mem::replace(&mut self.ctx.no_in, false);
-		let outer = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
-		let parens = self.parens;
-		let first_token = self.tok;
-		let mut errors = Some(Facts::default());
-		let base = self.arguments_inside(&mut errors);
-		self.ctx.no_in = no_in;
-		if self.error {
-			if self.lexer.error.is_none() && !self.limit_hit() && self.arrow_follows(open, true) {
-				self.scratch.items.truncate(base);
-				return (self.reread_as_parameters(start, open, true, outer), true);
-			}
-			return (NodeId::at(0), false);
-		}
-		let held = errors.unwrap();
-		if self.tok.kind == Kind::Arrow
-			&& !self.newline()
-			&& (self.scratch.items.len() == base || first_token.kind == Kind::Ellipsis || self.heads(first_token, base))
-		{
-			return (self.arrow_from_list(start, open, base, true, self.parens == parens, outer), true);
-		}
-		let inner = (self.yield_pos, self.await_pos, self.await_ident_pos);
-		self.yield_pos = if outer.0 != 0 { outer.0 } else { inner.0 };
-		self.await_pos = if outer.1 != 0 { outer.1 } else { inner.1 };
-		self.await_ident_pos = if outer.2 != 0 { outer.2 } else { inner.2 };
-		if held.pending() {
-			self.raise_expression_errors(&held);
-			return (NodeId::at(0), false);
-		}
-		let arguments = self.list(base);
-		let call = self.add(
-			NodeKind::CallExpression {
-				callee,
-				arguments,
-				optional: false,
-			},
-			start,
-		);
-		(call, false)
 	}
 
 	pub(super) fn array(&mut self, start: u32, errors: &mut Errors) -> NodeId {
@@ -2209,9 +2527,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 					&& e.trailing_comma.is_none()
 				{
 					e.trailing_comma = Some(self.tok.start);
-				}
-				if self.tok.kind == Kind::Comma {
-					self.parens += 1;
 				}
 				Some(spread)
 			} else {
@@ -2295,9 +2610,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 				&& e.trailing_comma.is_none()
 			{
 				e.trailing_comma = Some(self.tok.start);
-			}
-			if self.tok.kind == Kind::Comma {
-				self.parens += 1;
 			}
 			return self.add(NodeKind::SpreadElement { argument }, start);
 		}

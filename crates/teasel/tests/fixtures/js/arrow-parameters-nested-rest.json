@@ -1,0 +1,1519 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 394,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 393,
+				"expression": {
+					"type": "AssignmentExpression",
+					"start": 0,
+					"end": 392,
+					"operator": "=",
+					"left": {
+						"type": "Identifier",
+						"start": 0,
+						"end": 1,
+						"reference": 0,
+						"name": "x"
+					},
+					"right": {
+						"type": "ArrowFunctionExpression",
+						"start": 4,
+						"end": 392,
+						"scope": 1,
+						"defines": [
+							0,
+							45
+						],
+						"writes": [
+							0
+						],
+						"id": null,
+						"expression": true,
+						"generator": false,
+						"async": false,
+						"params": [
+							{
+								"type": "AssignmentPattern",
+								"start": 5,
+								"end": 380,
+								"left": {
+									"type": "Identifier",
+									"start": 5,
+									"end": 6,
+									"declares": 0,
+									"name": "a"
+								},
+								"right": {
+									"type": "ArrowFunctionExpression",
+									"start": 9,
+									"end": 380,
+									"scope": 2,
+									"defines": [
+										1,
+										44
+									],
+									"id": null,
+									"expression": true,
+									"generator": false,
+									"async": false,
+									"params": [
+										{
+											"type": "AssignmentPattern",
+											"start": 10,
+											"end": 368,
+											"left": {
+												"type": "Identifier",
+												"start": 10,
+												"end": 11,
+												"declares": 1,
+												"name": "a"
+											},
+											"right": {
+												"type": "ArrowFunctionExpression",
+												"start": 14,
+												"end": 368,
+												"scope": 3,
+												"defines": [
+													2,
+													43
+												],
+												"id": null,
+												"expression": true,
+												"generator": false,
+												"async": false,
+												"params": [
+													{
+														"type": "AssignmentPattern",
+														"start": 15,
+														"end": 356,
+														"left": {
+															"type": "Identifier",
+															"start": 15,
+															"end": 16,
+															"declares": 2,
+															"name": "a"
+														},
+														"right": {
+															"type": "ArrowFunctionExpression",
+															"start": 19,
+															"end": 356,
+															"scope": 4,
+															"defines": [
+																3,
+																42
+															],
+															"id": null,
+															"expression": true,
+															"generator": false,
+															"async": false,
+															"params": [
+																{
+																	"type": "AssignmentPattern",
+																	"start": 20,
+																	"end": 344,
+																	"left": {
+																		"type": "Identifier",
+																		"start": 20,
+																		"end": 21,
+																		"declares": 3,
+																		"name": "a"
+																	},
+																	"right": {
+																		"type": "ArrowFunctionExpression",
+																		"start": 24,
+																		"end": 344,
+																		"scope": 5,
+																		"defines": [
+																			4,
+																			41
+																		],
+																		"id": null,
+																		"expression": true,
+																		"generator": false,
+																		"async": false,
+																		"params": [
+																			{
+																				"type": "AssignmentPattern",
+																				"start": 25,
+																				"end": 332,
+																				"left": {
+																					"type": "Identifier",
+																					"start": 25,
+																					"end": 26,
+																					"declares": 4,
+																					"name": "a"
+																				},
+																				"right": {
+																					"type": "ArrowFunctionExpression",
+																					"start": 29,
+																					"end": 332,
+																					"scope": 6,
+																					"defines": [
+																						5,
+																						40
+																					],
+																					"id": null,
+																					"expression": true,
+																					"generator": false,
+																					"async": false,
+																					"params": [
+																						{
+																							"type": "AssignmentPattern",
+																							"start": 30,
+																							"end": 320,
+																							"left": {
+																								"type": "Identifier",
+																								"start": 30,
+																								"end": 31,
+																								"declares": 5,
+																								"name": "a"
+																							},
+																							"right": {
+																								"type": "ArrowFunctionExpression",
+																								"start": 34,
+																								"end": 320,
+																								"scope": 7,
+																								"defines": [
+																									6,
+																									39
+																								],
+																								"id": null,
+																								"expression": true,
+																								"generator": false,
+																								"async": false,
+																								"params": [
+																									{
+																										"type": "AssignmentPattern",
+																										"start": 35,
+																										"end": 308,
+																										"left": {
+																											"type": "Identifier",
+																											"start": 35,
+																											"end": 36,
+																											"declares": 6,
+																											"name": "a"
+																										},
+																										"right": {
+																											"type": "ArrowFunctionExpression",
+																											"start": 39,
+																											"end": 308,
+																											"scope": 8,
+																											"defines": [
+																												7,
+																												38
+																											],
+																											"id": null,
+																											"expression": true,
+																											"generator": false,
+																											"async": false,
+																											"params": [
+																												{
+																													"type": "AssignmentPattern",
+																													"start": 40,
+																													"end": 296,
+																													"left": {
+																														"type": "Identifier",
+																														"start": 40,
+																														"end": 41,
+																														"declares": 7,
+																														"name": "a"
+																													},
+																													"right": {
+																														"type": "ArrowFunctionExpression",
+																														"start": 44,
+																														"end": 296,
+																														"scope": 9,
+																														"defines": [
+																															8,
+																															37
+																														],
+																														"id": null,
+																														"expression": true,
+																														"generator": false,
+																														"async": false,
+																														"params": [
+																															{
+																																"type": "AssignmentPattern",
+																																"start": 45,
+																																"end": 284,
+																																"left": {
+																																	"type": "Identifier",
+																																	"start": 45,
+																																	"end": 46,
+																																	"declares": 8,
+																																	"name": "a"
+																																},
+																																"right": {
+																																	"type": "ArrowFunctionExpression",
+																																	"start": 49,
+																																	"end": 284,
+																																	"scope": 10,
+																																	"defines": [
+																																		9,
+																																		36
+																																	],
+																																	"id": null,
+																																	"expression": true,
+																																	"generator": false,
+																																	"async": false,
+																																	"params": [
+																																		{
+																																			"type": "AssignmentPattern",
+																																			"start": 50,
+																																			"end": 272,
+																																			"left": {
+																																				"type": "Identifier",
+																																				"start": 50,
+																																				"end": 51,
+																																				"declares": 9,
+																																				"name": "a"
+																																			},
+																																			"right": {
+																																				"type": "ArrowFunctionExpression",
+																																				"start": 54,
+																																				"end": 272,
+																																				"scope": 11,
+																																				"defines": [
+																																					10,
+																																					35
+																																				],
+																																				"id": null,
+																																				"expression": true,
+																																				"generator": false,
+																																				"async": false,
+																																				"params": [
+																																					{
+																																						"type": "AssignmentPattern",
+																																						"start": 55,
+																																						"end": 260,
+																																						"left": {
+																																							"type": "Identifier",
+																																							"start": 55,
+																																							"end": 56,
+																																							"declares": 10,
+																																							"name": "a"
+																																						},
+																																						"right": {
+																																							"type": "ArrowFunctionExpression",
+																																							"start": 59,
+																																							"end": 260,
+																																							"scope": 12,
+																																							"defines": [
+																																								11,
+																																								34
+																																							],
+																																							"id": null,
+																																							"expression": true,
+																																							"generator": false,
+																																							"async": false,
+																																							"params": [
+																																								{
+																																									"type": "AssignmentPattern",
+																																									"start": 60,
+																																									"end": 248,
+																																									"left": {
+																																										"type": "Identifier",
+																																										"start": 60,
+																																										"end": 61,
+																																										"declares": 11,
+																																										"name": "a"
+																																									},
+																																									"right": {
+																																										"type": "ArrowFunctionExpression",
+																																										"start": 64,
+																																										"end": 248,
+																																										"scope": 13,
+																																										"defines": [
+																																											12,
+																																											33
+																																										],
+																																										"id": null,
+																																										"expression": true,
+																																										"generator": false,
+																																										"async": false,
+																																										"params": [
+																																											{
+																																												"type": "AssignmentPattern",
+																																												"start": 65,
+																																												"end": 236,
+																																												"left": {
+																																													"type": "Identifier",
+																																													"start": 65,
+																																													"end": 66,
+																																													"declares": 12,
+																																													"name": "a"
+																																												},
+																																												"right": {
+																																													"type": "ArrowFunctionExpression",
+																																													"start": 69,
+																																													"end": 236,
+																																													"scope": 14,
+																																													"defines": [
+																																														13,
+																																														32
+																																													],
+																																													"id": null,
+																																													"expression": true,
+																																													"generator": false,
+																																													"async": false,
+																																													"params": [
+																																														{
+																																															"type": "AssignmentPattern",
+																																															"start": 70,
+																																															"end": 224,
+																																															"left": {
+																																																"type": "Identifier",
+																																																"start": 70,
+																																																"end": 71,
+																																																"declares": 13,
+																																																"name": "a"
+																																															},
+																																															"right": {
+																																																"type": "ArrowFunctionExpression",
+																																																"start": 74,
+																																																"end": 224,
+																																																"scope": 15,
+																																																"defines": [
+																																																	14,
+																																																	31
+																																																],
+																																																"id": null,
+																																																"expression": true,
+																																																"generator": false,
+																																																"async": false,
+																																																"params": [
+																																																	{
+																																																		"type": "AssignmentPattern",
+																																																		"start": 75,
+																																																		"end": 212,
+																																																		"left": {
+																																																			"type": "Identifier",
+																																																			"start": 75,
+																																																			"end": 76,
+																																																			"declares": 14,
+																																																			"name": "a"
+																																																		},
+																																																		"right": {
+																																																			"type": "ArrowFunctionExpression",
+																																																			"start": 79,
+																																																			"end": 212,
+																																																			"scope": 16,
+																																																			"defines": [
+																																																				15,
+																																																				30
+																																																			],
+																																																			"id": null,
+																																																			"expression": true,
+																																																			"generator": false,
+																																																			"async": false,
+																																																			"params": [
+																																																				{
+																																																					"type": "AssignmentPattern",
+																																																					"start": 80,
+																																																					"end": 200,
+																																																					"left": {
+																																																						"type": "Identifier",
+																																																						"start": 80,
+																																																						"end": 81,
+																																																						"declares": 15,
+																																																						"name": "a"
+																																																					},
+																																																					"right": {
+																																																						"type": "ArrowFunctionExpression",
+																																																						"start": 84,
+																																																						"end": 200,
+																																																						"scope": 17,
+																																																						"defines": [
+																																																							16,
+																																																							29
+																																																						],
+																																																						"id": null,
+																																																						"expression": true,
+																																																						"generator": false,
+																																																						"async": false,
+																																																						"params": [
+																																																							{
+																																																								"type": "AssignmentPattern",
+																																																								"start": 85,
+																																																								"end": 188,
+																																																								"left": {
+																																																									"type": "Identifier",
+																																																									"start": 85,
+																																																									"end": 86,
+																																																									"declares": 16,
+																																																									"name": "a"
+																																																								},
+																																																								"right": {
+																																																									"type": "ArrowFunctionExpression",
+																																																									"start": 89,
+																																																									"end": 188,
+																																																									"scope": 18,
+																																																									"defines": [
+																																																										17,
+																																																										28
+																																																									],
+																																																									"id": null,
+																																																									"expression": true,
+																																																									"generator": false,
+																																																									"async": false,
+																																																									"params": [
+																																																										{
+																																																											"type": "AssignmentPattern",
+																																																											"start": 90,
+																																																											"end": 176,
+																																																											"left": {
+																																																												"type": "Identifier",
+																																																												"start": 90,
+																																																												"end": 91,
+																																																												"declares": 17,
+																																																												"name": "a"
+																																																											},
+																																																											"right": {
+																																																												"type": "ArrowFunctionExpression",
+																																																												"start": 94,
+																																																												"end": 176,
+																																																												"scope": 19,
+																																																												"defines": [
+																																																													18,
+																																																													27
+																																																												],
+																																																												"id": null,
+																																																												"expression": true,
+																																																												"generator": false,
+																																																												"async": false,
+																																																												"params": [
+																																																													{
+																																																														"type": "AssignmentPattern",
+																																																														"start": 95,
+																																																														"end": 164,
+																																																														"left": {
+																																																															"type": "Identifier",
+																																																															"start": 95,
+																																																															"end": 96,
+																																																															"declares": 18,
+																																																															"name": "a"
+																																																														},
+																																																														"right": {
+																																																															"type": "ArrowFunctionExpression",
+																																																															"start": 99,
+																																																															"end": 164,
+																																																															"scope": 20,
+																																																															"defines": [
+																																																																19,
+																																																																26
+																																																															],
+																																																															"id": null,
+																																																															"expression": true,
+																																																															"generator": false,
+																																																															"async": false,
+																																																															"params": [
+																																																																{
+																																																																	"type": "AssignmentPattern",
+																																																																	"start": 100,
+																																																																	"end": 152,
+																																																																	"left": {
+																																																																		"type": "Identifier",
+																																																																		"start": 100,
+																																																																		"end": 101,
+																																																																		"declares": 19,
+																																																																		"name": "a"
+																																																																	},
+																																																																	"right": {
+																																																																		"type": "ArrowFunctionExpression",
+																																																																		"start": 104,
+																																																																		"end": 152,
+																																																																		"scope": 21,
+																																																																		"defines": [
+																																																																			20,
+																																																																			25
+																																																																		],
+																																																																		"id": null,
+																																																																		"expression": true,
+																																																																		"generator": false,
+																																																																		"async": false,
+																																																																		"params": [
+																																																																			{
+																																																																				"type": "AssignmentPattern",
+																																																																				"start": 105,
+																																																																				"end": 140,
+																																																																				"left": {
+																																																																					"type": "Identifier",
+																																																																					"start": 105,
+																																																																					"end": 106,
+																																																																					"declares": 20,
+																																																																					"name": "a"
+																																																																				},
+																																																																				"right": {
+																																																																					"type": "ArrowFunctionExpression",
+																																																																					"start": 109,
+																																																																					"end": 140,
+																																																																					"scope": 22,
+																																																																					"defines": [
+																																																																						21,
+																																																																						24
+																																																																					],
+																																																																					"id": null,
+																																																																					"expression": true,
+																																																																					"generator": false,
+																																																																					"async": false,
+																																																																					"params": [
+																																																																						{
+																																																																							"type": "AssignmentPattern",
+																																																																							"start": 110,
+																																																																							"end": 128,
+																																																																							"left": {
+																																																																								"type": "Identifier",
+																																																																								"start": 110,
+																																																																								"end": 111,
+																																																																								"declares": 21,
+																																																																								"name": "a"
+																																																																							},
+																																																																							"right": {
+																																																																								"type": "ArrowFunctionExpression",
+																																																																								"start": 114,
+																																																																								"end": 128,
+																																																																								"scope": 23,
+																																																																								"defines": [
+																																																																									22,
+																																																																									23
+																																																																								],
+																																																																								"id": null,
+																																																																								"expression": true,
+																																																																								"generator": false,
+																																																																								"async": false,
+																																																																								"params": [
+																																																																									{
+																																																																										"type": "Identifier",
+																																																																										"start": 115,
+																																																																										"end": 116,
+																																																																										"declares": 22,
+																																																																										"name": "a"
+																																																																									},
+																																																																									{
+																																																																										"type": "RestElement",
+																																																																										"start": 118,
+																																																																										"end": 122,
+																																																																										"argument": {
+																																																																											"type": "Identifier",
+																																																																											"start": 121,
+																																																																											"end": 122,
+																																																																											"declares": 23,
+																																																																											"name": "r"
+																																																																										}
+																																																																									}
+																																																																								],
+																																																																								"body": {
+																																																																									"type": "Literal",
+																																																																									"start": 127,
+																																																																									"end": 128,
+																																																																									"value": 0,
+																																																																									"raw": "0"
+																																																																								}
+																																																																							}
+																																																																						},
+																																																																						{
+																																																																							"type": "RestElement",
+																																																																							"start": 130,
+																																																																							"end": 134,
+																																																																							"argument": {
+																																																																								"type": "Identifier",
+																																																																								"start": 133,
+																																																																								"end": 134,
+																																																																								"declares": 24,
+																																																																								"name": "r"
+																																																																							}
+																																																																						}
+																																																																					],
+																																																																					"body": {
+																																																																						"type": "Literal",
+																																																																						"start": 139,
+																																																																						"end": 140,
+																																																																						"value": 0,
+																																																																						"raw": "0"
+																																																																					}
+																																																																				}
+																																																																			},
+																																																																			{
+																																																																				"type": "RestElement",
+																																																																				"start": 142,
+																																																																				"end": 146,
+																																																																				"argument": {
+																																																																					"type": "Identifier",
+																																																																					"start": 145,
+																																																																					"end": 146,
+																																																																					"declares": 25,
+																																																																					"name": "r"
+																																																																				}
+																																																																			}
+																																																																		],
+																																																																		"body": {
+																																																																			"type": "Literal",
+																																																																			"start": 151,
+																																																																			"end": 152,
+																																																																			"value": 0,
+																																																																			"raw": "0"
+																																																																		}
+																																																																	}
+																																																																},
+																																																																{
+																																																																	"type": "RestElement",
+																																																																	"start": 154,
+																																																																	"end": 158,
+																																																																	"argument": {
+																																																																		"type": "Identifier",
+																																																																		"start": 157,
+																																																																		"end": 158,
+																																																																		"declares": 26,
+																																																																		"name": "r"
+																																																																	}
+																																																																}
+																																																															],
+																																																															"body": {
+																																																																"type": "Literal",
+																																																																"start": 163,
+																																																																"end": 164,
+																																																																"value": 0,
+																																																																"raw": "0"
+																																																															}
+																																																														}
+																																																													},
+																																																													{
+																																																														"type": "RestElement",
+																																																														"start": 166,
+																																																														"end": 170,
+																																																														"argument": {
+																																																															"type": "Identifier",
+																																																															"start": 169,
+																																																															"end": 170,
+																																																															"declares": 27,
+																																																															"name": "r"
+																																																														}
+																																																													}
+																																																												],
+																																																												"body": {
+																																																													"type": "Literal",
+																																																													"start": 175,
+																																																													"end": 176,
+																																																													"value": 0,
+																																																													"raw": "0"
+																																																												}
+																																																											}
+																																																										},
+																																																										{
+																																																											"type": "RestElement",
+																																																											"start": 178,
+																																																											"end": 182,
+																																																											"argument": {
+																																																												"type": "Identifier",
+																																																												"start": 181,
+																																																												"end": 182,
+																																																												"declares": 28,
+																																																												"name": "r"
+																																																											}
+																																																										}
+																																																									],
+																																																									"body": {
+																																																										"type": "Literal",
+																																																										"start": 187,
+																																																										"end": 188,
+																																																										"value": 0,
+																																																										"raw": "0"
+																																																									}
+																																																								}
+																																																							},
+																																																							{
+																																																								"type": "RestElement",
+																																																								"start": 190,
+																																																								"end": 194,
+																																																								"argument": {
+																																																									"type": "Identifier",
+																																																									"start": 193,
+																																																									"end": 194,
+																																																									"declares": 29,
+																																																									"name": "r"
+																																																								}
+																																																							}
+																																																						],
+																																																						"body": {
+																																																							"type": "Literal",
+																																																							"start": 199,
+																																																							"end": 200,
+																																																							"value": 0,
+																																																							"raw": "0"
+																																																						}
+																																																					}
+																																																				},
+																																																				{
+																																																					"type": "RestElement",
+																																																					"start": 202,
+																																																					"end": 206,
+																																																					"argument": {
+																																																						"type": "Identifier",
+																																																						"start": 205,
+																																																						"end": 206,
+																																																						"declares": 30,
+																																																						"name": "r"
+																																																					}
+																																																				}
+																																																			],
+																																																			"body": {
+																																																				"type": "Literal",
+																																																				"start": 211,
+																																																				"end": 212,
+																																																				"value": 0,
+																																																				"raw": "0"
+																																																			}
+																																																		}
+																																																	},
+																																																	{
+																																																		"type": "RestElement",
+																																																		"start": 214,
+																																																		"end": 218,
+																																																		"argument": {
+																																																			"type": "Identifier",
+																																																			"start": 217,
+																																																			"end": 218,
+																																																			"declares": 31,
+																																																			"name": "r"
+																																																		}
+																																																	}
+																																																],
+																																																"body": {
+																																																	"type": "Literal",
+																																																	"start": 223,
+																																																	"end": 224,
+																																																	"value": 0,
+																																																	"raw": "0"
+																																																}
+																																															}
+																																														},
+																																														{
+																																															"type": "RestElement",
+																																															"start": 226,
+																																															"end": 230,
+																																															"argument": {
+																																																"type": "Identifier",
+																																																"start": 229,
+																																																"end": 230,
+																																																"declares": 32,
+																																																"name": "r"
+																																															}
+																																														}
+																																													],
+																																													"body": {
+																																														"type": "Literal",
+																																														"start": 235,
+																																														"end": 236,
+																																														"value": 0,
+																																														"raw": "0"
+																																													}
+																																												}
+																																											},
+																																											{
+																																												"type": "RestElement",
+																																												"start": 238,
+																																												"end": 242,
+																																												"argument": {
+																																													"type": "Identifier",
+																																													"start": 241,
+																																													"end": 242,
+																																													"declares": 33,
+																																													"name": "r"
+																																												}
+																																											}
+																																										],
+																																										"body": {
+																																											"type": "Literal",
+																																											"start": 247,
+																																											"end": 248,
+																																											"value": 0,
+																																											"raw": "0"
+																																										}
+																																									}
+																																								},
+																																								{
+																																									"type": "RestElement",
+																																									"start": 250,
+																																									"end": 254,
+																																									"argument": {
+																																										"type": "Identifier",
+																																										"start": 253,
+																																										"end": 254,
+																																										"declares": 34,
+																																										"name": "r"
+																																									}
+																																								}
+																																							],
+																																							"body": {
+																																								"type": "Literal",
+																																								"start": 259,
+																																								"end": 260,
+																																								"value": 0,
+																																								"raw": "0"
+																																							}
+																																						}
+																																					},
+																																					{
+																																						"type": "RestElement",
+																																						"start": 262,
+																																						"end": 266,
+																																						"argument": {
+																																							"type": "Identifier",
+																																							"start": 265,
+																																							"end": 266,
+																																							"declares": 35,
+																																							"name": "r"
+																																						}
+																																					}
+																																				],
+																																				"body": {
+																																					"type": "Literal",
+																																					"start": 271,
+																																					"end": 272,
+																																					"value": 0,
+																																					"raw": "0"
+																																				}
+																																			}
+																																		},
+																																		{
+																																			"type": "RestElement",
+																																			"start": 274,
+																																			"end": 278,
+																																			"argument": {
+																																				"type": "Identifier",
+																																				"start": 277,
+																																				"end": 278,
+																																				"declares": 36,
+																																				"name": "r"
+																																			}
+																																		}
+																																	],
+																																	"body": {
+																																		"type": "Literal",
+																																		"start": 283,
+																																		"end": 284,
+																																		"value": 0,
+																																		"raw": "0"
+																																	}
+																																}
+																															},
+																															{
+																																"type": "RestElement",
+																																"start": 286,
+																																"end": 290,
+																																"argument": {
+																																	"type": "Identifier",
+																																	"start": 289,
+																																	"end": 290,
+																																	"declares": 37,
+																																	"name": "r"
+																																}
+																															}
+																														],
+																														"body": {
+																															"type": "Literal",
+																															"start": 295,
+																															"end": 296,
+																															"value": 0,
+																															"raw": "0"
+																														}
+																													}
+																												},
+																												{
+																													"type": "RestElement",
+																													"start": 298,
+																													"end": 302,
+																													"argument": {
+																														"type": "Identifier",
+																														"start": 301,
+																														"end": 302,
+																														"declares": 38,
+																														"name": "r"
+																													}
+																												}
+																											],
+																											"body": {
+																												"type": "Literal",
+																												"start": 307,
+																												"end": 308,
+																												"value": 0,
+																												"raw": "0"
+																											}
+																										}
+																									},
+																									{
+																										"type": "RestElement",
+																										"start": 310,
+																										"end": 314,
+																										"argument": {
+																											"type": "Identifier",
+																											"start": 313,
+																											"end": 314,
+																											"declares": 39,
+																											"name": "r"
+																										}
+																									}
+																								],
+																								"body": {
+																									"type": "Literal",
+																									"start": 319,
+																									"end": 320,
+																									"value": 0,
+																									"raw": "0"
+																								}
+																							}
+																						},
+																						{
+																							"type": "RestElement",
+																							"start": 322,
+																							"end": 326,
+																							"argument": {
+																								"type": "Identifier",
+																								"start": 325,
+																								"end": 326,
+																								"declares": 40,
+																								"name": "r"
+																							}
+																						}
+																					],
+																					"body": {
+																						"type": "Literal",
+																						"start": 331,
+																						"end": 332,
+																						"value": 0,
+																						"raw": "0"
+																					}
+																				}
+																			},
+																			{
+																				"type": "RestElement",
+																				"start": 334,
+																				"end": 338,
+																				"argument": {
+																					"type": "Identifier",
+																					"start": 337,
+																					"end": 338,
+																					"declares": 41,
+																					"name": "r"
+																				}
+																			}
+																		],
+																		"body": {
+																			"type": "Literal",
+																			"start": 343,
+																			"end": 344,
+																			"value": 0,
+																			"raw": "0"
+																		}
+																	}
+																},
+																{
+																	"type": "RestElement",
+																	"start": 346,
+																	"end": 350,
+																	"argument": {
+																		"type": "Identifier",
+																		"start": 349,
+																		"end": 350,
+																		"declares": 42,
+																		"name": "r"
+																	}
+																}
+															],
+															"body": {
+																"type": "Literal",
+																"start": 355,
+																"end": 356,
+																"value": 0,
+																"raw": "0"
+															}
+														}
+													},
+													{
+														"type": "RestElement",
+														"start": 358,
+														"end": 362,
+														"argument": {
+															"type": "Identifier",
+															"start": 361,
+															"end": 362,
+															"declares": 43,
+															"name": "r"
+														}
+													}
+												],
+												"body": {
+													"type": "Literal",
+													"start": 367,
+													"end": 368,
+													"value": 0,
+													"raw": "0"
+												}
+											}
+										},
+										{
+											"type": "RestElement",
+											"start": 370,
+											"end": 374,
+											"argument": {
+												"type": "Identifier",
+												"start": 373,
+												"end": 374,
+												"declares": 44,
+												"name": "r"
+											}
+										}
+									],
+									"body": {
+										"type": "Literal",
+										"start": 379,
+										"end": 380,
+										"value": 0,
+										"raw": "0"
+									}
+								}
+							},
+							{
+								"type": "RestElement",
+								"start": 382,
+								"end": 386,
+								"argument": {
+									"type": "Identifier",
+									"start": 385,
+									"end": 386,
+									"declares": 45,
+									"name": "r"
+								}
+							}
+						],
+						"body": {
+							"type": "Literal",
+							"start": 391,
+							"end": 392,
+							"value": 0,
+							"raw": "0"
+						}
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 3,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 4,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 5,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 6,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 7,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 8,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 9,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 10,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 11,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 12,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 13,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 14,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 15,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 16,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 17,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 18,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 19,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 20,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 21,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 22,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 3,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 4,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 5,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 6,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 7,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 8,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 9,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 10,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 11,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 12,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 13,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 14,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 15,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 16,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 17,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 18,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 19,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 20,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 21,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 22,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 23,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 23,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 22,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 21,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 20,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 19,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 18,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 17,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 16,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 15,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 14,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 13,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 12,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 11,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 10,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 9,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 8,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 7,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 6,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 5,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 4,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 3,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "r",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}
