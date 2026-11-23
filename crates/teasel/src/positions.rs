@@ -42,31 +42,14 @@ impl Positions {
 		}
 	}
 
-	/// The byte offset of a UTF-16 offset, or why there is none; a position inside a surrogate
-	/// pair maps to the byte after the character's first, which is not a character boundary.
-	pub(crate) fn byte_offset(&self, utf16: f64) -> Result<u32, String> {
-		if !(utf16 >= 0.0 && utf16.fract() == 0.0 && utf16 <= u32::MAX as f64) {
-			return Err(format!("offset {utf16} is not a valid position"));
-		}
-		let target = utf16 as u32;
-		let total_gap = self.gaps.last().map_or(0, |g| g.1);
-		if target > self.len - total_gap {
-			return Err(format!("offset {target} is past the end of the source"));
-		}
-		let i = self.gaps.partition_point(|g| g.0 - g.1 <= target);
-		Ok(target + if i == 0 { 0 } else { self.gaps[i - 1].1 })
-	}
-
-	pub(crate) fn map_values(&self, values: &mut [crate::ast::Value]) {
+	pub(crate) fn map_slices(&self, slices: &mut [crate::ast::Span]) {
 		if self.gaps.is_empty() {
 			return;
 		}
 		let mut cursor = Cursor::default();
-		for value in values {
-			if let crate::ast::Value::Slice(start, end) = value {
-				*start = self.offset(&mut cursor, *start);
-				*end = self.offset(&mut cursor, *end);
-			}
+		for slice in slices {
+			slice.start = self.offset(&mut cursor, slice.start);
+			slice.end = self.offset(&mut cursor, slice.end);
 		}
 	}
 
@@ -179,16 +162,6 @@ fn locate<T>(items: &[T], hint: usize, byte: u32, key: impl Fn(&T) -> u32) -> us
 #[cfg(test)]
 mod tests {
 	use super::Positions;
-
-	#[test]
-	fn byte_offsets() {
-		let positions = Positions::new("aé𝒳b");
-		let bytes: Vec<_> = (0..=6).map(|n| positions.byte_offset(n as f64).ok()).collect();
-		assert_eq!(bytes, [Some(0), Some(1), Some(3), Some(4), Some(7), Some(8), None]);
-		assert!(positions.byte_offset(-1.0).is_err());
-		assert!(positions.byte_offset(1.5).is_err());
-		assert_eq!(Positions::new("abc").byte_offset(3.0), Ok(3));
-	}
 
 	#[test]
 	fn lines() {

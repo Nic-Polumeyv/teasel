@@ -4,7 +4,7 @@
 //! past a comma with code after it on its line, which it then leads.
 //! The last node of a block, program, array or object takes everything up to the closing
 //! bracket, and an empty one keeps what is inside it as `innerComments`; what is left trails the
-//! root. Children are visited in source order. A host's own nodes take no comments: those stay
+//! root. Children are visited in source order. Svelte's own nodes take no comments: those stay
 //! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
@@ -40,7 +40,7 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 	let mut attached = attacher.attached;
 	let last_node = *ast.node(last);
 	if rest < ast.comments.len() as u32
-		&& !matches!(last_node.kind, NodeKind::Host(_))
+		&& !last_node.kind.is_svelte()
 		&& (ast.comments[rest as usize].start >= last_node.end || matches!(last_node.kind, NodeKind::Program { .. }))
 	{
 		let trailing = &mut attached.entry(last).trailing;
@@ -85,9 +85,9 @@ impl Attacher<'_> {
 			let n = self.ast.node(node);
 			(n.start, n.end)
 		};
-		let host = self.is_host(node);
+		let markup = self.ast.node(node).kind.is_svelte();
 		while self.peek().is_some_and(|c| self.start(c) < start) {
-			if host {
+			if markup {
 				self.next += 1;
 			} else {
 				self.take(node, Place::Leading);
@@ -117,7 +117,7 @@ impl Attacher<'_> {
 		}
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
-		if host || parent_end == Some(end) {
+		if markup || parent_end == Some(end) {
 			return;
 		}
 		if parent.is_some_and(|p| self.is_last_in(p, node)) {
@@ -125,8 +125,8 @@ impl Attacher<'_> {
 			while self.peek().is_some_and(|c| self.start(c) < parent_end) {
 				self.take(node, Place::Trailing);
 			}
-		} else if parent.is_some_and(|p| self.is_host(p)) {
-			// the last JavaScript before the host's own syntax resumes takes what lies between
+		} else if parent.is_some_and(|p| self.ast.node(p).kind.is_svelte()) {
+			// the last JavaScript before Svelte's own syntax resumes takes what lies between
 			let mut from = end;
 			while let Some(c) = self.peek() {
 				let at = self.start(c);
@@ -184,10 +184,6 @@ impl Attacher<'_> {
 				}
 			}
 		}
-	}
-
-	fn is_host(&self, node: NodeId) -> bool {
-		matches!(self.ast.node(node).kind, NodeKind::Host(_))
 	}
 
 	fn only_separators(&self, from: u32, to: u32) -> bool {

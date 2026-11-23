@@ -19,6 +19,9 @@ pub enum Ty {
 	OptU32,
 	/// Two words: a range.
 	Pair,
+	/// A slice of the source, by its number in the tree's slices.
+	Slice,
+	OptSlice,
 	Enum(&'static [&'static str]),
 	OptEnum(&'static [&'static str]),
 	/// A record inside the record, its fields' offsets from its own start.
@@ -79,6 +82,12 @@ impl Described for Option<u32> {
 }
 impl Described for [u32; 2] {
 	const TY: Ty = Ty::Pair;
+}
+impl Described for crate::ast::SliceId {
+	const TY: Ty = Ty::Slice;
+}
+impl Described for Option<crate::ast::SliceId> {
+	const TY: Ty = Ty::OptSlice;
 }
 
 /// An enum of names: `repr(u8)` in declaration order, each variant spelled as the writer emits it.

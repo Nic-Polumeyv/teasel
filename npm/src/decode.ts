@@ -3,7 +3,7 @@
 
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
-import { SLOT, type Options } from './options.ts';
+import { SLOT, type Flags } from './options.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -33,19 +33,15 @@ interface Missing {
 }
 export type RawOp = [op: string, key: string, at: number, ty: string, names: string[], at2: number, value: string | boolean | null, other: string, inner: RawOp[]];
 export interface Layout {
-	/** A node's record: its size and where its span and its kind sit; `payload` is the word of a host's index, `Host`'s field. */
-	node: { size: number; start: number; end: number; kind: number; payload: number };
+	/** A node's record: its size and where its span and its kind sit. */
+	node: { size: number; start: number; end: number; kind: number };
 	/** The kinds' names, by tag. */
 	kinds: string[];
 	extras?: { size: number; fields: Field[] };
 	/** The records beside the nodes and the tables, by their view's name. */
-	records: Record<'comments' | 'attached' | 'errors' | 'hosts' | 'host_vals' | 'spans' | 'marks', { size: number; fields: Field[] }>;
+	records: Record<'comments' | 'attached' | 'errors' | 'spans' | 'marks', { size: number; fields: Field[] }>;
 	none: Missing;
 	views: { js: string[]; ts?: string[] };
-	/** The names the engine gives host nodes' types and fields itself, the first of every grammar's. */
-	names: string[];
-	/** Each type of node a stylesheet holds with the fields that hold nodes. */
-	stylesheet: Record<string, string[]>;
 	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's name, its record's size and how its rows are spelled. */
 	recipes: { kinds: RawOp[][]; rows: [name: string, size: number, ops: RawOp[]][]; adds?: RawOp[][]; erased?: RawOp[] };
 }
@@ -60,7 +56,7 @@ interface Op {
 	names: string[];
 	/** The binding's field of `othername`. */
 	at2: number;
-	/** What `constbool` spells, `boolnames`' name for true, or a `host` value's tag. */
+	/** What `constbool` spells, `boolnames`' name for true, or whether `edge` reads the end. */
 	value: any;
 	/** `boolnames`' name for false, or what `enumor` spells when the byte names none. */
 	other: string;
@@ -92,40 +88,26 @@ type Builder = (S: State, id: number, parent: Decoded | undefined) => Decoded;
 type Table = 'scopes' | 'bindings' | 'references' | 'roots';
 /** A table's row from its record, `b` words into the view, and the table it joins, whose rows before it it reads. */
 type Row = (S: State, view: Uint32Array, b: number, table: Decoded[]) => Decoded;
-/** A host's node from its fields, `from` on in the hosts' keys and values. */
-type HostBuilder = (S: State, id: number, index: number, from: number, parent: Decoded | undefined) => Decoded;
 interface Rows {
 	build: Row;
 	words: number;
 }
-/** A grammar's names by number, and what is made of the shapes the engine numbers for its host nodes as it meets them. */
-interface Hosts {
-	names: readonly string[];
-	ops: (Op[] | undefined)[];
-	builders: (HostBuilder | undefined)[][];
-}
-
 interface Compiled {
 	layout: Layout;
 	words: number;
 	kind: number;
-	host: number;
+	/** The first of Svelte's kinds: every kind from it on is one. */
+	markup: number;
 	identifier: number;
 	name: number;
 	/** An extras record with nothing set. */
 	blank: Uint32Array;
 	R: Records;
-	/** The word of a node holding a host's index, `Host`'s field. */
-	payload: number;
 	/** Each table's row builder and its record's words; made on the first answer with scopes. */
 	rows: Record<keyof typeof LINKED, Rows> | undefined;
 	js: Language;
 	/** Made on the first TypeScript answer. */
 	ts: Language | undefined;
-	/** By a grammar's names, and the stylesheet's own; dropped once the engine starts over, which numbers shapes anew. */
-	hosts: WeakMap<readonly string[], Hosts>;
-	sheet: Hosts | undefined;
-	generation: number | undefined;
 }
 
 /** A field by its path, `a` or `a.b.c`, an inner field at its offset in the record. */
@@ -146,7 +128,7 @@ export function operations(raw: RawOp[]): Op[] {
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
 function places(views: string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
-	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), hosts: of('hosts'), host_keys: of('host_keys'), host_vals: of('host_vals'), host_strings: of('host_strings'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), extras_slots: of('extras_slots'), extras: of('extras'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
+	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), modifiers: of('modifiers'), slices: of('slices'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), extras_slots: of('extras_slots'), extras: of('extras'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
@@ -175,14 +157,11 @@ function records(layout: Layout) {
 		return { tag: tag >> 2, value: value >> 2, missing: none.missing };
 	};
 	const run = (name: keyof Layout['records'], path: string) => [word(name, `${path}.start`), word(name, `${path}.len`)];
-	const tag = of('host_vals', 'tag');
 	return {
 		span: { words: words('spans'), start: word('spans', 'start'), end: word('spans', 'end') },
 		comment: { words: words('comments'), block: of('comments', 'block').at, text: word('comments', 'text.start'), text_end: word('comments', 'text.end'), start: word('comments', 'span.start'), end: word('comments', 'span.end') },
 		attached: { words: words('attached'), leading: run('attached', 'leading'), trailing: run('attached', 'trailing'), inner: run('attached', 'inner') },
 		error: { words: words('errors'), code: word('errors', 'code'), first: optional('errors', 'first'), second: optional('errors', 'second'), pos: word('errors', 'pos'), end: word('errors', 'end'), line: word('errors', 'line'), column: word('errors', 'column') },
-		host: { words: words('hosts'), ty: word('hosts', 'ty'), from: word('hosts', 'fields.start'), len: word('hosts', 'fields.len'), shape: word('hosts', 'shape') },
-		value: { size: R.host_vals.size, words: words('host_vals'), tag: tag.at, tags: tag.names!, value: of('host_vals', 'value').at },
 		mark: { words: words('marks'), string: word('marks', 'string'), at: word('marks', 'at'), unit: word('marks', 'unit') },
 	};
 }
@@ -207,18 +186,14 @@ function compile(engine: Views): Compiled {
 		layout,
 		words: layout.node.size >> 2,
 		kind: layout.node.kind,
-		host: tag('Host'),
+		markup: tag('Fragment'),
 		identifier: tag('Identifier'),
 		name: operations(layout.recipes.kinds[tag('Identifier')]).find((op) => op.key === 'name')!.at,
 		blank,
 		R,
-		payload: layout.node.payload >> 2,
 		rows: undefined,
 		js: language(layout, layout.views.js, false),
 		ts: undefined,
-		hosts: new WeakMap(),
-		sheet: undefined,
-		generation: engine.generation,
 	};
 	compiled.set(engine, made);
 	return made;
@@ -246,9 +221,6 @@ interface State {
 	G: Language;
 	/** The builder of each kind, by a node's tag. */
 	J: Builder[];
-	/** The builders of the hosts' nodes by their shape's number, the shapes' operations, and the names by number. */
-	H: (HostBuilder | undefined)[];
-	X: Hosts;
 	N: Uint32Array;
 	L: Uint32Array;
 	numbers: Float64Array;
@@ -267,10 +239,8 @@ interface State {
 	made: Decoded[];
 	attached_slots: Uint32Array | null;
 	attached: Uint32Array;
-	hosts: Uint32Array;
-	host_keys: Uint32Array;
-	host_vals: Uint32Array;
-	host_strings: Uint32Array;
+	modifiers: Uint32Array;
+	slices: Uint32Array;
 	of_node: Uint32Array | null;
 	of_identifier: Uint32Array;
 	root_of: Uint32Array;
@@ -473,11 +443,15 @@ interface Spelling<E, St> {
 	/** The node with an id, built into the node at hand. */
 	built(id: E): E;
 	items(start: E, len: E, params: boolean): E;
+	/** The word of a list's item by its place: a node's id plus one, zero for none. */
+	item(start: E, place: number): E;
+	/** The source a slice of the tree's names, and where the slice starts or ends. */
+	span(id: E): E;
+	edge(id: E, end: boolean): E;
 	pair(a: E, b: E): E;
 	object(fields: [string, E][]): E;
-	/** The node's own text, `back` characters short of its end; and the source between two offsets. */
-	slice(back: number): E;
-	text(start: E, end: E): E;
+	/** The node's own text, `front` characters past its start and `back` short of its end; and the source between two offsets. */
+	slice(front: number, back: number): E;
 	strs(start: E, len: E): E;
 	comments(): E;
 	finite(value: E): E;
@@ -494,8 +468,8 @@ interface Spelling<E, St> {
 	kept(key: string): St;
 }
 
-// `raw` and `bigint` are keys of their own name
-const key_of = (op: Op) => (op.op === 'raw' || op.op === 'bigint' ? op.op : op.key);
+// `bigint` is a key of its own name
+const key_of = (op: Op) => (op.op === 'bigint' ? op.op : op.key);
 
 // an optional's tag word sits among its value's words, which follow their order around it
 const tagged = ({ tag }: Tagged, at: number) => [at + tag * 4, at + (tag === 0 ? 4 : 0)];
@@ -509,11 +483,13 @@ const child = <E, St>(B: Spelling<E, St>, word: E, typescript = false): E => {
 export const holds_nodes = (op: Op) =>
 	op.op === 'node' ||
 	op.op === 'list' ||
+	op.op === 'item' ||
+	op.op === 'itemkey' ||
+	op.op === 'comments' ||
 	op.op === 'params' ||
 	op.op === 'othername' ||
-	(op.op === 'opt' && op.ty !== '?str' && op.ty !== '?u32') ||
+	(op.op === 'opt' && op.ty === '?node') ||
 	((op.op === 'maybe' || op.op === 'extra') && op.ty !== '?enum') ||
-	(op.op === 'host' && host_holds(op.value)) ||
 	(op.op === 'object' && op.inner.some(holds_nodes));
 
 /** An operation every node of the kind has: its value. */
@@ -526,6 +502,10 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 				const which = op.ty === '?str' ? none.str : none.int;
 				const [tag, from] = tagged(which, op.at);
 				return B.pick(B.eq(B.word(tag), B.lit(which.missing)), B.lit(null), op.ty === '?str' ? B.strings(B.word(from)) : B.word(from));
+			}
+			if (op.ty === '?slice') {
+				const w = B.hold(B.word(op.at));
+				return B.pick(B.eq(w, B.lit(0)), B.lit(null), B.span(w));
 			}
 			return child(B, B.word(op.at));
 		}
@@ -548,6 +528,16 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.word(op.at);
 		case 'pair':
 			return B.pair(B.word(op.at), B.word(op.at + 4));
+		case 'strs':
+			return B.strs(B.word(op.at), B.word(op.at + 4));
+		case 'item':
+			return child(B, B.item(B.word(op.at), op.at2));
+		case 'slice':
+			return B.span(B.word(op.at));
+		case 'edge':
+			return B.edge(B.word(op.at), op.value === true);
+		case 'comments':
+			return B.comments();
 		case 'list':
 		case 'params':
 			return B.items(B.word(op.at), B.word(op.at + 4), op.op === 'params' && erase);
@@ -563,12 +553,12 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.pick(B.eq(B.byte(op.at), B.lit(1)), B.lit(op.value), B.lit(op.other));
 		case 'float':
 			return B.finite(B.numbers(B.word(op.at)));
-		case 'raw':
-			return B.slice(0);
+		case 'inner':
+			return B.slice(op.at, op.at2);
 		case 'bigint':
-			return B.bigint(B.slice(1));
+			return B.bigint(B.slice(0, 1));
 		case 'bigintvalue':
-			return B.bigint_value(B.slice(1));
+			return B.bigint_value(B.slice(0, 1));
 		case 'regexp':
 			return B.regexp(B.strings(B.word(op.at)), B.strings(B.word(op.at2)));
 		case 'optstrkey': {
@@ -583,8 +573,6 @@ function value<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: boolean)
 			return B.empty();
 		case 'object':
 			return B.object(op.inner.map((inner) => [inner.key, value(B, inner, none, erase)]));
-		case 'host':
-			return host_value(B, op.value, op.at);
 		case 'othername': {
 			const w = B.hold(B.word(op.at));
 			return B.othername(B.eq(w, B.word(op.at2)), B.dec(w));
@@ -605,39 +593,16 @@ function conditional<E, St>(B: Spelling<E, St>, op: Op, none: Missing, erase: bo
 			const [tag, from] = tagged(none.str, op.at);
 			return B.when(B.ne(B.word(tag), B.lit(none.str.missing)), () => [B.set(key, B.strings(B.word(from)))]);
 		}
+		case 'itemkey': {
+			const item = B.item(B.word(op.at), op.at2);
+			return B.when(B.ne(item, B.lit(0)), () => [B.set(key, B.built(B.dec(item)))]);
+		}
+		case 'slicekey':
+			return B.when(B.ne(B.word(op.at), B.lit(0)), () => [B.set(key, B.span(B.word(op.at)))]);
 		case 'keepif':
 			return erase ? B.when(B.eq(B.byte(op.at), B.lit(1)), () => [B.kept(key)]) : undefined;
 	}
 	return undefined;
-}
-
-// the engine tags a host node's field by the kind of value, `VALUE_FIELDS` names each
-const host_holds = (tag: string) => tag === 'node' || tag === 'nodes' || tag === 'comments';
-
-/** A host node's field from the two words of its value at `at`. */
-function host_value<E, St>(B: Spelling<E, St>, tag: string, at: number): E {
-	const a = B.word(at), b = B.word(at + 4);
-	switch (tag) {
-		case 'node':
-			return B.built(B.dec(a));
-		case 'nodes':
-			return B.items(a, b, false);
-		case 'comments':
-			return B.comments();
-		case 'str':
-			return B.strings(a);
-		case 'slice':
-			return B.text(a, b);
-		case 'strs':
-			return B.strs(a, b);
-		case 'bool':
-			return B.eq(B.byte(at), B.lit(1));
-		case 'int':
-			return a;
-		case 'null':
-			return B.lit(null);
-	}
-	throw new Error(`no host value ${tag}`);
 }
 
 // ── The closure spelling: what the interpreter runs where code generation is forbidden. A held
@@ -683,14 +648,19 @@ class Closures implements Spelling<Value, Stmt> {
 	at = (table: Value, index: Value): Value => (S, V, b, n, L) => table(S, V, b, n, L)[index(S, V, b, n, L)];
 	built = (id: Value): Value => (S, V, b, n, L) => build(S, id(S, V, b, n, L), n);
 	items = (start: Value, len: Value, params_: boolean): Value => (S, V, b, n, L) => (params_ ? params : items)(S, start(S, V, b, n, L), len(S, V, b, n, L), n);
+	item = (start: Value, place: number): Value => (S, V, b, n, L) => S.L[start(S, V, b, n, L) + place];
+	span = (id: Value): Value => (S, V, b, n, L) => {
+		const at = (id(S, V, b, n, L) - 1) * 2;
+		return S.source.slice(S.slices[at], S.slices[at + 1]);
+	};
+	edge = (id: Value, end: boolean): Value => (S, V, b, n, L) => S.slices[(id(S, V, b, n, L) - 1) * 2 + (end ? 1 : 0)];
 	pair = (a: Value, c: Value): Value => (S, V, b, n, L) => [a(S, V, b, n, L), c(S, V, b, n, L)];
 	object = (fields: [string, Value][]): Value => (S, V, b, n, L) => {
 		const o: Decoded = {};
 		for (const [key, field] of fields) o[key] = field(S, V, b, n, L);
 		return o;
 	};
-	slice = (back: number): Value => (S, V, b, n) => S.source.slice(n.start, n.end - back);
-	text = (start: Value, end: Value): Value => (S, V, b, n, L) => S.source.slice(start(S, V, b, n, L), end(S, V, b, n, L));
+	slice = (front: number, back: number): Value => (S, V, b, n) => S.source.slice(n.start + front, n.end - back);
 	strs = (start: Value, len: Value): Value => (S, V, b, n, L) => strs(S, start(S, V, b, n, L), len(S, V, b, n, L));
 	comments = (): Value => (S, V, b, n) => comments(S, n);
 	finite = (value: Value): Value => (S, V, b, n, L) => finite(value(S, V, b, n, L));
@@ -749,7 +719,17 @@ function program(ops: Op[], none: Missing, typescript: boolean): Program {
 	const body: Stmt[] = [];
 	let size = 0;
 	for (const op of ops) {
-		if (op.op === 'type' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
+		if (op.op === 'type' || op.op === 'bare' || op.op === 'typeof' || op.op === 'keep' || op.op === 'through') continue;
+		if (op.op === 'splice') {
+			// the node held there goes on with this one's keys
+			const at = op.at;
+			body.push((S, V, b, n) => {
+				const held = V[(b + at) >> 2] - 1;
+				const ops = recipe(S.G, S.N[held * S.C.words + (S.C.kind >> 2)]);
+				fill(S, held, n, program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase), S.N, held * S.C.words * 4 + S.C.kind);
+			});
+			continue;
+		}
 		if (op.op !== 'keepif') size++;
 		if (sometimes(op, typescript)) {
 			const set = conditional(B, op, none, true);
@@ -790,52 +770,19 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 	}
 	const head = ops[at];
 	const P = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
-	const n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, wide(S, id, P));
+	let n: Decoded;
+	if (head.op === 'bare') {
+		n = { type: head.key };
+		n[PARENT] = parent;
+		n[SCOPE] = undefined;
+		if (S.of_node !== null && !S.name_only) facts(S, n, id);
+	} else n = begin(S, head.op === 'type' ? head.key : head.names[byte(view, base + head.at)], id, parent, wide(S, id, P));
 	const pending = S.pending;
 	S.pending = null;
 	fill(S, id, n, P, view, base);
 	settle(S, n, id, pending);
 	return n;
 }
-
-const host_tag = (S: State, field: number) => S.C.R.value.tags[byte(S.host_vals, field * S.C.R.value.size + S.C.R.value.tag)];
-const host_type = (S: State, index: number) => S.X.names[S.hosts[index * S.C.R.host.words + S.C.R.host.ty]] ?? null;
-const host_span = (S: State, index: number) => host_type(S, index) !== 'Fragment';
-
-// a host node's fields as operations, one list per shape the engine numbers
-function host_ops(S: State, index: number): Op[] {
-	const H = S.C.R.host, V = S.C.R.value;
-	const shape = S.hosts[index * H.words + H.shape];
-	let ops = S.X.ops[shape];
-	if (ops === undefined) {
-		const from = S.hosts[index * H.words + H.from], len = S.hosts[index * H.words + H.len];
-		ops = S.X.ops[shape] = [];
-		for (let i = 0; i < len; i++) ops.push({ op: 'host', key: S.X.names[S.host_keys[from + i]], at: i * V.size + V.value, ty: '', names: [], at2: 0, value: host_tag(S, from + i), other: '', inner: [] });
-	}
-	return ops;
-}
-
-function host(S: State, id: number, index: number, parent: Decoded | undefined): Decoded {
-	const ty = host_type(S, index), from = S.hosts[index * S.C.R.host.words + S.C.R.host.from];
-	let n: Decoded;
-	if (ty === null) {
-		// an object of the host's without a type, positions and all
-		const at = id * S.ps + S.po;
-		n = { start: S.P[at], end: S.P[at + 1] };
-	} else if (host_span(S, index)) n = begin(S, ty, id, parent);
-	else {
-		n = { type: ty };
-		n[PARENT] = parent;
-		n[SCOPE] = undefined;
-		if (S.of_node !== null && !S.name_only) facts(S, n, id);
-	}
-	const pending = S.pending;
-	S.pending = null;
-	apply(S, id, n, host_ops(S, index), S.host_vals, from * S.C.R.value.size);
-	settle(S, n, id, pending);
-	return n;
-}
-
 
 function build(S: State, id: number, parent: Decoded | undefined): Decoded {
 	return S.J[S.N[id * S.C.words + (S.C.kind >> 2)]](S, id, parent);
@@ -893,17 +840,16 @@ function late(S: State, n: Decoded, id: number) {
 }
 
 const FACTS = 1, ERASE = 2;
-const CONDITIONAL = new Set(['optlistkey', 'optstrkey', 'keepif']);
+const CONDITIONAL = new Set(['optlistkey', 'optstrkey', 'itemkey', 'slicekey', 'keepif']);
 /** Whether an operation sets its key on only some nodes of the kind. */
 const sometimes = (op: Op, typescript: boolean) => CONDITIONAL.has(op.op) && !(typescript && op.op === 'optstrkey');
 
 // ── The source spelling: what a generated builder is made of. `word` and `byte` spell a read of
-// the record at hand: a node's, a table row's, a host node's fields.
+// the record at hand: a node's or a table row's.
 class Source implements Spelling<string, string> {
 	constants: (string | true)[][] = [];
 	lead: string[] = [];
 	count = 0;
-	first_text: { start: string; end: string; held: string } | undefined;
 	word: (at: number) => string;
 	byte: (at: number) => string;
 	readonly facts: boolean;
@@ -932,15 +878,18 @@ class Source implements Spelling<string, string> {
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
 	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, ${into})`;
 	items = (start: string, len: string, params: boolean) => `${params ? 'params' : 'items'}(S, ${start}, ${len}, n)`;
+	item = (start: string, place: number) => `S.L[${start} + ${place}]`;
+	span = (id: string) => `S.source.slice(S.slices[(${id} - 1) * 2], S.slices[(${id} - 1) * 2 + 1])`;
+	edge = (id: string, end: boolean) => `S.slices[(${id} - 1) * 2${end ? ' + 1' : ''}]`;
 	pair = (a: string, b: string) => `[${a}, ${b}]`;
 	object = (fields: [string, string][]) => `{ ${fields.map(([key, field]) => `${JSON.stringify(key)}: ${field}`).join(', ')} }`;
-	slice = (back: number) => `S.source.slice(S.P[p], S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
-	// a second text over the first's span, Text's `data` beside its `raw`, is the first's string
-	text = (start: string, end: string) => {
-		const first = this.first_text;
-		if (first !== undefined) return `(${start} === ${first.start} && ${end} === ${first.end} ? ${first.held} : S.source.slice(${start}, ${end}))`;
-		this.first_text = { start, end, held: this.hold(`S.source.slice(${start}, ${end})`) };
-		return this.first_text.held;
+	/** Whether the kind spells its whole text under two keys, a Text's `raw` and `data`: one string then. */
+	shared = false;
+	whole: string | undefined;
+	slice = (front: number, back: number) => {
+		const text = `S.source.slice(S.P[p]${front === 0 ? '' : ` + ${front}`}, S.P[p + 1]${back === 0 ? '' : ` - ${back}`})`;
+		if (!this.shared || front !== 0 || back !== 0) return text;
+		return (this.whole ??= this.hold(text));
 	};
 	strs = (start: string, len: string) => `strs(S, ${start}, ${len})`;
 	comments = () => 'comments(S, n)';
@@ -982,7 +931,7 @@ const LATE = 'if ((S.late[id >>> 5] >>> (id & 31) & 1) === 1) late(S, n, id);';
 function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[]): Builder {
 	const slow: Builder = (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	const facts = (config & FACTS) !== 0, erase = (config & ERASE) !== 0;
-	if (ops.length === 0) return slow;
+	if (ops.some((op) => op.op === 'splice')) return slow;
 	const word = (at: number) => `N[b + ${(C.kind + at) >> 2}]`;
 	const byte = (at: number) => `(${word(at)} >>> ${((C.kind + at) & 3) << 3} & 255)`;
 	const B = new Source(word, byte, facts, C.words, C.kind);
@@ -994,9 +943,11 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 		else B.lead.push(`S.adopted.push(id); return ${B.built(B.dec(word(ops[at].at)), 'parent')};`);
 	}
 	const head = ops[at++];
-	const type = head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
+	const bare = head.op === 'bare';
+	const type = bare || head.op === 'type' ? JSON.stringify(head.key) : B.at(B.table(head.names), byte(head.at));
 	const identifier = head.op === 'type' && head.key === 'Identifier';
-	const props = [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
+	const props = bare ? [`type: ${type}`] : [`type: ${type}`, 'start: S.P[p]', 'end: S.P[p + 1]'];
+	B.shared = ops.filter((op) => op.op === 'inner' && op.at === 0 && op.at2 === 0).length > 1;
 	if (ops.slice(at).some((op) => op.op === 'object' && op.inner.some((inner) => CONDITIONAL.has(inner.op)))) return slow;
 	// what is set once the literal exists: its nodes, then the keys some nodes of the kind leave out
 	const tail: string[] = [];
@@ -1060,62 +1011,13 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 	if (facts) after.push(LATE);
 	const lead = B.lead;
 	const body = `const N = S.N, J = S.J, b = id * ${C.words}; ${lead.length !== 0 && lead[lead.length - 1].includes('return J[') ? lead.join(' ') : `if (${rare.join(' || ')}) return slow(S, id, parent); ${before.join(' ')} const p = id * S.ps + S.po; ${lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`}`;
-	return new Function('K', 'slow', 'items', 'params', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, parent) => { ${body} };`)(B.constants, slow, items, params, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
+	return new Function('K', 'slow', 'items', 'params', 'strs', 'comments', 'finite', 'bigint', 'bigint_value', 'regexp', 'late', 'PARENT', 'SCOPE', 'REFERENCE', `return (S, id, parent) => { ${body} };`)(B.constants, slow, items, params, strs, comments, finite, bigint, bigint_value, regexp, late, PARENT, SCOPE, REFERENCE);
 }
 
 function strs(S: State, start: number, len: number): string[] {
 	const out = new Array<string>(len);
-	for (let i = 0; i < len; i++) out[i] = S.strings[S.host_strings[start + i]];
+	for (let i = 0; i < len; i++) out[i] = S.strings[S.modifiers[start + i]];
 	return out;
-}
-
-// The engine numbers the shapes of a host's nodes, a type with its fields' keys and kinds of value:
-// one literal each, as the kinds have.
-function host_by_shape(S: State, id: number, index: number, config: number, parent: Decoded | undefined): Decoded {
-	const H = S.C.R.host;
-	const from = S.hosts[index * H.words + H.from], shape = S.hosts[index * H.words + H.shape];
-	let build = S.H[shape];
-	if (build === undefined) {
-		const len = S.hosts[index * H.words + H.len];
-		const keys: string[] = [], tags: string[] = [];
-		for (let i = from; i < from + len; i++) {
-			keys.push(S.X.names[S.host_keys[i]]);
-			tags.push(host_tag(S, i));
-		}
-		build = S.H[shape] = generate_host(S.C, config, host_type(S, index), host_span(S, index), keys, tags);
-	}
-	return build(S, id, index, from, parent);
-}
-
-function generate_host(C: Compiled, config: number, type: string | null, span: boolean, keys: string[], tags: string[]): HostBuilder {
-	const facts = (config & FACTS) !== 0 && type !== null;
-	const V = C.R.value;
-	const B = new Source((at) => `HV[from * ${V.words} + ${at >> 2}]`, (at) => `(HV[from * ${V.words} + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, facts, C.words, C.kind);
-	const props = type === null ? [] : [`type: ${JSON.stringify(type)}`];
-	if (type === null || span) props.push('start: S.P[p]', 'end: S.P[p + 1]');
-	const tail: string[] = [];
-	keys.forEach((key, i) => {
-		if (host_holds(tags[i])) {
-			props.push(`${JSON.stringify(key)}: undefined`);
-			tail.push(B.set(key, host_value(B, tags[i], i * V.size + V.value)));
-		} else props.push(`${JSON.stringify(key)}: ${host_value(B, tags[i], i * V.size + V.value)}`);
-	});
-	// what the literal has no room for, as for the kinds; a node without a span has only its facts
-	const rare = span ? [RARE] : [];
-	const before: string[] = [], slots: string[] = [], after: string[] = [];
-	if (type !== null) {
-		slots.push('n[PARENT] = parent;');
-		if (!facts) slots.push('n[SCOPE] = undefined;');
-		else {
-			rare.push('S.name_only', 'S.adopted.length !== 0');
-			if (!span) rare.push(RARE);
-			before.push('const sc = S.of_node[id]; const s = sc === 0 ? undefined : S.scopes[sc - 1];');
-			slots.push('n[SCOPE] = s;');
-			after.push('if (s !== undefined) s.node = n;', LATE);
-		}
-	}
-	const body = `const N = S.N, J = S.J, HV = S.host_vals; ${rare.length === 0 ? '' : `if (${rare.join(' || ')}) return host(S, id, index, parent);`} ${before.join(' ')} const p = id * S.ps + S.po; ${B.lead.join(' ')} const n = { ${props.join(', ')} }; ${slots.join(' ')} ${tail.join(' ')} ${after.join(' ')} return n;`;
-	return new Function('K', 'host', 'items', 'comments', 'strs', 'late', 'PARENT', 'SCOPE', `return (S, id, index, from, parent) => { ${body} };`)(B.constants, host, items, comments, strs, late, PARENT, SCOPE);
 }
 
 const generated = (() => {
@@ -1183,13 +1085,6 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 		return generated ? generate(C, G, config, ops, typescript && (config & ERASE) === 0 ? G.adds[tag] : NO_OPS) : (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	};
 	const set: Builder[] = new Array<Builder>(C.layout.kinds.length).fill((S, id, parent) => (set[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent));
-	set[C.host] = generated
-		? (S, id, parent) => {
-				const index = S.N[id * C.words + C.payload], H = C.R.host;
-				const build = S.H[S.hosts[index * H.words + H.shape]];
-				return build === undefined ? host_by_shape(S, id, index, config, parent) : build(S, id, index, S.hosts[index * H.words + H.from], parent);
-			}
-		: (S, id, parent) => host(S, id, S.N[id * C.words + C.payload], parent);
 	G.sets.set(config, set);
 	return (G.builders = set);
 }
@@ -1200,24 +1095,10 @@ function comments(S: State, parent: Decoded | undefined): Decoded[] {
 	return out;
 }
 
-// what is made of a grammar's shapes; an engine that started over numbers them anew
-function hosts(C: Compiled, engine: Views, names: readonly string[] | undefined): Hosts {
-	if (C.generation !== engine.generation) {
-		C.generation = engine.generation;
-		C.hosts = new WeakMap();
-		C.sheet = undefined;
-	}
-	const made = (names: readonly string[]): Hosts => ({ names, ops: [], builders: [] });
-	if (names === undefined) return (C.sheet ??= made(C.layout.names));
-	let known = C.hosts.get(names);
-	if (known === undefined) C.hosts.set(names, (known = made(names)));
-	return known;
-}
-
 const filled = (tree: Tree, words: Uint32Array, lens: number, at: number) => (words[lens + at] === 0 ? null : (tree[at] as Uint32Array).subarray(0, words[lens + at]));
 
-// `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a document's grammar said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
-const slot = (key: keyof Options, index = 3) => index << (2 * SLOT[key]);
+// `words[lens]`: the options the answer was read with, as `flags` packed them, TypeScript on when a component's script tag said so, and whether the parse failed; each view's length follows it, then where the tree's buffers sit
+const slot = (key: keyof Flags, index = 3) => index << (2 * SLOT[key]);
 const FAILED = 1 << 31, TS_OPTION = slot('typescript'), ERASED = slot('typescript', 2), COMMENTS = slot('comments'), RECOVERED = slot('errorRecovery');
 
 function table(S: State, tree: Tree, words: Uint32Array, lens: number, rows: Rows, at: number): Decoded[] {
@@ -1274,13 +1155,11 @@ function line_of(starts: number[], offset: number, lo: number, hi: number) {
 // tried: a closure per answer, 1.2x slower a call, and as an own property it is a key and fails structuredClone
 class Answer {
 	node: unknown;
-	end: number;
 	readonly #text: string;
 	#starts: number[] | undefined = undefined;
 	#line = 0;
-	constructor(node: unknown, end: number, text: string) {
+	constructor(node: unknown, text: string) {
 		this.node = node;
-		this.end = end;
 		this.#text = text;
 	}
 	locate(offset: number) {
@@ -1296,13 +1175,12 @@ class Answer {
 }
 
 /**
- * The answer of the last parse, `listed` for the parameter list entry: `words` are `end`, the
- * roots by number, the options it was read with and each view's length; the tree itself is read
- * in place. `names` are those of the grammar a document was read by.
+ * The answer of the last parse: `words` are the roots by number, the options it was read
+ * with and each view's length; the tree itself is read in place.
  */
-export function decode(words: Uint32Array, source: string, engine: Views, listed: boolean, names?: readonly string[]): Decoded {
+export function decode(words: Uint32Array, source: string, engine: Views): Decoded {
 	const C = compile(engine);
-	const lens = 2 + words[1];
+	const lens = 1 + words[0];
 	const what = words[lens];
 	const typescript = (what & TS_OPTION) !== 0;
 	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
@@ -1318,7 +1196,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 	const rows = tree[at.errors] as Uint32Array;
 	const config = (scoped ? FACTS : 0) | (erase ? ERASE : 0);
 	const B = G.last === config ? G.builders! : builders(C, G, config, typescript);
-	const X = hosts(C, engine, names);
 	// the state stays with the tree's views, one answer at a time: only what an answer changes is set
 	let S = G.state;
 	if (S === undefined || moved || G.tree !== tree) {
@@ -1333,8 +1210,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 			C,
 			G,
 			J: B,
-			H: (X.builders[config] ??= []),
-			X,
 			N: tree[at.nodes] as Uint32Array,
 			L: tree[at.lists] as Uint32Array,
 			numbers: tree[at.numbers] as Float64Array,
@@ -1350,10 +1225,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 			made: NO_ROWS,
 			attached_slots: null,
 			attached: tree[at.attached] as Uint32Array,
-			hosts: tree[at.hosts] as Uint32Array,
-			host_keys: tree[at.host_keys] as Uint32Array,
-			host_vals: tree[at.host_vals] as Uint32Array,
-			host_strings: tree[at.host_strings] as Uint32Array,
+			modifiers: tree[at.modifiers] as Uint32Array,
+			slices: tree[at.slices] as Uint32Array,
 			of_node: null,
 			of_identifier: tree[at.of_identifier] as Uint32Array,
 			root_of: tree[at.root_of] as Uint32Array,
@@ -1372,8 +1245,6 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 	S.source = source;
 	S.erase = erase;
 	S.J = B;
-	S.H = X.builders[config] ??= [];
-	S.X = X;
 	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? C.R.span.words : C.words;
@@ -1398,14 +1269,7 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 	}
 	let answer: Decoded;
 	try {
-		let node: Decoded | Decoded[] | null = null;
-		if (!failed) {
-			if (listed) {
-				node = [];
-				for (let i = 2; i < lens; i++) if (S.erased === null || !bit(S.erased, words[i])) node.push(build(S, words[i], undefined));
-			} else node = build(S, words[2], undefined);
-		}
-		answer = new Answer(node, words[0], source);
+		answer = new Answer(failed ? null : build(S, words[1], undefined), source);
 		if (!failed && (what & COMMENTS) !== 0) answer.comments = comments(S, undefined);
 		if (failed || (what & RECOVERED) !== 0) answer.errors = errors(S, rows, words[lens + at.errors] / C.R.error.words);
 		if (!failed && erase) answer.typescript = kept(S);
@@ -1413,7 +1277,8 @@ export function decode(words: Uint32Array, source: string, engine: Views, listed
 			answer.scopes = S.scopes;
 			answer.bindings = S.bindings;
 			answer.references = S.references;
-			if (words[lens + at.hosts] !== 0) answer.roots = S.roots;
+			// a component's answer, or a stylesheet's, lists the roots of its scopes
+			if (S.N[words[1] * C.words + (C.kind >> 2)] >= C.markup) answer.roots = S.roots;
 		}
 	} finally {
 		// the state outlives the answer and any decode the stack cut short, so it lets go of what they hold

@@ -1,4 +1,5 @@
 import type { Expression, Identifier, Node, Position } from 'estree';
+import type { SvelteNode } from './svelte.ts';
 
 /** A scope, as one of `scopes` on the answer. */
 export interface Scope {
@@ -17,8 +18,8 @@ export interface Scope {
 		| 'namespace'
 		| 'enum'
 		| 'fragment';
-	/** The node that opens it; null for a function-name scope and for the scope around a parameter list parsed on its own. */
-	node: Node | HostNode | null;
+	/** The node that opens it; null for a function-name scope. */
+	node: Node | SvelteNode | null;
 	parent: Scope | null;
 	/** An `await` or `for await` runs directly in it, no function around; only a program or fragment scope can say so. */
 	topLevelAwait: boolean;
@@ -32,8 +33,8 @@ export interface Declared extends Reference {
 	name: string;
 	/**
 	 * What declared it. `function-name` and `class-name` are the name a function expression or a class
-	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name that
-	 * a `js.pattern` piece declares, parsed on its own; a `js.params` piece declares `param`s.
+	 * expression has inside itself, `const f = function g() {}` declaring `g`. `pattern` is a name a
+	 * component's markup declares, the context of an `{#each}` say.
 	 */
 	kind:
 		| 'var'
@@ -56,7 +57,7 @@ export interface Declared extends Reference {
 	node: Identifier;
 	/** The scope it is declared in. */
 	scope: Scope;
-	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for a pattern or parameter list parsed on its own. */
+	/** What declares it: the declarator, function, class, import specifier, catch clause or enum, as eslint-scope's definition node; null for a name a component's markup declares. */
 	declaration: Node | null;
 	binding: Declared;
 	declares: true;
@@ -83,8 +84,8 @@ export interface Arguments {
 	writeExpr: null;
 }
 
-/** A piece of JavaScript a host read on its own, as one of `roots` on a document's answer, with what the tables hold for it. */
-export interface Root {
+/** A piece of JavaScript a component holds, a script or an expression of its markup, as one of `roots` on its answer, with what the tables hold for it. */
+export interface JsRoot {
 	node: Node;
 	/** The scope the piece sits in. */
 	scope: Scope;
@@ -135,7 +136,7 @@ export interface Kept extends Span {
  * `expected '}'`.
  */
 export interface Recovered {
-	/** What went wrong, for a host to branch on; what each code means is at Error codes. */
+	/** What went wrong, for a caller to branch on; what each code means is at Error codes. */
 	code: Code;
 	/** What the error is about, a name or a token, when the code takes any. */
 	args: readonly string[];
@@ -148,26 +149,12 @@ export interface Recovered {
 	column: number;
 }
 
-export declare const answers: unique symbol;
-/** Here and not in `grammar.ts`, so the entry reads the key without loading the builders and the encoder. */
-export const LANGUAGE = Symbol('language');
-export const PIECE = Symbol('piece');
-/** What `parse` reads, the whole text: JavaScript, CSS, or a host language by its grammar. `T` is what its parse answers with. */
-export interface Language<T> {
-	readonly [answers]?: T;
-	readonly [LANGUAGE]: { readonly entry: number; readonly grammar?: object; readonly names?: readonly string[] };
-	/** For every type of node a parse of the language answers with, the fields that hold a node or a list of nodes: what a walk follows. A grammar's names the JavaScript types beside the host's. */
-	readonly children: Readonly<Record<string, readonly string[]>>;
-}
-
-/** What a parse returns: the node, or the patterns of a parameter list, and what the options add; a key is there exactly when its option is on. */
+/** What a parse returns: the node, and what the options add; a key is there exactly when its option is on. */
 export interface Parsed<T> {
 	node: T;
-	/** The offset after everything the parse consumed: the node, its closing parens and the comments after it; a program's is the end of the text. */
-	end: number;
 	/**
 	 * The line of `offset`, counting from 1, and its column, counting UTF-16 units from 0, in the
-	 * text parsed: all of the text `parseAt` was given. A line ends at `\n`, `\r\n`, a lone `\r`,
+	 * text parsed. A line ends at `\n`, `\r\n`, a lone `\r`,
 	 * U+2028 or U+2029. The first call finds where each line starts; each later call tries the line
 	 * the call before found and the next one before it searches, so calls in source order cost
 	 * least. It reads the answer it is called on. An offset that is not an integer from 0 to the
@@ -184,17 +171,8 @@ export interface Parsed<T> {
 	scopes?: Scope[];
 	bindings?: Binding[];
 	references?: Reference[];
-	/** With `scopes`, for a document read by a host grammar: its pieces of JavaScript in the order a walk over the tree meets them. */
-	roots?: Root[];
-}
-
-/**
- * A node of a host language, as its grammar names the type and the fields; the JavaScript under
- * it is ESTree. A `Fragment` has no span.
- */
-export interface HostNode extends Partial<Span> {
-	type: string;
-	[field: string]: unknown;
+	/** With `scopes`, for a Svelte component: its pieces of JavaScript in the order a walk over the tree meets them. */
+	roots?: JsRoot[];
 }
 
 /** Every code the engine can report, by the byte it reports: what a parse error names in `code`. */
@@ -400,16 +378,10 @@ export interface Views {
 	readonly layout: () => string;
 	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
-	/** How many times the engine started over, numbering the shapes of host nodes anew; none for one that never does. */
-	readonly generation?: number;
 }
 
 /** What parses: the addon or the WebAssembly module. */
 export interface Engine extends Views {
-	/** A source parsed by its option word at an entry and offset, the stop tokens as one string, or as a document by a `grammar`; nothing of it is kept. The answer is its words. */
-	readonly parse: (source: string, flags: number, entry: number, offset: number, stop: string, grammar: object | undefined) => Uint32Array;
-	/** The grammar of a host language as JSON, read once. */
-	readonly grammar: (definition: string) => object;
-	/** What a grammar tells of itself, as JSON: each node type of its host with the fields that hold nodes, and the names the rows of its documents number. */
-	readonly about: (grammar: object) => string;
+	/** A source parsed whole by its option word as a language, 0 JavaScript, 1 CSS, 2 Svelte; nothing of it is kept. The answer is its words. */
+	readonly parse: (source: string, flags: number, language: number) => Uint32Array;
 }

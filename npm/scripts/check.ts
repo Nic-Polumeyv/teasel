@@ -1,7 +1,6 @@
-// node scripts/check.ts [--host GRAMMAR EXTENSION] DIR...: every script under the directories, parsed three
-// ways and the answers diffed: the addon's decoded answer against the JSON the binary prints, and the wasm
-// module's against the addon's; with a host, every file of its extension as a document too.
-// `cargo build --release` first.
+// node scripts/check.ts DIR...: every script, stylesheet and Svelte component under the directories, parsed
+// three ways and the answers diffed: the addon's decoded answer against the JSON the binary prints, and the
+// wasm module's against the addon's; a component's scripts on their own too. `cargo build --release` first.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -11,7 +10,7 @@ import { compile } from '../dist/engine/wasm.js';
 import { decode, LINKED, REFERENCE, SCOPE } from '../dist/decode.js';
 import { CODES, type Code } from '../dist/types.js';
 import type { Engine } from '../dist/types.js';
-import { flags, type Options } from '../dist/options.js';
+import { flags, type Flags as Options } from '../dist/options.js';
 import { target } from './target.ts';
 
 // without the addon node.js is the wasm engine already, and every diff would pass
@@ -24,21 +23,16 @@ function walk(dir: string) {
 		if (name === 'node_modules' || name.startsWith('.')) continue;
 		const path = join(dir, name);
 		if (statSync(path).isDirectory()) walk(path);
-		else if (/\.(js|mjs|ts|svelte|css)$/.test(name) || (host !== undefined && name.endsWith(host.extension))) files.push(path);
+		else if (/\.(js|mjs|ts|svelte|css)$/.test(name)) files.push(path);
 	}
 }
-const args = process.argv.slice(2);
-const host = args[0] === '--host' ? { path: args[1], grammar: readFileSync(args[1], 'utf8'), extension: args[2] } : undefined;
-const grammar = host === undefined ? undefined : native.grammar(host.grammar);
-const names: string[] | undefined = grammar === undefined ? undefined : JSON.parse(native.about(grammar)).names;
-for (const dir of host ? args.slice(3) : args) walk(dir);
+for (const dir of process.argv.slice(2)) walk(dir);
 let checked = 0;
 let failed = 0;
 
 // what a parse answers or throws, read off the engine directly
-function outcome(engine: Engine, source: string, on: number, entry: number, at: number, end?: number) {
-	const cut = source.slice(0, end);
-	return decode(engine.parse(cut, on, entry, at, '', undefined), cut, engine, entry === 3);
+function outcome(engine: Engine, source: string, on: number, language: number) {
+	return decode(engine.parse(source, on, language), source, engine);
 }
 
 const show = (value: unknown) => (typeof value === 'bigint' ? `${value}n` : JSON.stringify(value));
@@ -65,14 +59,11 @@ function report(name: string, difference: string | null) {
 	if (failed <= 20) console.log(`${name}: ${difference}`);
 }
 
-// each entry of parser/mod.rs by index, naming the report's lines
-const MODE = ['', 'expr', 'pattern', 'params', 'stmt', 'typeparams'];
-const STYLESHEET = 6;
-// the binary's own entry: a whole document of the grammar's language
-const DOCUMENT = 7;
+// the engine's languages by number
+const JS = 0, STYLESHEET = 1, SVELTE = 2;
 
-// the batch header the binary reads for the same parse: the entry, a byte offset and the option word
-const header = (entry: number, offset: number, on: number) => `${entry} ${offset} ${on}`;
+// the batch header the binary reads for the same parse: the language and the option word
+const header = (language: number, on: number) => `${language} ${on}`;
 
 // JSON has no RegExp or BigInt, so the writer spells a regular expression's or a BigInt's value null
 // the binary reports a code as its byte, the package as its name
@@ -140,39 +131,34 @@ function numbered(answer: Decoded) {
 
 // the addon's answers as JSON, each with the batch job that asks the binary for the same
 const jobs: { name: string; source: string; header: string; tree: string }[] = [];
-function json(name: string, source: string, options: Options, entry: number, at: number) {
+function json(name: string, source: string, options: Options, language: number) {
 	const on = flags(options);
-	const tree = JSON.stringify(numbered(decode(native.parse(source, on, entry, at, '', undefined), source, native, entry === 3)), as_json);
-	jobs.push({ name, source, header: header(entry, Buffer.byteLength(source.slice(0, at)), on), tree });
+	const tree = JSON.stringify(numbered(decode(native.parse(source, on, language), source, native)), as_json);
+	jobs.push({ name, source, header: header(language, on), tree });
+	report(`${name} wasm`, differ(outcome(wasm, source, on, language), outcome(native, source, on, language)));
 }
 
-// a whole document of the host's
-function document(name: string, source: string, options: Options) {
-	const on = flags(options);
-	const tree = JSON.stringify(numbered(decode(native.parse(source, on, 0, 0, '', grammar), source, native, false, names)), as_json);
+// a whole component
+function component(name: string, source: string, options: Options) {
 	const switches = Object.entries(options).flatMap(([key, value]) => (value === true ? [key] : value ? [`${key}:${value}`] : []));
-	jobs.push({ name: `${name} doc ${switches.join('+')}`, source, header: header(DOCUMENT, 0, on), tree });
+	json(`${name} component ${switches.join('+')}`, source, options, SVELTE);
 }
 
 const script_re = /<script((?:\s+(?:"[^"]*"|'[^']*'|[^>"'])*)?)>([\s\S]*?)<\/script>/g;
-const brace_re = /\{/g;
 for (const file of files) {
 	const text = readFileSync(file, 'utf8');
 	if (file.endsWith('.css')) {
-		const options: Options = { comments: true };
-		json(file, text, options, STYLESHEET, 0);
-		report(`${file} wasm`, differ(outcome(wasm, text, flags(options), STYLESHEET, 0), outcome(native, text, flags(options), STYLESHEET, 0)));
+		json(file, text, {}, STYLESHEET);
 		continue;
 	}
-	if (host !== undefined && file.endsWith(host.extension)) {
-		const typescript = /lang=["']?ts/.test(text);
-		document(file, text, { sourceType: 'module', comments: true, scopes: true });
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, scopes: true });
-		document(file, text, { sourceType: 'module', typescript, errorRecovery: true, parenthesized: true });
-		document(file, text, { sourceType: 'module', typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
-		if (!/\.(js|mjs|ts|svelte)$/.test(file)) continue;
-	}
 	const svelte = file.endsWith('.svelte');
+	if (svelte) {
+		const typescript = /lang=["']?ts/.test(text);
+		component(file, text, { comments: true, scopes: true });
+		component(file, text, { typescript: typescript ? 'erase' : false, scopes: true });
+		component(file, text, { typescript, errorRecovery: true, parenthesized: true });
+		component(file, text, { typescript: typescript ? 'erase' : false, comments: true, scopes: true, parenthesized: true });
+	}
 	const sources: [string, boolean][] = svelte ? [...text.matchAll(script_re)].map((m) => [m[2], /lang=["']?ts/.test(m[1] ?? '')]) : [[text, file.endsWith('.ts')]];
 	for (const [source, typescript] of sources) {
 		const runs: Options[] = [
@@ -181,33 +167,13 @@ for (const file of files) {
 			{ sourceType: 'module', typescript, scopes: true },
 			{ typescript, parenthesized: true },
 		];
-		for (const options of runs) {
-			json(file, source, options, 0, 0);
-			report(`${file} wasm`, differ(outcome(wasm, source, flags(options), 0, 0), outcome(native, source, flags(options), 0, 0)));
-		}
-	}
-	// every brace in a component is somewhere an expression, a pattern or a statement might start
-	if (svelte) {
-		const options: Options = { sourceType: 'module', typescript: /lang=["']?ts/.test(text), comments: true, scopes: true };
-		const on = flags(options);
-		for (const m of text.matchAll(script_re)) {
-			const start = m.index + m[0].indexOf('>') + 1;
-			const end = start + m[2].length;
-			report(`${file} script ${start} wasm`, differ(outcome(wasm, text, on, 0, start, end), outcome(native, text, on, 0, start, end)));
-		}
-		for (const match of text.matchAll(brace_re)) {
-			const at = match.index + 1;
-			for (let entry = 1; entry < MODE.length; entry++) {
-				json(`${file}@${at} ${MODE[entry]}`, text, options, entry, at);
-				report(`${file}@${at} ${MODE[entry]} wasm`, differ(outcome(wasm, text, on, entry, at), outcome(native, text, on, entry, at)));
-			}
-		}
+		for (const options of runs) json(file, source, options, JS);
 	}
 }
 {
 	let input = '';
 	for (const job of jobs) input += `${job.header} ${Buffer.byteLength(job.source, 'utf8')}\n${job.source}`;
-	const run = spawnSync(binary, host ? ['--batch', '--host', host.path] : ['--batch'], { input, maxBuffer: 1 << 30 });
+	const run = spawnSync(binary, ['--batch'], { input, maxBuffer: 1 << 30 });
 	if (run.status !== 0) throw new Error(`${binary}: ${run.stderr}`);
 	const lines = run.stdout.toString().split('\n');
 	for (const [i, job] of jobs.entries()) {

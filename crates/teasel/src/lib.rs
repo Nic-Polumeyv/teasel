@@ -1,4 +1,4 @@
-//! A JavaScript parser in Rust.
+//! A Svelte, JavaScript and TypeScript parser in Rust.
 
 pub mod ast;
 pub mod comments;
@@ -6,7 +6,7 @@ pub mod engine;
 pub mod error;
 pub mod estree;
 pub mod handed;
-pub mod host;
+pub(crate) mod svelte;
 pub mod interner;
 pub(crate) mod json;
 pub mod layout;

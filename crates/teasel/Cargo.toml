@@ -1,6 +1,6 @@
 [package]
 name = "teasel"
-description = "A JavaScript parser in Rust"
+description = "A Svelte, JavaScript and TypeScript parser in Rust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

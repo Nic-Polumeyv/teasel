@@ -1,0 +1,146 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 66,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [],
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "SvelteElement",
+					"start": 0,
+					"end": 32,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Literal",
+						"start": 22,
+						"end": 23,
+						"root": 0,
+						"value": "h",
+						"raw": "h"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 32,
+					"end": 33,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteComponent",
+					"start": 33,
+					"end": 65,
+					"name": "svelte:component",
+					"expression": {
+						"type": "Identifier",
+						"start": 51,
+						"end": 62,
+						"root": 1,
+						"name": ""
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"comments": [],
+	"errors": [
+		{
+			"code": 0,
+			"args": [],
+			"pos": 27,
+			"end": 28,
+			"line": 1,
+			"column": 27
+		},
+		{
+			"code": 1,
+			"args": [
+				"an expression as this"
+			],
+			"pos": 51,
+			"end": 62,
+			"line": 2,
+			"column": 18
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": [],
+	"roots": [
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				0,
+				0
+			],
+			"references": [
+				0,
+				0
+			]
+		}
+	]
+}

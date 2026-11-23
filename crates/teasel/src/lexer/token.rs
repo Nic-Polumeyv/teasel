@@ -170,6 +170,8 @@ pub(crate) mod word {
 	/// A keyword written with an escape, which the lexer read as a word.
 	pub(crate) const KEYWORD: u8 = 32;
 	pub(crate) const EVAL: u8 = 64;
+	/// Not computed yet; the flags take seven bits.
+	pub(crate) const UNKNOWN: u8 = 255;
 
 	pub(crate) fn flags(word: &str) -> u8 {
 		let mut flags = match word.as_bytes() {

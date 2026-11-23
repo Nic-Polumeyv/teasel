@@ -102,21 +102,8 @@ pub enum Entry {
 	TypeParameters,
 	/// A CSS stylesheet on its own, the whole source.
 	StyleSheet,
-}
-
-impl Entry {
-	pub fn from_index(index: u32) -> Option<Entry> {
-		Some(match index {
-			0 => Entry::Program,
-			1 => Entry::Expression,
-			2 => Entry::Pattern,
-			3 => Entry::Params,
-			4 => Entry::Statement,
-			5 => Entry::TypeParameters,
-			6 => Entry::StyleSheet,
-			_ => return None,
-		})
-	}
+	/// A Svelte component, the whole source.
+	Svelte,
 }
 
 /// Parses one `entry` starting at `start` of a source, with positions of the whole: a program, a
@@ -138,7 +125,12 @@ pub(crate) fn parse_at(
 	reused: Option<Box<Ast>>,
 ) -> (Box<Ast>, Result<(List, u32)>) {
 	if entry == Entry::StyleSheet {
-		let (mut ast, root) = crate::host::parse_stylesheet(src, options, reused);
+		let (mut ast, root) = crate::svelte::parse_stylesheet(src, options, reused);
+		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
+		return (ast, parsed);
+	}
+	if entry == Entry::Svelte {
+		let (mut ast, root) = crate::svelte::parse_component(src, options, reused);
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
@@ -651,7 +643,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
 			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
-			Entry::Program | Entry::StyleSheet => unreachable!(),
+			Entry::Program | Entry::StyleSheet | Entry::Svelte => unreachable!(),
 		};
 		Ok(self.list_of(&[root]))
 	}

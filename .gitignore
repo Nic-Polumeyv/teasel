@@ -5,3 +5,4 @@ node_modules/
 /crates/teasel/tests/TypeScript/
 /npm/dist/
 /target*/
+/crates/teasel/tests/svelte/

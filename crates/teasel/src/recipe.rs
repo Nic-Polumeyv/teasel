@@ -12,6 +12,10 @@ use crate::scopes::{Binding, Reference, Root, Scope};
 pub enum Op {
 	/// The node's `type`, first.
 	Type(&'static str),
+	/// The `type` of a node without a span, first.
+	Bare(&'static str),
+	/// The node's source text under a key, short of its start and of its end by so many characters.
+	Inner(&'static str, u8, u8),
 	/// The `type` is the enum field's name: a keyword type.
 	TypeOf(Slot),
 	Node(&'static str, Slot),
@@ -40,10 +44,24 @@ pub enum Op {
 	Int(&'static str, Slot),
 	/// Two words as a list of two numbers.
 	Pair(&'static str, Slot),
+	/// Two words as the run of interned strings they name.
+	Strs(&'static str, Slot),
+	/// A list's item by its place, null when missing.
+	Item(&'static str, Slot, u8),
+	/// The same, left out when missing.
+	ItemKey(&'static str, Slot, u8),
+	/// A slice of the source.
+	Slice(&'static str, Slot),
+	/// The same, left out when missing.
+	SliceKey(&'static str, Slot),
+	/// Every comment read, as the answer lists them.
+	Comments(&'static str),
+	/// Where a slice of the source starts, or ends when the flag says so.
+	Edge(&'static str, Slot, bool),
+	/// The keys of the node there, after its type and span: a record continued in another node.
+	Splice(Slot),
 	/// A number literal's value: the float, or null when not finite.
 	Float(&'static str, Slot),
-	/// `raw`: the node's source text.
-	Raw,
 	/// `bigint`: the literal's decimal digits.
 	BigInt,
 	/// A regular expression literal's value, null in JSON because JSON cannot hold one.
@@ -93,6 +111,10 @@ pub enum Rest {
 	Names(&'static str, &'static str),
 	/// What `enumor` spells for no name.
 	Other(&'static str),
+	/// How far short of the node's start and of its end `inner` reads.
+	Cut(u8, u8),
+	/// Which item of its list `item` reads.
+	Place(u8),
 	Ops(&'static [Op]),
 }
 
@@ -102,6 +124,8 @@ impl Op {
 	pub fn told(&self) -> (&'static str, &'static str, Option<Slot>, Rest) {
 		match *self {
 			Type(t) => ("type", t, None, Rest::Nothing),
+			Bare(t) => ("bare", t, None, Rest::Nothing),
+			Inner(k, front, back) => ("inner", k, None, Rest::Cut(front, back)),
 			TypeOf(f) => ("typeof", "", Some(f), Rest::Nothing),
 			Node(k, f) => ("node", k, Some(f), Rest::Nothing),
 			Opt(k, f) => ("opt", k, Some(f), Rest::Nothing),
@@ -118,8 +142,15 @@ impl Op {
 			BoolNames(k, f, &[yes, no]) => ("boolnames", k, Some(f), Rest::Names(yes, no)),
 			Int(k, f) => ("int", k, Some(f), Rest::Nothing),
 			Pair(k, f) => ("pair", k, Some(f), Rest::Nothing),
+			Strs(k, f) => ("strs", k, Some(f), Rest::Nothing),
+			Item(k, f, place) => ("item", k, Some(f), Rest::Place(place)),
+			ItemKey(k, f, place) => ("itemkey", k, Some(f), Rest::Place(place)),
+			Slice(k, f) => ("slice", k, Some(f), Rest::Nothing),
+			SliceKey(k, f) => ("slicekey", k, Some(f), Rest::Nothing),
+			Comments(k) => ("comments", k, None, Rest::Nothing),
+			Edge(k, f, end) => ("edge", k, Some(f), Rest::Bool(end)),
+			Splice(f) => ("splice", "", Some(f), Rest::Nothing),
 			Float(k, f) => ("float", k, Some(f), Rest::Nothing),
-			Raw => ("raw", "", None, Rest::Nothing),
 			BigInt => ("bigint", "", None, Rest::Nothing),
 			BigIntValue(k) => ("bigintvalue", k, None, Rest::Nothing),
 			RegExp(k, pattern, flags) => ("regexp", k, Some(pattern), Rest::Second(flags)),
@@ -178,12 +209,15 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 	let mut i = 0;
 	while i < ops.len() {
 		let fits = match ops[i] {
-			Type(_) | Raw | BigInt | BigIntValue(_) | ConstBool(..) | Null(_) | EmptyList(_) | Keep(_) => true,
-			Node(_, slot) | Through(slot) => matches!(slot.ty, Ty::Node),
+			Type(_) | Bare(_) | Inner(..) | Comments(_) | BigInt | BigIntValue(_) | ConstBool(..) | Null(_)
+			| EmptyList(_) | Keep(_) => true,
+			Node(_, slot) | Through(slot) | Splice(slot) => matches!(slot.ty, Ty::Node),
 			OtherName(_, slot, binding) => matches!((slot.ty, binding.ty), (Ty::Node, Ty::Node)),
-			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32),
+			Opt(_, slot) => matches!(slot.ty, Ty::OptNode | Ty::OptStr | Ty::OptU32 | Ty::OptSlice),
 			Maybe(_, slot) | Extra(_, ExtraSlot(slot)) => matches!(slot.ty, Ty::OptNode | Ty::OptList | Ty::OptEnum(_)),
-			List(_, slot) | Params(_, slot) => matches!(slot.ty, Ty::List),
+			List(_, slot) | Params(_, slot) | Item(_, slot, _) | ItemKey(_, slot, _) => matches!(slot.ty, Ty::List),
+			Slice(_, slot) | Edge(_, slot, _) => matches!(slot.ty, Ty::Slice),
+			SliceKey(_, slot) => matches!(slot.ty, Ty::OptSlice),
 			OptListKey(_, slot) => matches!(slot.ty, Ty::OptList),
 			Bool(_, slot) | BoolNames(_, slot, _) => matches!(slot.ty, Ty::Bool),
 			Str(_, slot) => matches!(slot.ty, Ty::Str),
@@ -193,7 +227,7 @@ const fn fits(ops: &'static [Op]) -> &'static [Op] {
 			KeepIf(_, slot) => matches!(slot.ty, Ty::Enum([_, _])),
 			Modifier(_, slot) | EnumOr(_, slot, _) => matches!(slot.ty, Ty::OptEnum(_)),
 			Int(_, slot) | Float(_, slot) => matches!(slot.ty, Ty::U32),
-			Pair(_, slot) => matches!(slot.ty, Ty::Pair),
+			Pair(_, slot) | Strs(_, slot) => matches!(slot.ty, Ty::Pair),
 			Object(_, inner) => {
 				fits(inner);
 				true
@@ -233,18 +267,18 @@ macro_rules! by_kind {
 	};
 }
 
-/// Every kind's recipe; `Host` has none, the writer spells it itself.
+/// Every kind's recipe.
 pub static KINDS: ByKind = {
 	let (kinds, named) = by_kind! {
 		Program: &[Type("Program"), List("body", at!(body)), BoolNames("sourceType", at!(module), &["module", "script"])],
 		Identifier: &[Type("Identifier"), Str("name", at!(name))],
 		PrivateIdentifier: &[Type("PrivateIdentifier"), Str("name", at!(name))],
-		NumberLiteral: &[Type("Literal"), Float("value", at!(value)), Raw],
-		BigIntLiteral: &[Type("Literal"), BigIntValue("value"), Raw, BigInt],
-		StringLiteral: &[Type("Literal"), Str("value", at!(value)), Raw],
-		BooleanLiteral: &[Type("Literal"), Bool("value", at!(value)), Raw],
-		NullLiteral: &[Type("Literal"), Null("value"), Raw],
-		RegExpLiteral: &[Type("Literal"), RegExp("value", at!(pattern), at!(flags)), Raw, Object("regex", &[Str("pattern", at!(pattern)), Str("flags", at!(flags))])],
+		NumberLiteral: &[Type("Literal"), Float("value", at!(value)), Inner("raw", 0, 0)],
+		BigIntLiteral: &[Type("Literal"), BigIntValue("value"), Inner("raw", 0, 0), BigInt],
+		StringLiteral: &[Type("Literal"), Str("value", at!(value)), Inner("raw", 0, 0)],
+		BooleanLiteral: &[Type("Literal"), Bool("value", at!(value)), Inner("raw", 0, 0)],
+		NullLiteral: &[Type("Literal"), Null("value"), Inner("raw", 0, 0)],
+		RegExpLiteral: &[Type("Literal"), RegExp("value", at!(pattern), at!(flags)), Inner("raw", 0, 0), Object("regex", &[Str("pattern", at!(pattern)), Str("flags", at!(flags))])],
 		TemplateLiteral: &[Type("TemplateLiteral"), List("expressions", at!(expressions)), List("quasis", at!(quasis))],
 		TemplateElement: &[Type("TemplateElement"), Object("value", &[Str("raw", at!(raw)), Opt("cooked", at!(cooked))]), Bool("tail", at!(tail))],
 		TaggedTemplateExpression: &[Type("TaggedTemplateExpression"), Node("tag", at!(tag)), Node("quasi", at!(quasi))],
@@ -314,7 +348,6 @@ pub static KINDS: ByKind = {
 		ExportSpecifier: &[Type("ExportSpecifier"), Node("local", at!(local)), OtherName("exported", at!(exported), at!(local))],
 		ExportDefaultDeclaration: &[Type("ExportDefaultDeclaration"), Node("declaration", at!(declaration))],
 		ExportAllDeclaration: &[Type("ExportAllDeclaration"), Opt("exported", at!(exported)), Node("source", at!(source)), List("attributes", at!(attributes))],
-		Host: &[],
 		TypeAnnotation: &[Type("TSTypeAnnotation"), Node("typeAnnotation", at!(type_annotation))],
 		Keyword: &[TypeOf(at!(f0))],
 		ThisType: &[Type("TSThisType")],
@@ -369,6 +402,57 @@ pub static KINDS: ByKind = {
 		InstantiationExpression: &[Through(at!(expression)), Type("TSInstantiationExpression"), Node("expression", at!(expression)), Node("typeArguments", at!(type_arguments))],
 		ParameterProperty: &[Keep("TSParameterProperty"), Through(at!(parameter)), Type("TSParameterProperty"), Node("parameter", at!(parameter))],
 		Decorator: &[Keep("Decorator"), Type("Decorator"), Node("expression", at!(expression))],
+		Fragment: &[Bare("Fragment"), List("nodes", at!(nodes))],
+		Text: &[Type("Text"), Inner("raw", 0, 0), Inner("data", 0, 0)],
+		TextDecoded: &[Type("Text"), Inner("raw", 0, 0), Str("data", at!(data))],
+		MarkupComment: &[Type("Comment"), Inner("data", 4, 3)],
+		ExpressionTag: &[Type("ExpressionTag"), Node("expression", at!(expression))],
+		HtmlTag: &[Type("HtmlTag"), Node("expression", at!(expression))],
+		RenderTag: &[Type("RenderTag"), Node("expression", at!(expression))],
+		AttachTag: &[Type("AttachTag"), Node("expression", at!(expression))],
+		SpreadAttribute: &[Type("SpreadAttribute"), Node("expression", at!(expression))],
+		ConstTag: &[Type("ConstTag"), Node("declaration", at!(declaration))],
+		DeclarationTag: &[Type("DeclarationTag"), Node("declaration", at!(declaration))],
+		DebugTag: &[Type("DebugTag"), List("identifiers", at!(identifiers))],
+		Attribute: &[Type("Attribute"), Str("name", at!(name)), List("value", at!(value))],
+		AttributeTag: &[Type("Attribute"), Str("name", at!(name)), Node("value", at!(value))],
+		AttributeFlag: &[Type("Attribute"), Str("name", at!(name)), ConstBool("value", true)],
+		StyleDirective: &[Type("StyleDirective"), Str("name", at!(name)), List("value", at!(value)), Strs("modifiers", at!(modifiers))],
+		StyleDirectiveTag: &[Type("StyleDirective"), Str("name", at!(name)), Node("value", at!(value)), Strs("modifiers", at!(modifiers))],
+		StyleDirectiveFlag: &[Type("StyleDirective"), Str("name", at!(name)), ConstBool("value", true), Strs("modifiers", at!(modifiers))],
+		Directive: &[TypeOf(at!(ty)), Str("name", at!(name)), Opt("expression", at!(expression)), Strs("modifiers", at!(modifiers))],
+		TransitionDirective: &[Type("TransitionDirective"), Str("name", at!(name)), Opt("expression", at!(expression)), Strs("modifiers", at!(modifiers)), Bool("intro", at!(intro)), Bool("outro", at!(outro))],
+		Element: &[TypeOf(at!(ty)), Str("name", at!(name)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		SvelteElement: &[Type("SvelteElement"), Str("name", at!(name)), Node("tag", at!(tag)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		SvelteComponent: &[Type("SvelteComponent"), Str("name", at!(name)), Node("expression", at!(expression)), List("attributes", at!(attributes)), Node("fragment", at!(fragment))],
+		Script: &[Type("Script"), BoolNames("context", at!(module), &["module", "default"]), Node("content", at!(content)), List("attributes", at!(attributes))],
+		IfBlock: &[Type("IfBlock"), Node("test", at!(test)), Node("consequent", at!(consequent)), List("branches", at!(branches)), Opt("alternate", at!(alternate))],
+		ElseIf: &[Type("ElseIf"), Node("test", at!(test)), Node("consequent", at!(consequent))],
+		EachBlock: &[Type("EachBlock"), Node("expression", at!(expression)), Item("context", at!(parts), 0), ItemKey("index", at!(parts), 1), ItemKey("key", at!(parts), 2), Node("body", at!(body)), ItemKey("fallback", at!(parts), 3)],
+		AwaitBlock: &[Type("AwaitBlock"), Node("expression", at!(expression)), Item("value", at!(parts), 0), Item("then", at!(parts), 1), Item("error", at!(parts), 2), Item("catch", at!(parts), 3), Item("pending", at!(parts), 4)],
+		KeyBlock: &[Type("KeyBlock"), Node("expression", at!(expression)), Node("fragment", at!(fragment))],
+		SnippetBlock: &[Type("SnippetBlock"), Node("expression", at!(expression)), SliceKey("typeParams", at!(type_params)), List("parameters", at!(parameters)), Node("fragment", at!(fragment))],
+		Root: &[Type("Root"), Opt("css", at!(css)), EmptyList("js"), Null("options"), Comments("comments"), ItemKey("module", at!(scripts), 0), ItemKey("instance", at!(scripts), 1), Node("fragment", at!(fragment))],
+		StyleElement: &[Type("StyleSheet"), List("attributes", at!(attributes)), Splice(at!(sheet)), Object("content", &[Edge("start", at!(content), false), Edge("end", at!(content), true), Slice("styles", at!(content)), Null("comment")])],
+		StyleSheet: &[Type("StyleSheet"), List("children", at!(children)), List("comments", at!(comments))],
+		CssComment: &[Type("CSSComment"), Inner("value", 2, 2)],
+		CssCommentAt: &[Type("CSSComment"), Inner("value", 2, 2), Int("position", at!(position))],
+		Atrule: &[Type("Atrule"), Str("name", at!(name)), Str("prelude", at!(prelude)), Opt("block", at!(block))],
+		CssRule: &[Type("Rule"), Node("prelude", at!(prelude)), Node("block", at!(block))],
+		SelectorList: &[Type("SelectorList"), List("children", at!(children))],
+		ComplexSelector: &[Type("ComplexSelector"), List("children", at!(children))],
+		RelativeSelector: &[Type("RelativeSelector"), Opt("combinator", at!(combinator)), List("selectors", at!(selectors))],
+		NamedSelector: &[TypeOf(at!(ty)), Str("name", at!(name))],
+		TypeSelector: &[Type("TypeSelector"), Str("name", at!(name))],
+		TypeSelectorIn: &[Type("TypeSelector"), Str("name", at!(name)), Str("namespace", at!(namespace))],
+		PseudoClassSelector: &[Type("PseudoClassSelector"), Str("name", at!(name)), Opt("args", at!(args))],
+		PseudoElementSelector: &[Type("PseudoElementSelector"), Str("name", at!(name))],
+		PseudoElementSelectorOf: &[Type("PseudoElementSelector"), Str("name", at!(name)), Node("args", at!(args))],
+		AttributeSelector: &[Type("AttributeSelector"), Str("name", at!(name)), Opt("matcher", at!(matcher)), Opt("value", at!(value)), Opt("flags", at!(flags))],
+		Nth: &[Type("Nth"), Inner("value", 0, 0)],
+		Percentage: &[Type("Percentage"), Inner("value", 0, 0)],
+		CssBlock: &[Type("Block"), List("children", at!(children))],
+		Declaration: &[Type("Declaration"), Slice("property", at!(property)), Str("value", at!(value))],
 	};
 	assert!(named == VARIANTS.len(), "every kind has one recipe");
 	kinds

@@ -61,11 +61,27 @@ fn recovery_changes_nothing_that_parses() {
 	assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
-/// The `node` of an answer, `{"node":...,"end":N}`; none for a failed parse.
+/// The `node` of an answer, `{"node":{...},...}`; none for a failed parse.
 fn node_of(answer: &str) -> Option<&str> {
-	let rest = answer.strip_prefix("{\"node\":{")?;
-	let end = rest.rfind(",\"end\":")?;
-	Some(&answer[8..9 + end])
+	answer.strip_prefix("{\"node\":{")?;
+	// the brace that closes it, strings passed over
+	let bytes = answer.as_bytes();
+	let (mut depth, mut i, mut quoted) = (0, 8, false);
+	loop {
+		match bytes[i] {
+			b'\\' if quoted => i += 1,
+			b'"' => quoted = !quoted,
+			b'{' if !quoted => depth += 1,
+			b'}' if !quoted => {
+				depth -= 1;
+				if depth == 0 {
+					return Some(&answer[8..=i]);
+				}
+			}
+			_ => {}
+		}
+		i += 1;
+	}
 }
 
 /// The byte offset of a UTF-16 offset, which is how the answers count.
@@ -90,9 +106,10 @@ fn an_entry_reads_what_the_program_read() {
 		while (at as usize) < source.len() {
 			let answer = read(&source, Entry::Statement, at, module, 0);
 			let Some(node) = node_of(&answer) else { break };
-			let end: u32 = answer[answer.rfind(",\"end\":").unwrap() + 7..answer.len() - 1]
-				.parse()
-				.unwrap();
+			// the next statement is read from where this one ends
+			let from = node.find(",\"end\":").unwrap() + 7;
+			let digits = node[from..].find(|c: char| !c.is_ascii_digit()).unwrap();
+			let end: u32 = node[from..from + digits].parse().unwrap();
 			// a directive is what a statement is in the prologue: the entry cannot know that
 			let prologue = &node[..node.len() - 1];
 			if !program.contains(node) && !program.contains(&format!("{prologue},\"directive\":")) {

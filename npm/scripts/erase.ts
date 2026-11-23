@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { parse, referenceOf } from '../dist/index.js';
+import { parseModule, referenceOf } from '../dist/index.js';
 
 const args = process.argv.slice(2);
 const at = args.indexOf('--tsc');
@@ -95,7 +95,7 @@ function erased(src: string): { body: any[]; written_empty: number } | { skipped
 	if (AMBIENT_BLOCK.test(src)) return { skipped: 'an ambient block' };
 	let answer;
 	try {
-		answer = parse(src, { sourceType: 'module', typescript: 'erase', scopes: true });
+		answer = parseModule(src, { typescript: 'erase', scopes: true });
 	} catch {
 		return { skipped: 'teasel refuses' };
 	}
@@ -127,7 +127,7 @@ function emitted(src: string): { body: any[] } | { skipped: string } {
 	}
 	if (result.diagnostics?.length) return { skipped: 'TypeScript refuses' };
 	try {
-		return { body: parse(result.outputText, { sourceType: 'module' }).node.body };
+		return { body: parseModule(result.outputText).node.body };
 	} catch {
 		return { skipped: 'TypeScript emits what is not JavaScript' };
 	}
