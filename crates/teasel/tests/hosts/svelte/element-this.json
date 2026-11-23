@@ -1,0 +1,388 @@
+{
+	"node": {
+		"type": "Root",
+		"start": 0,
+		"end": 200,
+		"scope": 0,
+		"css": null,
+		"js": [],
+		"options": null,
+		"comments": [
+			{
+				"type": "Block",
+				"value": " c ",
+				"start": 95,
+				"end": 102
+			}
+		],
+		"instance": {
+			"type": "Script",
+			"start": 0,
+			"end": 36,
+			"context": "default",
+			"content": {
+				"type": "Program",
+				"start": 8,
+				"end": 27,
+				"scope": 1,
+				"root": 0,
+				"body": [
+					{
+						"type": "VariableDeclaration",
+						"start": 10,
+						"end": 26,
+						"declarations": [
+							{
+								"type": "VariableDeclarator",
+								"start": 14,
+								"end": 19,
+								"defines": [
+									0
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 14,
+									"end": 15,
+									"declares": 0,
+									"name": "n"
+								},
+								"init": {
+									"type": "Literal",
+									"start": 18,
+									"end": 19,
+									"value": 1,
+									"raw": "1"
+								}
+							},
+							{
+								"type": "VariableDeclarator",
+								"start": 21,
+								"end": 22,
+								"defines": [
+									1
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 21,
+									"end": 22,
+									"declares": 1,
+									"name": "a"
+								},
+								"init": null
+							},
+							{
+								"type": "VariableDeclarator",
+								"start": 24,
+								"end": 25,
+								"defines": [
+									2
+								],
+								"id": {
+									"type": "Identifier",
+									"start": 24,
+									"end": 25,
+									"declares": 2,
+									"name": "b"
+								},
+								"init": null
+							}
+						],
+						"kind": "let"
+					}
+				],
+				"sourceType": "module"
+			},
+			"attributes": []
+		},
+		"fragment": {
+			"type": "Fragment",
+			"scope": 2,
+			"nodes": [
+				{
+					"type": "Text",
+					"start": 36,
+					"end": 38,
+					"raw": "\n\n",
+					"data": "\n\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 38,
+					"end": 68,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Literal",
+						"start": 60,
+						"end": 61,
+						"root": 1,
+						"value": "h",
+						"raw": "h"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 3,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 68,
+					"end": 69,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 69,
+					"end": 125,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Identifier",
+						"start": 92,
+						"end": 93,
+						"reference": 0,
+						"root": 2,
+						"name": "a"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 4,
+						"nodes": [
+							{
+								"type": "Text",
+								"start": 107,
+								"end": 108,
+								"raw": "x",
+								"data": "x"
+							}
+						]
+					}
+				},
+				{
+					"type": "Text",
+					"start": 125,
+					"end": 126,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 126,
+					"end": 170,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Literal",
+						"start": 148,
+						"end": 153,
+						"root": 3,
+						"value": "&",
+						"raw": "&amp;"
+					},
+					"attributes": [
+						{
+							"type": "Attribute",
+							"start": 158,
+							"end": 167,
+							"name": "class",
+							"value": [
+								{
+									"type": "Text",
+									"start": 165,
+									"end": 166,
+									"raw": "k",
+									"data": "k"
+								}
+							]
+						}
+					],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 5,
+						"nodes": []
+					}
+				},
+				{
+					"type": "Text",
+					"start": 170,
+					"end": 171,
+					"raw": "\n",
+					"data": "\n"
+				},
+				{
+					"type": "SvelteElement",
+					"start": 171,
+					"end": 199,
+					"name": "svelte:element",
+					"tag": {
+						"type": "Literal",
+						"start": 192,
+						"end": 193,
+						"root": 4,
+						"value": "h",
+						"raw": "h"
+					},
+					"attributes": [],
+					"fragment": {
+						"type": "Fragment",
+						"scope": 6,
+						"nodes": []
+					}
+				}
+			]
+		}
+	},
+	"comments": [
+		{
+			"type": "Block",
+			"value": " c ",
+			"start": 95,
+			"end": 102
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "script",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 1,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "fragment",
+			"parent": 2,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "n",
+			"kind": "let",
+			"scope": 1,
+			"write": true
+		},
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 1,
+			"write": false
+		},
+		{
+			"name": "b",
+			"kind": "let",
+			"scope": 1,
+			"write": false
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	],
+	"roots": [
+		{
+			"scope": 1,
+			"scopes": [
+				2,
+				2
+			],
+			"bindings": [
+				0,
+				3
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				3,
+				3
+			],
+			"bindings": [
+				3,
+				3
+			],
+			"references": [
+				0,
+				0
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				4,
+				4
+			],
+			"bindings": [
+				3,
+				3
+			],
+			"references": [
+				0,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				5,
+				5
+			],
+			"bindings": [
+				3,
+				3
+			],
+			"references": [
+				1,
+				1
+			]
+		},
+		{
+			"scope": 2,
+			"scopes": [
+				6,
+				6
+			],
+			"bindings": [
+				3,
+				3
+			],
+			"references": [
+				1,
+				1
+			]
+		}
+	]
+}

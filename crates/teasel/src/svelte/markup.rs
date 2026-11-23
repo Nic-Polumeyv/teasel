@@ -608,14 +608,15 @@ impl<'a> Walker<'a> {
 					let chunk = chunk.map(|chunk| *self.tree().node(chunk));
 					match chunk.map(|node| (node.kind, node)) {
 						Some((NodeKind::ExpressionTag { expression }, _)) => expression,
-						Some((NodeKind::Text, node)) if text => {
-							let src = self.src;
-							let value = self.intern(&src[node.start as usize..node.end as usize]);
+						Some((NodeKind::Text | NodeKind::TextDecoded { .. }, node)) if text => {
+							let value = match node.kind {
+								NodeKind::TextDecoded { data } => data,
+								_ => {
+									let src = self.src;
+									self.intern(&src[node.start as usize..node.end as usize])
+								}
+							};
 							self.ast().add(NodeKind::StringLiteral { value }, node.start, node.end)
-						}
-						Some((NodeKind::TextDecoded { data }, node)) if text => {
-							self.ast()
-								.add(NodeKind::StringLiteral { value: data }, node.start, node.end)
 						}
 						_ => {
 							let node = *self.tree().node(id);
@@ -951,14 +952,18 @@ impl<'a> Walker<'a> {
 		if kind != Directive::Style {
 			expression = match value {
 				Held::Tag(tag) => self.chunk_expression(tag),
-				Held::Chunks(list) => match *self.tree().list(list) {
-					[Some(chunk)] if self.chunk_expression(chunk).is_some() => self.chunk_expression(chunk),
-					[Some(chunk), ..] => {
-						let node = *self.tree().node(chunk);
-						return self.fail(node.start, node.end, Code::Expected, Some("an expression, not text"));
+				Held::Chunks(list) => {
+					let chunks = self.tree().list(list);
+					let (first, alone) = (chunks.first().copied().flatten(), chunks.len() == 1);
+					match first.map(|chunk| (chunk, self.chunk_expression(chunk).filter(|_| alone))) {
+						Some((_, Some(expression))) => Some(expression),
+						Some((chunk, None)) => {
+							let node = *self.tree().node(chunk);
+							return self.fail(node.start, node.end, Code::Expected, Some("an expression, not text"));
+						}
+						None => None,
 					}
-					_ => None,
-				},
+				}
 				Held::Flag => None,
 			};
 			if expression.is_none() && kind.named() {

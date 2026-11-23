@@ -370,12 +370,24 @@ fn the_first_chunk_of_this_names_a_dynamic_element() {
 		tag("<svelte:element this=\"{a}{b}\" />"),
 		r#"{"type":"Identifier","start":23,"end":24,"name":"a"}"#
 	);
-	// the chunks left out are in no scope
+	// the parts left out are in no scope and referenced by nothing
 	let scoped = svelte(
 		"<script>let a, b;</script><svelte:element this=\"{a}{b}\" />",
 		Options::MODULE | Options::SCOPES,
 	);
-	assert_eq!(scoped.matches("\"type\":\"Identifier\"").count(), 3, "{scoped}");
+	assert!(
+		scoped.contains("\"binding\":0,") && !scoped.contains("\"binding\":1,"),
+		"{scoped}"
+	);
+	// but they are read: an error in one is the component's, and under recovery is listed
+	let broken = "<svelte:element this=\"h{b +}\" />";
+	assert!(svelte(broken, Options::MODULE).starts_with("{\"node\":null,"));
+	let recovered = svelte(broken, Options::MODULE | Options::ERROR_RECOVERY);
+	assert!(
+		recovered.contains(r#""tag":{"type":"Literal","start":22,"end":23,"value":"h","raw":"h"}"#)
+			&& recovered.contains("\"errors\":[{\"code\":0,"),
+		"{recovered}"
+	);
 	for source in [
 		"<svelte:element this />",
 		"<svelte:component this=\"a{b}\" />",
