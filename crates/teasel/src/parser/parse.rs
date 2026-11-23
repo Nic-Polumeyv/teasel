@@ -510,7 +510,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.raw_backquote();
 	}
 
-	#[inline(always)]
+	#[inline(never)]
 	pub(super) fn bump(&mut self, regex: bool) {
 		if self.track {
 			return self.bump_tracked(regex);

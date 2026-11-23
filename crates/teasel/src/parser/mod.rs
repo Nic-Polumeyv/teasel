@@ -1317,7 +1317,7 @@ fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 }
 
 #[cfg(not(any(feature = "swar", feature = "batch")))]
-#[inline(always)]
+#[inline]
 fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 	while let Some(&b) = bytes.get(pos) {
 		if CLASS[b as usize] & ID_CONTINUE == 0 {
