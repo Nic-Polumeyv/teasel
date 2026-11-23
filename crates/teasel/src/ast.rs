@@ -289,7 +289,7 @@ pub struct Ast {
 	pub units: Handed<u32>,
 	pub error_rows: Handed<ErrorRow>,
 	/// The buffers the last parse worked in, for the next one.
-	pub spare: crate::parser::Spare,
+	pub spare: crate::parser::entry::Spare,
 	/// The scope analysis, when `scopes::analyze` ran.
 	pub scopes: Option<crate::scopes::Scopes>,
 	/// What went wrong, in source order, when errors are recovered from instead of thrown.

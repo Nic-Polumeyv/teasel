@@ -1,29 +1,30 @@
-use crate::error::Code;
-pub(crate) mod expression;
-pub(crate) mod scope;
-pub(crate) mod statement;
+//! The JavaScript and TypeScript parser. This file is its lexer, whose token is a span, a kind and
+//! flags: no text is kept, nothing is interned, and an error ends the input instead of being
+//! returned.
 
+pub(crate) mod checks;
+pub(crate) mod entry;
+pub(crate) mod parse;
+pub(crate) mod regexp;
+pub(crate) mod scan;
+pub(crate) mod stmt;
+pub(crate) mod ts;
+pub(crate) mod unicode;
+pub(crate) mod values;
+#[cfg(test)]
+mod lexer_tests;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod ts_tests;
 
-use crate::ast::{Ast, List, MethodKind, NodeId, NodeKind};
+use crate::ast::{Ast, List};
 use crate::error::SyntaxError;
-use crate::interner::StrId;
-use crate::lexer::Lexer;
-use crate::lexer::token::{Keyword, Token, TokenKind};
-use crate::typescript::TypeScript;
-pub(crate) use expression::ForInit;
-use scope::{SCOPE_TOP, Scope};
-pub(crate) use statement::{Context, StatementPlace};
 
 /// Errors travel boxed so every `Result` stays two words wide.
-pub(crate) type Result<T> = std::result::Result<T, Box<SyntaxError>>;
+pub(crate) type Result<T, E = Box<SyntaxError>> = std::result::Result<T, E>;
 
-pub(crate) const MAX_DEPTH: u32 = 1000;
-/// Subscripts and binary operators chain without recursion, but the tree they build is as deep
-/// as the chain is long, and everything that walks it recurses.
-// wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
-const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
+pub(crate) use parse::MAX_DEPTH;
 
 /// The switches of a parse as one word, two bits per option in the order of npm/src/options.ts,
 /// holding the index of the option's value.
@@ -70,26 +71,6 @@ impl Options {
 	}
 }
 
-/// What a function-shaped node is, for TypeScript's grammar around its signature.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FunctionKind {
-	Declaration,
-	Expression,
-	Method { in_class: bool, kind: MethodKind },
-	Arrow,
-}
-
-/// The check a TypeScript node is being unwrapped for.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Unwrap {
-	/// `check_lval_simple`: the target of an assignment or update.
-	Simple,
-	/// `check_lval_inner_pattern`: an element of a parameter list or pattern.
-	InnerPattern,
-}
-
-pub(crate) type Errors = Option<DestructuringErrors>;
-
 /// What a parse reads at its offset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Entry {
@@ -114,8 +95,6 @@ pub enum Entry {
 /// expression could end (TypeScript may read one as its own, see `Parser::reads_stop`). Returns
 /// the tree, its roots (one node, or the patterns of a parameter list) and the offset after
 /// everything the parse consumed. `reused` is an emptied tree from an earlier parse, its room kept.
-/// The tree, whether the parse succeeded or not, so the next parse can reuse it; with the roots
-/// read and where the parse ended.
 pub(crate) fn parse_at(
 	src: &str,
 	start: u32,
@@ -134,984 +113,1522 @@ pub(crate) fn parse_at(
 		let parsed = root.map(|root| (ast.add_list(&[Some(root)]), src.len() as u32));
 		return (ast, parsed);
 	}
-	let end = src.len() as u32;
-	let budget = if entry == Entry::Program {
-		(end - start) as usize
-	} else {
-		0
-	};
-	let ast = reused.unwrap_or_else(|| Box::new(Ast::sized(budget)));
-	if options.typescript() {
-		read::<true>(src, start, end, entry, options, stop, ast)
-	} else {
-		read::<false>(src, start, end, entry, options, stop, ast)
-	}
+	entry::parse_at(src, start, entry, options, stop, reused)
 }
 
-fn read<const TS: bool>(
-	src: &str,
-	start: u32,
-	end: u32,
-	entry: Entry,
-	options: Options,
-	stop: &str,
-	ast: Box<Ast>,
-) -> (Box<Ast>, Result<(List, u32)>) {
-	let mut parser = Parser::<TS>::new(src, start, options, stop, ast);
-	let roots = parser.read_roots(entry).map(|roots| {
-		let end = if entry == Entry::Program {
-			end
-		} else {
-			parser.consumed_end()
-		};
-		(roots, end)
-	});
-	(parser.finish(), roots)
-}
+/// The words that are more than a name somewhere: their facts, as bits.
+pub(crate) mod word {
+	pub(crate) const YIELD: u8 = 1;
+	pub(crate) const AWAIT: u8 = 2;
+	pub(crate) const ARGUMENTS: u8 = 4;
+	pub(crate) const ENUM: u8 = 8;
+	/// Reserved in strict mode.
+	pub(crate) const STRICT: u8 = 16;
+	/// A keyword.
+	pub(crate) const KEYWORD: u8 = 32;
+	pub(crate) const EVAL: u8 = 64;
+	/// Not computed yet; the flags take seven bits.
+	pub(crate) const UNKNOWN: u8 = 255;
 
-impl<const TS: bool> Parser<'_, TS> {
-	fn read_roots(&mut self, entry: Entry) -> Result<List> {
-		self.start()?;
-		if entry == Entry::Program {
-			let program = self.parse_program()?;
-			return Ok(self.list_of(&[program]));
-		}
-		match self.read_entry(entry) {
-			// under recovery, what was read is skipped and an empty identifier stands where it failed
-			Err(error) if self.recovering() => {
-				let at = error.pos;
-				self.record(Err(error)).unwrap();
-				self.skip_to_end();
-				self.prev_end = self.prev_end.max(at);
-				if entry == Entry::Params {
-					Ok(List::EMPTY)
-				} else {
-					let name = self.intern("");
-					let placeholder = self.add_with_end(NodeKind::Identifier { name }, at, at);
-					Ok(self.list_of(&[placeholder]))
-				}
+	pub(crate) fn flags(word: &str) -> u8 {
+		let mut flags = match word.as_bytes() {
+			b"yield" => YIELD | STRICT,
+			b"await" => AWAIT,
+			b"arguments" => ARGUMENTS,
+			b"eval" => EVAL,
+			b"enum" => ENUM,
+			b"implements" | b"interface" | b"let" | b"package" | b"private" | b"protected" | b"public" | b"static" => {
+				STRICT
 			}
-			result => result,
+			_ => 0,
+		};
+		if super::keyword_spelled(word.as_bytes()) != super::Kind::Ident {
+			flags |= KEYWORD;
 		}
+		flags
 	}
 }
 
-// with the language read from the options at each point instead, a parse-only JavaScript read took 1% longer
-pub(crate) struct Parser<'a, const TS: bool> {
-	pub(crate) lexer: Lexer<'a>,
-	pub(crate) ast: Box<Ast>,
-	/// What TypeScript's grammar keeps while it reads; untouched in a JavaScript parse.
-	pub(crate) ts: Box<TypeScript>,
-	pub(crate) options: Options,
-	pub(crate) tok: Token,
-	pub(crate) prev_end: u32,
-	pub(crate) strict: bool,
-	pub(crate) depth: u32,
-	pub(crate) scopes: Vec<Scope>,
-	/// Name vectors of scopes left, for the next scope entered.
-	spare_names: Vec<Vec<scope::Name>>,
-	declarations: u32,
-	/// List buffers earlier lists gave back: a list costs no allocation after the first at its depth.
-	spare_lists: Vec<Vec<Option<NodeId>>>,
-	param_names: Vec<StrId>,
-	labels: Vec<Label>,
-	private_names: Vec<PrivateNameScope>,
-	pub(crate) undeclared_exports: Vec<(StrId, u32)>,
-	pub(crate) yield_pos: u32,
-	pub(crate) await_pos: u32,
-	pub(crate) await_ident_pos: u32,
-	pub(crate) potential_arrow_at: u32,
-	potential_arrow_in_for_await: bool,
-	/// Recovered errors; the lexer keeps its own until `finish`.
-	pub(crate) errors: Vec<SyntaxError>,
-	/// Where TypeScript last read a host stop word as its own, at bracket depth zero: the host
-	/// gets the last one, so the entry is read again with it as a stop.
-	pub(crate) stop_word_at: Option<u32>,
-	pub(crate) forced_stop: Option<u32>,
-	/// Inside a speculation, where the parse must fail as strict parsing would, not recover.
-	speculating: u32,
-	/// More nodes than this is a parse that stopped consuming input.
-	tree_limit: usize,
+/// A regular expression's pattern and flags checked: the error, where it starts and ends in the
+/// pattern.
+pub(crate) fn validate_regexp(
+	pattern: &str,
+	flags: &str,
+	named: bool,
+	scratch: &mut regexp::Scratch,
+) -> std::result::Result<(), (crate::error::Code, usize, usize)> {
+	regexp::validate(pattern, flags, named, scratch).map_err(|regexp::Rejected { code, at, end }| (code, at, end))
 }
 
-/// The buffers a parse works in, handed on through the tree so the next parse allocates none.
-#[derive(Default)]
-pub struct Spare {
-	scopes: Vec<Scope>,
-	names: Vec<Vec<scope::Name>>,
-	lists: Vec<Vec<Option<NodeId>>>,
-	param_names: Vec<StrId>,
-	labels: Vec<Label>,
-	private_names: Vec<PrivateNameScope>,
-	errors: Vec<SyntaxError>,
-	regexp: crate::lexer::regexp::Scratch,
-	stop_ranges: Vec<(u32, u32, bool)>,
-	// built for every parse, it cost the pieces of a JavaScript document 1.5%; a plain field moved in
-	// and out of here, or held in the tree outside these buffers, read no faster: documents 1% and
-	// TypeScript apps 1 to 1.6% slower, at the 1% noise of code placement
-	typescript: Option<Box<TypeScript>>,
+use scan::{CLASS, DIGIT, ID_CONTINUE, ID_START, NEWLINE, REGEXP, SPACE, find, is_separator, line_end};
+use unicode::{is_id_continue, is_id_start};
+
+/// A line break stands between the token before and this one.
+pub const NEWLINE_BEFORE: u8 = 1;
+/// A word written with a unicode escape, or a string or template chunk whose value is not its
+/// source text: whoever builds the node decodes it.
+pub const ESCAPED: u8 = 2;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Token {
+	pub start: u32,
+	pub end: u32,
+	pub kind: Kind,
+	pub flags: u8,
 }
 
-impl std::fmt::Debug for Spare {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_str("Spare")
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum Kind {
+	Eof, Ident, PrivateName, Number, BigInt, String, RegExp,
+	/// A whole template, a head up to its first `${`, a middle from `}` to `${`, a tail from `}`.
+	Template, TemplateHead, TemplateMiddle, TemplateTail,
+	Break, Case, Catch, Class, Const, Continue, Debugger, Default, Delete, Do, Else, Export,
+	Extends, False, Finally, For, Function, If, Import, In, Instanceof, New, Null, Return, Super,
+	Switch, This, Throw, True, Try, Typeof, Var, Void, While, With,
+	BraceL, BraceR, ParenL, ParenR, BracketL, BracketR, Semi, Comma, Colon, Tilde, Dot, Ellipsis,
+	Question, QuestionQuestion, QuestionQuestionEq, QuestionDot, Eq, EqEq, EqEqEq, Arrow, Bang,
+	BangEq, BangEqEq, At, Lt, LtLt, LtLtEq, LtEq, Gt, GtGt, GtGtGt, GtGtEq, GtGtGtEq, GtEq, Plus,
+	PlusPlus, PlusEq, Minus, MinusMinus, MinusEq, Star, StarStar, StarStarEq, StarEq, Slash,
+	SlashEq, Percent, PercentEq, Amp, AmpAmp, AmpAmpEq, AmpEq, Pipe, PipePipe, PipePipeEq, PipeEq,
+	Caret, CaretEq,
+}
+
+impl Kind {
+	pub fn is_keyword(self) -> bool {
+		(Kind::Break as u8..=Kind::With as u8).contains(&(self as u8))
 	}
 }
 
-/// Enough to unwind the parser after an error inside a statement it recovers from: what the
-/// failed parse built is forgotten with it.
-struct Mark {
-	scopes: usize,
-	declarations: u32,
-	labels: usize,
-	private_names: usize,
-	undeclared_exports: usize,
-	depth: u32,
-	brackets: (u32, [u32; 3]),
-	strict: bool,
-	/// TypeScript's state, in a TypeScript parse.
-	// inline, it grew every JavaScript frame that holds a mark: 1% on host documents and under recovery
-	ts: Option<Box<crate::typescript::State>>,
-	ast: crate::ast::Mark,
-}
+pub use crate::error::Code;
 
-/// Enough to retry a speculative parse from here: the mark, and the tokens back at it.
-pub(crate) struct Snapshot {
-	tokens: TokenSnapshot,
-	mark: Mark,
-}
-
-pub(crate) struct TokenSnapshot {
-	mark: crate::lexer::Mark,
-	in_type: bool,
-	tok: Token,
-	prev_end: u32,
-}
-
-#[derive(Clone, Copy)]
-struct Label {
-	name: Option<StrId>,
-	kind: LabelKind,
-	statement_start: u32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LabelKind {
+/// What an error is about, kept until the tree's strings can hold it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Arg {
 	None,
-	Loop,
-	Switch,
+	Char(char),
+	Radix(u32),
 }
 
+/// The first error of the lexer: the input ends there.
+#[derive(Clone, Copy, Debug)]
+pub struct LexError {
+	pub code: Code,
+	pub pos: u32,
+	pub end: u32,
+	pub arg: Arg,
+}
+
+/// The token is a template the text ends inside: an error once it is read as one.
+pub const BROKEN: u8 = 4;
+
+/// Under recovery, no token: the one that did not lex was recorded and skipped, the cursor
+/// after it.
+const SKIPPED: u8 = 8;
+
+/// Asked of `rest` while tokens that do not lex are skipped: the next skip is the caller's.
+const SKIPPING: u8 = 16;
+
+pub use crate::ast::{Comment, CommentKind};
+
+// what a token's first byte starts
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum Lead {
+	Bad,
+	Space,
+	Newline,
+	Word,
+	Digit,
+	Quote,
+	Backquote,
+	Single,
+	Dot,
+	Question,
+	Eq,
+	Bang,
+	Lt,
+	Gt,
+	Plus,
+	Minus,
+	Star,
+	Slash,
+	Percent,
+	Amp,
+	Pipe,
+	Caret,
+	Hash,
+	At,
+	Backslash,
+	High,
+}
+
+static LEAD: [Lead; 256] = leads();
+static SINGLE: [Kind; 256] = singles();
+
+const fn leads() -> [Lead; 256] {
+	let mut table = [Lead::Bad; 256];
+	let mut b = 0;
+	while b < 256 {
+		let c = b as u8;
+		table[b] = match c {
+			b' ' | b'\t' | 0x0b | 0x0c => Lead::Space,
+			b'\n' | b'\r' => Lead::Newline,
+			b'a'..=b'z' | b'A'..=b'Z' | b'$' | b'_' => Lead::Word,
+			b'0'..=b'9' => Lead::Digit,
+			b'"' | b'\'' => Lead::Quote,
+			b'`' => Lead::Backquote,
+			b'{' | b'}' | b'(' | b')' | b'[' | b']' | b';' | b',' | b':' | b'~' => Lead::Single,
+			b'.' => Lead::Dot,
+			b'?' => Lead::Question,
+			b'=' => Lead::Eq,
+			b'!' => Lead::Bang,
+			b'<' => Lead::Lt,
+			b'>' => Lead::Gt,
+			b'+' => Lead::Plus,
+			b'-' => Lead::Minus,
+			b'*' => Lead::Star,
+			b'/' => Lead::Slash,
+			b'%' => Lead::Percent,
+			b'&' => Lead::Amp,
+			b'|' => Lead::Pipe,
+			b'^' => Lead::Caret,
+			b'#' => Lead::Hash,
+			b'@' => Lead::At,
+			b'\\' => Lead::Backslash,
+			0x80..=0xff => Lead::High,
+			_ => Lead::Bad,
+		};
+		b += 1;
+	}
+	table
+}
+
+const fn singles() -> [Kind; 256] {
+	let mut table = [Kind::Eof; 256];
+	table[b'{' as usize] = Kind::BraceL;
+	table[b'}' as usize] = Kind::BraceR;
+	table[b'(' as usize] = Kind::ParenL;
+	table[b')' as usize] = Kind::ParenR;
+	table[b'[' as usize] = Kind::BracketL;
+	table[b']' as usize] = Kind::BracketR;
+	table[b';' as usize] = Kind::Semi;
+	table[b',' as usize] = Kind::Comma;
+	table[b':' as usize] = Kind::Colon;
+	table[b'~' as usize] = Kind::Tilde;
+	table
+}
+
+pub struct Lexer<'a> {
+	src: &'a str,
+	pos: usize,
+	/// The first error and where; the input ends there, so every later token is `Eof`.
+	pub error: Option<LexError>,
+	/// Strict code: a legacy octal number or escape is an error.
+	pub strict: bool,
+	/// Where the first keyword written with an escape stands, until it is read as a name.
+	pub escaped_keyword: Option<(u32, u32)>,
+	pub comments: Vec<Comment>,
+	keep_comments: bool,
+	/// Modules have no HTML-style comments.
+	module: bool,
+	/// `@` is a token: a decorator's sign, in TypeScript.
+	pub at_sign: bool,
+	/// Errors are recorded and reading goes on past them.
+	pub recover: bool,
+	/// What recovery recorded: none until it records something, so a strict lexer stays small.
+	pub soft: Option<Box<Soft>>,
+}
+
+/// The errors a lexer records under recovery.
 #[derive(Default)]
-struct PrivateNameScope {
-	declared: Vec<(StrId, PrivateKind)>,
-	used: Vec<(StrId, u32)>,
+pub struct Soft {
+	pub errors: Vec<crate::error::SyntaxError>,
+	/// What each recorded error is about, by its place in `errors`, until the tree's strings hold it.
+	pub error_args: Vec<(usize, String)>,
+	/// Where the read of a token that failed for good stopped.
+	pub fail_pos: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PrivateKind {
-	Any,
-	InstanceGet,
-	InstanceSet,
-	StaticGet,
-	StaticSet,
-}
-
-/// Errors that only become real once an expression turns out to be a pattern, or vice versa.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct DestructuringErrors {
-	pub shorthand_assign: Option<u32>,
-	pub trailing_comma: Option<u32>,
-	pub parenthesized_assign: Option<u32>,
-	pub double_proto: Option<u32>,
-	/// The literal or parenthesized expression the facts are of.
-	pub owner: Option<NodeId>,
-	/// The first error of a literal used as an operand, raised where its list closes.
-	pub operand: Option<(u32, Code)>,
-}
-
-impl DestructuringErrors {
-	/// An element's facts joining its list's: the first of each stays.
-	// see `Parser::first_error`
-	#[inline(always)]
-	pub(crate) fn merge(&mut self, element: DestructuringErrors) {
-		self.shorthand_assign = self.shorthand_assign.or(element.shorthand_assign);
-		self.trailing_comma = self.trailing_comma.or(element.trailing_comma);
-		self.parenthesized_assign = self.parenthesized_assign.or(element.parenthesized_assign);
-		self.double_proto = self.double_proto.or(element.double_proto);
-		self.operand = self.operand.or(element.operand);
-	}
-
-	/// The facts of an expression that is no pattern: only what makes it an error stays.
-	pub(crate) fn settle_as_operand(&mut self) {
-		if self.operand.is_none() && self.shorthand_assign.is_none() && self.double_proto.is_none() {
-			*self = DestructuringErrors::default();
-			return;
-		}
-		*self = DestructuringErrors {
-			operand: first_pending([
-				self.operand,
-				self.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
-				self.double_proto.map(|pos| (pos, Code::DuplicateProto)),
-			]),
-			..DestructuringErrors::default()
+impl<'a> Lexer<'a> {
+	pub fn new(src: &'a str, module: bool, keep_comments: bool) -> Self {
+		let mut lexer = Lexer {
+			src,
+			pos: 0,
+			error: None,
+			strict: module,
+			escaped_keyword: None,
+			comments: Vec::new(),
+			keep_comments,
+			module,
+			at_sign: false,
+			recover: false,
+			soft: None,
 		};
-	}
-}
-
-/// The pending error that comes first; on a tie, the one named first.
-// see `Parser::first_error`
-#[cold]
-#[inline(never)]
-fn first_pending(pending: [Option<(u32, Code)>; 3]) -> Option<(u32, Code)> {
-	pending.into_iter().flatten().min_by_key(|&(pos, _)| pos)
-}
-
-impl<'a, const TS: bool> Parser<'a, TS> {
-	pub(crate) fn new(src: &'a str, offset: u32, options: Options, stop: &'a str, mut ast: Box<Ast>) -> Self {
-		let mut lexer = Lexer::with(src, std::mem::take(&mut ast.strings));
-		lexer.comments = std::mem::take(&mut ast.comments);
-		lexer.set_pos(offset);
 		lexer.skip_hashbang();
-		lexer.recover = options.has(Options::ERROR_RECOVERY);
-		lexer.at_sign = options.typescript();
-		let strict = options.has(Options::MODULE);
-		lexer.strict = strict;
-		lexer.module = strict;
-		let spare = std::mem::take(&mut ast.spare);
-		lexer.regexp = spare.regexp;
-		lexer.stop_ranges = spare.stop_ranges;
-		lexer.set_stops(stop);
-		let ts = match spare.typescript {
-			Some(mut ts) => {
-				// cleared keeping the room of its stacks and tables instead, TypeScript apps read 0 to 1% slower
-				if options.typescript() {
-					*ts = TypeScript::default();
-				}
-				ts
-			}
-			None => Box::default(),
+		lexer
+	}
+
+	/// A lexer at `pos` of a text, with the comments read so far: a hashbang is one only where
+	/// the text starts.
+	pub fn at(src: &'a str, pos: usize, module: bool, comments: Vec<Comment>) -> Self {
+		let mut lexer = Lexer {
+			src,
+			pos,
+			error: None,
+			strict: module,
+			escaped_keyword: None,
+			comments,
+			keep_comments: true,
+			module,
+			at_sign: false,
+			recover: false,
+			soft: None,
 		};
-		Self {
-			lexer,
-			ast,
-			ts,
-			options,
-			tok: Token::eof(offset),
-			prev_end: offset,
-			strict,
-			depth: 0,
-			scopes: spare.scopes,
-			spare_names: spare.names,
-			declarations: 0,
-			spare_lists: spare.lists,
-			param_names: spare.param_names,
-			labels: spare.labels,
-			private_names: spare.private_names,
-			undeclared_exports: Vec::new(),
-			yield_pos: 0,
-			await_pos: 0,
-			await_ident_pos: 0,
-			potential_arrow_at: u32::MAX,
-			potential_arrow_in_for_await: false,
-			errors: spare.errors,
-			stop_word_at: None,
-			forced_stop: None,
-			speculating: 0,
-			tree_limit: 16 * src.len() + 256,
+		lexer.skip_hashbang();
+		lexer
+	}
+
+	fn skip_hashbang(&mut self) {
+		if self.pos == 0 && self.src.starts_with("#!") {
+			let end = 2 + line_end(&self.src.as_bytes()[2..]);
+			self.comment(0, end, CommentKind::Hashbang);
+			self.pos = end;
 		}
 	}
 
-	/// Whether the parse reads TypeScript.
-	pub(crate) fn typescript(&self) -> bool {
-		TS
+	pub fn pos(&self) -> usize {
+		self.pos
 	}
 
-	/// The first token, read before anything is parsed.
-	pub(crate) fn start(&mut self) -> Result<()> {
-		self.lexer.next_token_into(&mut self.tok)?;
-		// the host's token first: nothing to read, which is the host's to report
-		self.stop_after_operand();
-		Ok(())
+	/// The input ended where it stands: every later token is `Eof`.
+	pub fn end(&mut self) -> Token {
+		let end = self.src.len();
+		self.pos = end;
+		token(end, end, Kind::Eof, 0)
 	}
 
-	pub(crate) fn snapshot(&self) -> Snapshot {
-		Snapshot {
-			tokens: self.token_snapshot(),
-			mark: self.mark(),
+	/// The cursor moved to `pos`, with nothing read: one lexer reads every expression of a text.
+	pub fn set_pos(&mut self, pos: usize) {
+		self.pos = pos;
+		self.error = None;
+		self.escaped_keyword = None;
+	}
+
+	/// The cursor back at `pos`, where it stood before. An error met since stays: the same
+	/// text is read again, or the look ahead was the first to read it.
+	pub fn rewind(&mut self, pos: usize) {
+		self.pos = pos;
+	}
+
+	/// The byte the next token starts with, past spaces and comments, nothing read.
+	pub fn peek_byte(&self) -> Option<u8> {
+		self.peek().map(|(b, _)| b)
+	}
+
+	/// After a `let`, whether what follows makes it a declaration: a bracket, or a name other
+	/// than `in` and `instanceof`; `nested` where only `let [` is told apart from a name.
+	pub fn declares_after_let(&self, nested: bool) -> bool {
+		let Some((b, pos)) = self.peek() else { return false };
+		if b == b'[' || b == b'\\' {
+			return true;
+		}
+		if nested {
+			return false;
+		}
+		if b == b'{' {
+			return true;
+		}
+		// a name of ASCII alone, the usual one, by its bytes
+		let bytes = self.src.as_bytes();
+		if CLASS[b as usize] & ID_START != 0 {
+			let end = ident_end(bytes, pos + 1);
+			match bytes.get(end) {
+				Some(b'\\') => return true,
+				Some(&next) if next >= 0x80 => {}
+				_ => {
+					let word = &bytes[pos..end];
+					return word != b"in" && word != b"instanceof";
+				}
+			}
+		}
+		let rest = &self.src[pos..];
+		if rest.chars().next().is_some_and(is_id_start) {
+			let len = rest.find(|c| !is_id_continue(c)).unwrap_or(rest.len());
+			if rest[len..].starts_with('\\') {
+				return true;
+			}
+			let word = &rest[..len];
+			return word != "in" && word != "instanceof";
+		}
+		false
+	}
+
+	fn peek(&self) -> Option<(u8, usize)> {
+		let bytes = self.src.as_bytes();
+		let mut pos = self.pos;
+		let mut broke = pos == 0;
+		loop {
+			match bytes.get(pos)? {
+				b'\n' | b'\r' => {
+					broke = true;
+					pos += 1;
+				}
+				b' ' | b'\t' | 0x0b | 0x0c => pos += 1,
+				b'/' if bytes.get(pos + 1) == Some(&b'/') => pos += 2 + line_end(&bytes[pos + 2..]),
+				b'<' if !self.module && bytes[pos..].starts_with(b"<!--") => pos += 4 + line_end(&bytes[pos + 4..]),
+				b'-' if !self.module && broke && bytes[pos..].starts_with(b"-->") => {
+					pos += 3 + line_end(&bytes[pos + 3..]);
+				}
+				b'/' if bytes.get(pos + 1) == Some(&b'*') => {
+					let mut at = pos + 2;
+					loop {
+						at = find(bytes, at, [b'*'], false);
+						if at >= bytes.len() {
+							return None;
+						}
+						if bytes.get(at + 1) == Some(&b'/') {
+							break;
+						}
+						at += 1;
+					}
+					let body = &bytes[pos + 2..at];
+					broke |= line_end(body) < body.len();
+					pos = at + 2;
+				}
+				&b if b >= 0x80 => {
+					let c = self.src[pos..].chars().next().unwrap();
+					if scan::is_new_line(c) {
+						broke = true;
+					} else if !scan::is_whitespace(c) {
+						return Some((b, pos));
+					}
+					pos += c.len_utf8();
+				}
+				&b => return Some((b, pos)),
+			}
 		}
 	}
 
-	pub(crate) fn restore(&mut self, snapshot: Snapshot) {
-		self.restore_tokens(snapshot.tokens);
-		self.unwind(snapshot.mark);
-	}
-
-	/// The tokenizer alone, enough for a lookahead that parses nothing.
-	pub(crate) fn token_snapshot(&self) -> TokenSnapshot {
-		TokenSnapshot {
-			mark: self.lexer.mark(),
-			in_type: self.lexer.in_type,
-			tok: self.tok,
-			prev_end: self.prev_end,
+	/// The token at the cursor. `regex` says a `/` here starts a regular expression: what stands
+	/// before it is the caller's knowledge.
+	// spaces and line breaks, then a word or a one-byte punctuator: four tokens in five, read here
+	// so the caller's loop holds them without a call; the rest is `rest`
+	#[inline(always)]
+	pub fn next(&mut self, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		let mut pos = self.pos;
+		let mut flags = 0u8;
+		#[cfg(feature = "ws2")]
+		let (b, class) = {
+			// no gap or one space, nine tokens in ten of a line; the loop for the rest
+			let Some(&(mut b)) = bytes.get(pos) else {
+				return self.rest(pos, flags, regex);
+			};
+			if b == b' ' {
+				pos += 1;
+				match bytes.get(pos) {
+					Some(&next) => b = next,
+					None => return self.rest(pos, flags, regex),
+				}
+			}
+			let mut class = CLASS[b as usize];
+			while class & (SPACE | NEWLINE) != 0 {
+				flags |= (class & NEWLINE) >> 1;
+				pos += 1;
+				match bytes.get(pos) {
+					Some(&next) => b = next,
+					None => return self.rest(pos, flags, regex),
+				}
+				class = CLASS[b as usize];
+			}
+			(b, class)
+		};
+		#[cfg(not(feature = "ws2"))]
+		let (b, class) = loop {
+			let Some(&b) = bytes.get(pos) else {
+				return self.rest(pos, flags, regex);
+			};
+			let class = CLASS[b as usize];
+			if class & (SPACE | NEWLINE) == 0 {
+				break (b, class);
+			}
+			flags |= (class & NEWLINE) >> 1;
+			pos += 1;
+		};
+		if class & ID_START != 0 {
+			let end = ident_end(bytes, pos + 1);
+			if bytes.get(end).is_some_and(|&b| b == b'\\' || b >= 0x80) {
+				return self.word_slow(pos, end, Kind::Ident, flags, regex);
+			}
+			self.pos = end;
+			return token(pos, end, keyword(bytes, pos, end), flags);
 		}
-	}
-
-	pub(crate) fn restore_tokens(&mut self, snapshot: TokenSnapshot) {
-		self.lexer.rewind(snapshot.mark);
-		self.lexer.in_type = snapshot.in_type;
-		self.tok = snapshot.tok;
-		self.prev_end = snapshot.prev_end;
-	}
-
-	/// A tree past what the source can hold is a loop that consumes nothing: it fails here,
-	/// cheaply, instead of growing until the machine runs out of memory.
-	pub(crate) fn within_limit(&self) -> Result<()> {
-		if self.ast.nodes.len() > self.tree_limit {
-			return self.error(self.tok.start, Code::TreeSize);
+		let kind = SINGLE[b as usize];
+		if kind != Kind::Eof {
+			self.pos = pos + 1;
+			return token(pos, pos + 1, kind, flags);
 		}
-		Ok(())
+		self.rest(pos, flags, regex)
 	}
 
-	/// A strict read ahead; under recovery a lexer error there is no verdict, the real read
-	/// records it.
-	pub(crate) fn peek_with<T>(&mut self, read: impl FnOnce(&mut Lexer<'a>) -> Result<T>) -> Result<Option<T>> {
-		match self.lexer.lookahead(read) {
-			Ok(value) => Ok(Some(value)),
-			Err(_) if self.recovering() => Ok(None),
-			Err(error) => Err(error),
-		}
-	}
-
-	pub(crate) fn recovering(&self) -> bool {
-		self.options.has(Options::ERROR_RECOVERY) && self.speculating == 0
-	}
-
-	/// Runs `f` with recovery off, so it fails where strict parsing would and the caller can try
-	/// something else.
-	pub(crate) fn speculate<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-		self.speculating += 1;
-		let result = f(self);
-		self.speculating -= 1;
-		result
-	}
-
-	/// Under recovery an error is recorded, once per position, and the parse goes on with the
-	/// tree it has.
-	pub(crate) fn record(&mut self, error: Result<()>) -> Result<()> {
-		let Err(error) = error else { return Ok(()) };
-		if !self.recovering() {
-			return Err(error);
-		}
-		if self
-			.errors
-			.last()
-			.is_none_or(|last| (last.pos, last.code) != (error.pos, error.code))
-		{
-			self.errors.push(*error);
-		}
-		Ok(())
-	}
-
-	/// Records what `unexpected` would raise.
-	pub(crate) fn report_unexpected(&mut self) {
-		let error = self.unexpected();
-		self.record(error).unwrap();
-	}
-
-	/// Where the grammar needs a token it does not have: an empty identifier of no width there.
-	pub(crate) fn placeholder(&mut self) -> Result<NodeId> {
-		self.within_limit()?;
-		if !self.recovering() {
-			return self.unexpected();
-		}
-		self.report_unexpected();
-		let name = self.intern("");
-		let at = self.tok.start;
-		self.prev_end = at;
-		Ok(self.add_with_end(NodeKind::Identifier { name }, at, at))
-	}
-
-	fn mark(&self) -> Mark {
-		Mark {
-			scopes: self.scopes.len(),
-			declarations: self.declarations,
-			labels: self.labels.len(),
-			private_names: self.private_names.len(),
-			undeclared_exports: self.undeclared_exports.len(),
-			depth: self.depth,
-			brackets: (self.lexer.depth, self.lexer.open),
-			strict: self.strict,
-			ts: self.typescript().then(|| Box::new(self.ts.save())),
-			ast: self.ast.mark(),
-		}
-	}
-
-	fn unwind(&mut self, mark: Mark) {
-		while self.scopes.len() > mark.scopes {
-			self.exit_scope();
-		}
-		self.forget_names(mark.declarations);
-		self.labels.truncate(mark.labels);
-		self.private_names.truncate(mark.private_names);
-		self.undeclared_exports.truncate(mark.undeclared_exports);
-		self.depth = mark.depth;
-		(self.lexer.depth, self.lexer.open) = mark.brackets;
-		self.set_strict(mark.strict);
-		if let Some(saved) = mark.ts {
-			self.ts.restore(*saved);
-		}
-		self.ast.truncate(mark.ast);
-	}
-
-	/// A statement of a list, under recovery: when it fails, what was read is skipped up to the
-	/// next `;`, a line that starts with a keyword, or the bracket that closes the list.
-	pub(crate) fn statement_recovered(
-		&mut self,
-		f: impl FnOnce(&mut Self) -> Result<NodeId>,
-	) -> Result<Option<NodeId>> {
-		if !self.recovering() {
-			return f(self).map(Some);
-		}
-		self.recover_statement(f)
-	}
-
-	// with this and the two inlined below left to the compiler, a parse-only JavaScript read took 0.9% longer
+	/// Every token, from `pos` on, `flags` being what the trivia before `pos` gave.
 	#[inline(never)]
-	fn recover_statement(&mut self, f: impl FnOnce(&mut Self) -> Result<NodeId>) -> Result<Option<NodeId>> {
-		let mark = self.mark();
-		let at = self.tok.start;
-		match f(self) {
-			Ok(statement) => Ok(Some(statement)),
-			Err(error) => {
-				self.record(Err(error)).unwrap();
-				self.unwind(mark);
-				let mut skipped = self.tok.start != at;
-				loop {
-					if self.is(TokenKind::Eof) || self.is(TokenKind::BraceR) {
-						break;
+	fn rest(&mut self, mut pos: usize, mut flags: u8, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		loop {
+			let Some(&b) = bytes.get(pos) else {
+				self.pos = pos;
+				return token(pos, pos, Kind::Eof, flags);
+			};
+			let start = pos;
+			let (kind, end) = match LEAD[b as usize] {
+				Lead::Space => {
+					pos += 1;
+					while bytes.get(pos).is_some_and(|&b| CLASS[b as usize] & SPACE != 0) {
+						pos += 1;
 					}
-					if self.eat(TokenKind::Semi)? {
-						break;
-					}
-					if skipped && self.tok.newline_before && matches!(self.tok.kind, TokenKind::Keyword(_)) {
-						break;
-					}
-					self.next_liberal()?;
-					skipped = true;
+					continue;
 				}
-				Ok(None)
-			}
-		}
-	}
-
-	/// An element of a list that consumed nothing under recovery would repeat forever: its token
-	/// is skipped as unexpected.
-	pub(crate) fn ensure_progress(&mut self, at: u32) -> Result<()> {
-		if self.recovering() && self.tok.start == at {
-			if self.is(TokenKind::Eof) {
-				return self.unexpected();
-			}
-			self.report_unexpected();
-			self.next()?;
-		}
-		Ok(())
-	}
-
-	/// Reads one entry other than a program at the current token, in a scope of its own.
-	pub(crate) fn read_entry(&mut self, entry: Entry) -> Result<List> {
-		self.enter_scope(SCOPE_TOP);
-		let root = match entry {
-			Entry::Expression => {
-				let before = self.snapshot();
-				let first = self.parse_sequence(ForInit::No, &mut None);
-				match self.stop_word_at.take() {
-					None => first?,
-					// a word both the host and TypeScript read is the host's at its last use
-					Some(at) => {
-						self.restore(before);
-						self.forced_stop = Some(at);
-						self.parse_sequence(ForInit::No, &mut None)?
+				Lead::Newline => {
+					flags |= NEWLINE_BEFORE;
+					pos += 1;
+					while bytes
+						.get(pos)
+						.is_some_and(|&b| CLASS[b as usize] & (SPACE | NEWLINE) != 0)
+					{
+						pos += 1;
 					}
+					continue;
 				}
-			}
-			Entry::Pattern => self.parse_pattern_root()?,
-			Entry::Params => return self.parse_params_root(),
-			Entry::Statement => {
-				let mut exports = statement::Exports::default();
-				self.parse_statement(statement::Context::None, StatementPlace::TopLevel, Some(&mut exports))?
-			}
-			Entry::TypeParameters if self.typescript() => self.type_parameters()?,
-			Entry::TypeParameters => return self.error(self.tok.start, Code::NotTypescript),
-			Entry::Program | Entry::StyleSheet | Entry::Svelte => unreachable!(),
-		};
-		Ok(self.list_of(&[root]))
-	}
-
-	/// An assignment target on its own: an identifier or a destructuring pattern, as it would
-	/// appear on the left of `=`.
-	fn parse_pattern_root(&mut self) -> Result<NodeId> {
-		let mut errors = Some(DestructuringErrors::default());
-		let expression = match self.tok.kind {
-			TokenKind::BraceL | TokenKind::BracketL => self.parse_expr_atom(&mut errors, ForInit::No, false)?,
-			_ => self.parse_ident(false)?,
-		};
-		let pattern = self.make_pattern(expression, &mut errors)?;
-		self.check_lval_pattern(pattern, scope::Binding::None, &mut None)?;
-		if self.typescript() {
-			self.pattern_annotation(pattern)?;
+				Lead::Word => {
+					let end = ident_end(bytes, pos + 1);
+					if bytes.get(end).is_some_and(|&b| b == b'\\' || b >= 0x80) {
+						return self.word_slow(start, end, Kind::Ident, flags, regex);
+					}
+					(keyword(bytes, start, end), end)
+				}
+				Lead::Single => (SINGLE[b as usize], pos + 1),
+				Lead::Dot => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'.'), Some(b'.')) => (Kind::Ellipsis, pos + 3),
+					(Some(b'0'..=b'9'), _) => return self.number(start, true, flags, regex),
+					_ => (Kind::Dot, pos + 1),
+				},
+				Lead::Eq => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'='), Some(b'=')) => (Kind::EqEqEq, pos + 3),
+					(Some(b'='), _) => (Kind::EqEq, pos + 2),
+					(Some(b'>'), _) => (Kind::Arrow, pos + 2),
+					_ => (Kind::Eq, pos + 1),
+				},
+				Lead::Quote => return self.string(start, b, flags, regex),
+				Lead::Digit => return self.number(start, false, flags, regex),
+				Lead::Slash => match bytes.get(pos + 1) {
+					Some(b'/') => {
+						let end = pos + 2 + line_end(&bytes[pos + 2..]);
+						self.comment(pos, end, CommentKind::Line);
+						pos = end;
+						continue;
+					}
+					Some(b'*') => match self.block_comment(pos) {
+						Some((end, broke)) => {
+							flags |= broke as u8;
+							pos = end;
+							continue;
+						}
+						None if self.recover => {
+							let rest = &bytes[pos + 2..];
+							if line_end(rest) < rest.len() {
+								flags |= NEWLINE_BEFORE;
+							}
+							self.soft(crate::error::SyntaxError::new(pos as u32, Code::UnterminatedComment), None);
+							self.comment(pos, bytes.len(), CommentKind::Unclosed);
+							self.pos = bytes.len();
+							return token(bytes.len(), bytes.len(), Kind::Eof, flags);
+						}
+						None => return self.fail(Code::UnterminatedComment, pos),
+					},
+					_ if regex => return self.regex_at(start, flags, false),
+					Some(b'=') => (Kind::SlashEq, pos + 2),
+					_ => (Kind::Slash, pos + 1),
+				},
+				Lead::Question => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'?'), Some(b'=')) => (Kind::QuestionQuestionEq, pos + 3),
+					(Some(b'?'), _) => (Kind::QuestionQuestion, pos + 2),
+					(Some(b'.'), Some(d)) if !d.is_ascii_digit() => (Kind::QuestionDot, pos + 2),
+					_ => (Kind::Question, pos + 1),
+				},
+				Lead::Bang => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'='), Some(b'=')) => (Kind::BangEqEq, pos + 3),
+					(Some(b'='), _) => (Kind::BangEq, pos + 2),
+					_ => (Kind::Bang, pos + 1),
+				},
+				Lead::Lt => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'!'), _) if !self.module && bytes[pos..].starts_with(b"<!--") => {
+						let end = pos + 4 + line_end(&bytes[pos + 4..]);
+						self.comment(pos, end, CommentKind::HtmlOpen);
+						pos = end;
+						continue;
+					}
+					(Some(b'<'), Some(b'=')) => (Kind::LtLtEq, pos + 3),
+					(Some(b'<'), _) => (Kind::LtLt, pos + 2),
+					(Some(b'='), _) => (Kind::LtEq, pos + 2),
+					_ => (Kind::Lt, pos + 1),
+				},
+				Lead::Gt => match (bytes.get(pos + 1), bytes.get(pos + 2), bytes.get(pos + 3)) {
+					(Some(b'>'), Some(b'>'), Some(b'=')) => (Kind::GtGtGtEq, pos + 4),
+					(Some(b'>'), Some(b'>'), _) => (Kind::GtGtGt, pos + 3),
+					(Some(b'>'), Some(b'='), _) => (Kind::GtGtEq, pos + 3),
+					(Some(b'>'), _, _) => (Kind::GtGt, pos + 2),
+					(Some(b'='), _, _) => (Kind::GtEq, pos + 2),
+					_ => (Kind::Gt, pos + 1),
+				},
+				Lead::Plus => match bytes.get(pos + 1) {
+					Some(b'+') => (Kind::PlusPlus, pos + 2),
+					Some(b'=') => (Kind::PlusEq, pos + 2),
+					_ => (Kind::Plus, pos + 1),
+				},
+				Lead::Minus => match bytes.get(pos + 1) {
+					Some(b'-')
+						if !self.module
+							&& (flags & NEWLINE_BEFORE != 0 || self.pos == 0)
+							&& bytes[pos..].starts_with(b"-->") =>
+					{
+						let end = pos + 3 + line_end(&bytes[pos + 3..]);
+						self.comment(pos, end, CommentKind::HtmlClose);
+						pos = end;
+						continue;
+					}
+					Some(b'-') => (Kind::MinusMinus, pos + 2),
+					Some(b'=') => (Kind::MinusEq, pos + 2),
+					_ => (Kind::Minus, pos + 1),
+				},
+				Lead::Star => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'*'), Some(b'=')) => (Kind::StarStarEq, pos + 3),
+					(Some(b'*'), _) => (Kind::StarStar, pos + 2),
+					(Some(b'='), _) => (Kind::StarEq, pos + 2),
+					_ => (Kind::Star, pos + 1),
+				},
+				Lead::Percent => match bytes.get(pos + 1) {
+					Some(b'=') => (Kind::PercentEq, pos + 2),
+					_ => (Kind::Percent, pos + 1),
+				},
+				Lead::Amp => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'&'), Some(b'=')) => (Kind::AmpAmpEq, pos + 3),
+					(Some(b'&'), _) => (Kind::AmpAmp, pos + 2),
+					(Some(b'='), _) => (Kind::AmpEq, pos + 2),
+					_ => (Kind::Amp, pos + 1),
+				},
+				Lead::Pipe => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
+					(Some(b'|'), Some(b'=')) => (Kind::PipePipeEq, pos + 3),
+					(Some(b'|'), _) => (Kind::PipePipe, pos + 2),
+					(Some(b'='), _) => (Kind::PipeEq, pos + 2),
+					_ => (Kind::Pipe, pos + 1),
+				},
+				Lead::Caret => match bytes.get(pos + 1) {
+					Some(b'=') => (Kind::CaretEq, pos + 2),
+					_ => (Kind::Caret, pos + 1),
+				},
+				Lead::Backquote => return self.template(start, pos + 1, Kind::Template, Kind::TemplateHead, flags),
+				// a decorator's sign is TypeScript's: here no token starts with it
+				Lead::At => {
+					if !self.at_sign {
+						return self.bad(start, flags, Code::UnexpectedCharacter, pos, pos, Arg::Char('@'), regex);
+					}
+					(Kind::At, pos + 1)
+				}
+				Lead::Hash => return self.private_name(start, flags, regex),
+				Lead::Backslash => return self.word_slow(start, start, Kind::Ident, flags, regex),
+				Lead::High => {
+					let c = self.src[pos..].chars().next().unwrap();
+					if scan::is_new_line(c) {
+						flags |= NEWLINE_BEFORE;
+					} else if !scan::is_whitespace(c) {
+						if is_id_start(c) {
+							return self.word_slow(start, start, Kind::Ident, flags, regex);
+						}
+						return self.bad(start, flags, Code::UnexpectedCharacter, pos, pos, Arg::Char(c), regex);
+					}
+					pos += c.len_utf8();
+					continue;
+				}
+				Lead::Bad => return self.bad(start, flags, Code::UnexpectedCharacter, pos, pos, Arg::Char(b as char), regex),
+			};
+			self.pos = end;
+			return token(start, end, kind, flags);
 		}
-		Ok(pattern)
 	}
 
-	/// A parenthesized parameter list on its own, read as an arrow function's would be, in the
-	/// enclosing scope.
-	fn parse_params_root(&mut self) -> Result<List> {
-		let outer = self.yield_await();
-		self.expect(TokenKind::ParenL)?;
-		let params = self.parse_binding_list(TokenKind::ParenR, false, true, false)?;
-		self.check_arrow_head(&params, false, outer)?;
-		self.enter_scope(scope::function_flags(false, false) | scope::SCOPE_ARROW);
-		let list = self.list_from(params);
-		self.check_params(list, false)?;
-		Ok(list)
+	/// The `/` or `/=` token read again as a regular expression: for a caller that asks for
+	/// tokens without saying what a `/` is.
+	pub fn regex(&mut self, slash: Token) -> Token {
+		self.regex_at(slash.start as usize, slash.flags, true)
 	}
 
-	/// Skips to the end of the input, a stop token or a bracket nothing here opened.
-	pub(crate) fn skip_to_end(&mut self) {
-		while !self.is(TokenKind::Eof) && !self.lexer.unmatched {
-			if self.next_liberal().is_err() {
+	/// The `<` or `>` a longer token starts with, alone: in a type, `>>` closes two lists.
+	pub fn angle(&mut self, token: Token) -> Token {
+		let start = token.start as usize;
+		let kind = if self.src.as_bytes()[start] == b'<' { Kind::Lt } else { Kind::Gt };
+		self.pos = start + 1;
+		self::token(start, start + 1, kind, token.flags)
+	}
+
+	/// The `}` that ends a template's expression, read again as the template's next chunk.
+	pub fn template_continue(&mut self, brace: Token) -> Token {
+		let start = brace.start as usize;
+		self.template(start, start + 1, Kind::TemplateTail, Kind::TemplateMiddle, brace.flags)
+	}
+
+	#[cold]
+	#[inline(never)]
+	fn fail(&mut self, code: Code, at: usize) -> Token {
+		self.fail_arg(code, at, Arg::None)
+	}
+
+	/// An error recorded under recovery.
+	pub fn soft(&mut self, error: crate::error::SyntaxError, arg: Option<String>) {
+		let soft = self.soft.get_or_insert_default();
+		if let Some(arg) = arg {
+			soft.error_args.push((soft.errors.len(), arg));
+		}
+		soft.errors.push(error);
+	}
+
+	/// How many errors recovery recorded.
+	#[inline]
+	pub fn soft_len(&self) -> usize {
+		self.soft.as_ref().map_or(0, |soft| soft.errors.len())
+	}
+
+	/// Where the read of a regular expression that failed for good stopped.
+	pub fn fail_pos(&self) -> usize {
+		self.soft.as_ref().map_or(0, |soft| soft.fail_pos)
+	}
+
+	/// The errors recorded at `pos` or after are forgotten: the text from there is read again.
+	pub fn forget_after(&mut self, pos: u32) {
+		let Some(soft) = &self.soft else { return };
+		let len = soft.errors.iter().rposition(|e| e.pos < pos).map_or(0, |at| at + 1);
+		self.forget_errors(len);
+	}
+
+	/// Whether the next `count` tokens lex, read strictly and put back: under recovery a look
+	/// ahead that meets an error says nothing.
+	pub fn lexes_ahead(&mut self, count: u32) -> bool {
+		let (pos, comments, recover, escaped) = (self.pos, self.comments.len(), self.recover, self.escaped_keyword);
+		self.recover = false;
+		let mut clean = true;
+		for _ in 0..count {
+			let token = self.next(false);
+			if self.error.take().is_some() {
+				clean = false;
+				break;
+			}
+			if token.kind == Kind::Eof {
 				break;
 			}
 		}
+		self.recover = recover;
+		self.pos = pos;
+		self.comments.truncate(comments);
+		self.escaped_keyword = escaped;
+		clean
 	}
 
-	/// Runs `f`, undoing it when it fails.
-	pub(crate) fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<Option<T>> {
-		let snapshot = self.snapshot();
-		match self.speculate(f) {
-			Ok(value) => Ok(Some(value)),
-			// a limit taken for a wrong guess was reported as the fallback's error, and past it the fallbacks multiplied
-			Err(error) if error.code.is_limit() => Err(error),
-			Err(_) => {
-				self.restore(snapshot);
-				Ok(None)
-			}
+	/// The recorded errors from `len` on are forgotten: what read them is read again.
+	pub fn forget_errors(&mut self, len: usize) {
+		let Some(soft) = &mut self.soft else { return };
+		soft.errors.truncate(len);
+		while soft.error_args.last().is_some_and(|&(at, _)| at >= len) {
+			soft.error_args.pop();
 		}
 	}
 
-	pub(crate) fn peek_token(&mut self) -> Result<Token> {
-		self.lexer.peek_token()
-	}
-
-	/// Between the items of a comma list: the comma after the first item, and whether a trailing
-	/// comma closed the list.
-	pub(crate) fn list_comma(&mut self, close: TokenKind, first: &mut bool, allow_trailing: bool) -> Result<bool> {
-		if std::mem::take(first) {
-			return Ok(false);
-		}
-		self.expect(TokenKind::Comma)?;
-		Ok(allow_trailing && self.eat(close)?)
-	}
-
-	/// The pending yield and await positions.
-	pub(crate) fn yield_await(&self) -> (u32, u32, u32) {
-		(self.yield_pos, self.await_pos, self.await_ident_pos)
-	}
-
-	/// Clears the pending yield and await positions for a nested parameter list.
-	pub(crate) fn take_yield_await(&mut self) -> (u32, u32, u32) {
-		let old = self.yield_await();
-		(self.yield_pos, self.await_pos, self.await_ident_pos) = (0, 0, 0);
-		old
-	}
-
-	pub(crate) fn restore_yield_await(&mut self, (yield_pos, await_pos, await_ident_pos): (u32, u32, u32)) {
-		(self.yield_pos, self.await_pos, self.await_ident_pos) = (yield_pos, await_pos, await_ident_pos);
-	}
-
-	pub(crate) fn nth(&self, list: List, i: u32) -> Option<NodeId> {
-		self.ast.nth(list, i)
-	}
-
-	/// Re-reads the current token, after the lexer's mode changed under it.
-	pub(crate) fn relex(&mut self) -> Result<()> {
-		debug_assert!(!matches!(
-			self.tok.kind,
-			TokenKind::BraceL
-				| TokenKind::ParenL
-				| TokenKind::BracketL
-				| TokenKind::BraceR
-				| TokenKind::ParenR
-				| TokenKind::BracketR
-		));
-		let newline_before = self.tok.newline_before;
-		self.lexer.set_pos(self.tok.start);
-		self.lexer.next_token_into(&mut self.tok)?;
-		self.tok.newline_before = newline_before;
-		Ok(())
-	}
-
-	/// The offset after the last token read, or after the comments that follow it before the
-	/// next token: where a host embedding JavaScript resumes its own syntax.
-	pub(crate) fn consumed_end(&self) -> u32 {
-		match self.lexer.comments.last() {
-			Some(comment) if comment.start >= self.prev_end => comment.end,
-			_ => self.prev_end,
-		}
-	}
-
-	pub(crate) fn finish(self) -> Box<Ast> {
-		let mut ast = self.ast;
-		let mut lexer = self.lexer;
-		ast.comments = std::mem::take(&mut lexer.comments);
-		ast.strings = std::mem::take(&mut lexer.strings);
-		let mut errors = self.errors;
-		ast.errors.append(&mut errors);
-		ast.errors.append(&mut lexer.errors);
-		ast.errors.sort_by_key(|error| error.pos);
-		let mut scopes = self.scopes;
-		scopes.clear();
-		let mut labels = self.labels;
-		labels.clear();
-		let mut private_names = self.private_names;
-		private_names.clear();
-		ast.spare = Spare {
-			scopes,
-			names: self.spare_names,
-			lists: self.spare_lists,
-			param_names: self.param_names,
-			labels,
-			private_names,
-			errors,
-			regexp: std::mem::take(&mut lexer.regexp),
-			stop_ranges: std::mem::take(&mut lexer.stop_ranges),
-			typescript: Some(self.ts),
-		};
-		ast
-	}
-
-	pub(crate) fn source(&self) -> &'a str {
-		self.lexer.source()
-	}
-
-	/// An error at the current token spans it; one elsewhere is a point.
-	pub(crate) fn error<T>(&self, pos: u32, code: Code) -> Result<T> {
-		self.raise(SyntaxError::new(pos, code))
-	}
-
-	pub(crate) fn raise<T>(&self, error: SyntaxError) -> Result<T> {
-		let end = if error.pos == self.tok.start {
-			self.lexer.pos()
-		} else {
-			error.pos
-		};
-		Err(Box::new(error.to(end)))
-	}
-
-	pub(crate) fn error_arg<T>(&mut self, pos: u32, code: Code, arg: &str) -> Result<T> {
-		let arg = self.intern(arg);
-		self.error_name(pos, code, arg)
-	}
-
-	pub(crate) fn error_name<T>(&self, pos: u32, code: Code, name: StrId) -> Result<T> {
-		self.raise(SyntaxError::new(pos, code).arg(name))
-	}
-
-	/// The current token is not what the grammar allows; at the end of the input that is its own error.
-	pub(crate) fn unexpected<T>(&self) -> Result<T> {
-		let code = if self.is(TokenKind::Eof) && !self.stopped() {
-			Code::UnexpectedEof
-		} else {
-			Code::UnexpectedToken
-		};
-		self.error(self.tok.start, code)
-	}
-
-	pub(crate) fn unexpected_at<T>(&self, pos: u32) -> Result<T> {
-		self.error(pos, Code::UnexpectedToken)
-	}
-
-	pub(crate) fn str(&self, id: StrId) -> &str {
-		self.lexer.strings.get(id)
-	}
-
-	pub(crate) fn intern(&mut self, s: &str) -> StrId {
-		self.lexer.strings.intern(s)
-	}
-
-	pub(crate) fn add(&mut self, kind: NodeKind, start: u32) -> NodeId {
-		self.add_with_end(kind, start, self.prev_end)
-	}
-
-	pub(crate) fn add_with_end(&mut self, kind: NodeKind, start: u32, end: u32) -> NodeId {
-		self.ast.add(kind, start, end)
-	}
-
-	pub(crate) fn list(&mut self, items: &[Option<NodeId>]) -> List {
-		self.ast.add_list(items)
-	}
-
-	pub(crate) fn items(&mut self) -> Vec<Option<NodeId>> {
-		self.spare_lists.pop().unwrap_or_default()
-	}
-
-	pub(crate) fn recycle(&mut self, mut items: Vec<Option<NodeId>>) {
-		items.clear();
-		if self.spare_lists.len() < 32 {
-			self.spare_lists.push(items);
-		}
-	}
-
-	pub(crate) fn list_from(&mut self, items: Vec<Option<NodeId>>) -> List {
-		let list = self.list(&items);
-		self.recycle(items);
-		list
-	}
-
-	pub(crate) fn list_of(&mut self, items: &[NodeId]) -> List {
-		let start = self.ast.lists.len() as u32;
-		self.ast.lists.extend(items.iter().map(|&id| Some(id)));
-		List {
-			start,
-			len: items.len() as u32,
-		}
-	}
-
-	pub(crate) fn kind(&self, id: NodeId) -> NodeKind {
-		self.ast.node(id).kind
-	}
-
-	pub(crate) fn start_of(&self, id: NodeId) -> u32 {
-		self.ast.node(id).start
-	}
-
-	pub(crate) fn end_of(&self, id: NodeId) -> u32 {
-		self.ast.node(id).end
-	}
-
-	pub(crate) fn set_strict(&mut self, strict: bool) {
-		self.strict = strict;
-		self.lexer.strict = strict;
-	}
-
-	/// Guards the recursive descent so deep nesting fails cleanly instead of overflowing the stack.
-	pub(crate) fn enter(&mut self) -> Result<()> {
-		self.depth += 1;
-		if self.depth > MAX_DEPTH {
-			return self.error(self.tok.start, Code::NestingDepth);
-		}
-		Ok(())
-	}
-
-	pub(crate) fn leave(&mut self) {
-		self.depth -= 1;
-	}
-
-	/// Guards a loop that nests each iteration's node inside the previous one.
-	pub(crate) fn chain(&self, links: u32) -> Result<()> {
-		if links > MAX_CHAIN {
-			return self.error(self.tok.start, Code::NestingDepth);
-		}
-		Ok(())
-	}
-
-	// Tokens
-
-	/// Consumes the current token; an escaped keyword is an error unless consumed as a name.
-	pub(crate) fn next(&mut self) -> Result<()> {
-		if self.tok.escaped
-			&& let TokenKind::Keyword(keyword) = self.tok.kind
-		{
-			let error = self.error_arg(self.tok.start, Code::EscapeInKeyword, keyword.as_str());
-			self.record(error)?;
-		}
-		self.next_liberal()
-	}
-
-	pub(crate) fn next_liberal(&mut self) -> Result<()> {
-		self.within_limit()?;
-		let boundary = self.tok.ends_operand();
-		self.prev_end = self.lexer.pos();
-		self.lexer.next_token_into(&mut self.tok)?;
-		if boundary {
-			self.stop_after_operand();
-		}
-		Ok(())
-	}
-
-	/// Ends the parse when the current token is the host's: one of its stop tokens, after an
-	/// operand, that the grammar does not read as its own.
-	pub(crate) fn stop_after_operand(&mut self) {
-		if self.tok.stop && !(self.typescript() && self.reads_stop()) {
-			self.stop_here();
-		}
-	}
-
-	/// Whether the parse ended before the source did, at the host's own syntax.
-	pub(crate) fn stopped(&self) -> bool {
-		self.is(TokenKind::Eof) && (self.tok.start as usize) < self.source().len()
-	}
-
-	/// Ends the parse at the current token: the host's own syntax starts there.
-	pub(crate) fn stop_here(&mut self) {
-		self.lexer.set_pos(self.tok.start);
-		self.tok = Token::eof(self.tok.start);
-	}
-
-	/// Whether the current token is of `kind`: a keyword by its word, any other by its kind alone.
-	// by the derived `==`, which also compares what a kind carries, JavaScript and TypeScript parse 1 to 2% slower
-	pub(crate) fn is(&self, kind: TokenKind) -> bool {
-		match kind {
-			TokenKind::Keyword(keyword) => self.is_keyword(keyword),
-			_ => {
-				debug_assert!(!matches!(
-					kind,
-					TokenKind::Ident(_)
-						| TokenKind::PrivateName(_)
-						| TokenKind::Number(_)
-						| TokenKind::String(_)
-						| TokenKind::RegExp { .. }
-				));
-				std::mem::discriminant(&self.tok.kind) == std::mem::discriminant(&kind)
-			}
-		}
-	}
-
-	pub(crate) fn is_keyword(&self, keyword: Keyword) -> bool {
-		matches!(self.tok.kind, TokenKind::Keyword(k) if k == keyword)
-	}
-
-	pub(crate) fn eat(&mut self, kind: TokenKind) -> Result<bool> {
-		self.within_limit()?;
-		if self.is(kind) {
-			self.next()?;
-			Ok(true)
-		} else {
-			Ok(false)
-		}
-	}
-
-	pub(crate) fn eat_keyword(&mut self, keyword: Keyword) -> Result<bool> {
-		self.eat(TokenKind::Keyword(keyword))
-	}
-
-	pub(crate) fn expect(&mut self, kind: TokenKind) -> Result<()> {
-		if self.eat(kind)? { Ok(()) } else { self.unexpected() }
-	}
-
-	pub(crate) fn expect_keyword(&mut self, keyword: Keyword) -> Result<()> {
-		self.expect(TokenKind::Keyword(keyword))
-	}
-
-	/// The current token is the unescaped identifier `name`.
-	pub(crate) fn is_contextual(&self, name: &str) -> bool {
-		match self.tok.kind {
-			TokenKind::Ident(id) if !self.tok.escaped => self.lexer.strings.is(id, name),
-			_ => false,
-		}
-	}
-
-	pub(crate) fn eat_contextual(&mut self, name: &str) -> Result<bool> {
-		if self.is_contextual(name) {
-			self.next()?;
-			Ok(true)
-		} else {
-			Ok(false)
-		}
-	}
-
-	pub(crate) fn expect_contextual(&mut self, name: &str) -> Result<()> {
-		if self.eat_contextual(name)? {
-			Ok(())
-		} else {
-			self.unexpected()
-		}
-	}
-
-	pub(crate) fn ident_name(&self) -> Option<StrId> {
-		match self.tok.kind {
-			TokenKind::Ident(name) => Some(name),
-			_ => None,
-		}
-	}
-
-	/// The next significant character and whether a line break precedes it, without tokenizing.
-	pub(crate) fn peek_char(&self) -> (Option<char>, bool, usize) {
-		self.lexer.peek_char()
-	}
-
-	pub(crate) fn can_insert_semicolon(&self) -> bool {
-		self.is(TokenKind::Eof) || self.is(TokenKind::BraceR) || self.tok.newline_before
-	}
-
-	pub(crate) fn semicolon(&mut self) -> Result<()> {
-		if !self.eat(TokenKind::Semi)? && !self.can_insert_semicolon() {
-			let error = self.unexpected();
-			self.record(error)?;
-		}
-		Ok(())
-	}
-
-	// with these two and recover_statement above left to the compiler, a parse-only JavaScript read took 0.9% longer
-	#[inline(always)]
-	pub(crate) fn check_expression_errors(
-		&self,
-		errors: &Option<DestructuringErrors>,
-		and_throw: bool,
-	) -> Result<bool> {
-		let Some(errors) = errors else { return Ok(false) };
-		let has = errors.shorthand_assign.is_some() || errors.double_proto.is_some() || errors.operand.is_some();
-		if !and_throw || !has {
-			return Ok(has);
-		}
-		self.first_error([
-			errors.operand,
-			errors.shorthand_assign.map(|pos| (pos, Code::ShorthandAssignment)),
-			errors.double_proto.map(|pos| (pos, Code::DuplicateProto)),
-		])
-	}
-
-	// with this inlined at every check, and `merge` and `parse_arguments` left to the compiler, a
-	// parse-only JavaScript read took 1.5 to 2.8% longer (two code layouts, two corpora)
+	/// The token from `start` does not lex: `code` at `at`. Under recovery it is recorded and
+	/// skipped from where its reader stopped, `reach`, or from the next character: what the
+	/// parser in use skips.
 	#[cold]
 	#[inline(never)]
-	fn first_error<T>(&self, pending: [Option<(u32, Code)>; 3]) -> Result<T> {
-		let (pos, code) = first_pending(pending).unwrap();
-		self.error(pos, code)
+	fn bad(&mut self, start: usize, flags: u8, code: Code, at: usize, reach: usize, arg: Arg, regex: bool) -> Token {
+		if !self.recover {
+			return self.fail_arg(code, at, arg);
+		}
+		let arg = match arg {
+			Arg::None => None,
+			Arg::Char(c) => Some(c.to_string()),
+			Arg::Radix(radix) => Some(radix.to_string()),
+		};
+		self.soft(crate::error::SyntaxError::new(at as u32, code), arg);
+		self.pos = self.src.ceil_char_boundary(at.max(reach).max(start + 1));
+		if flags & SKIPPING != 0 {
+			return token(self.pos, self.pos, Kind::Eof, flags | SKIPPED);
+		}
+		self.skipped(flags, regex)
 	}
 
+	/// The tokens after one that was skipped, up to one that lexes: line breaks before any of
+	/// them are the token's, and an HTML close comment starts a line only after its own break.
+	#[cold]
+	#[inline(never)]
+	fn skipped(&mut self, flags: u8, regex: bool) -> Token {
+		let mut newline = flags & NEWLINE_BEFORE;
+		loop {
+			let mut t = self.rest(self.pos, SKIPPING, regex);
+			newline |= t.flags & NEWLINE_BEFORE;
+			if t.flags & SKIPPED == 0 {
+				t.flags = (t.flags & !SKIPPING) | newline;
+				return t;
+			}
+		}
+	}
+
+	/// An error in a regular expression's flags, which ends the input under recovery too: the
+	/// grammar's to recover from, after the escape as the lexer in use read it.
+	#[cold]
+	#[inline(never)]
+	fn fail_hard(&mut self, code: Code, at: usize, escape: usize) -> Token {
+		if self.recover {
+			self.soft.get_or_insert_default().fail_pos = word_escape_reach(self.src.as_bytes(), escape);
+		}
+		let recover = std::mem::replace(&mut self.recover, false);
+		let token = self.fail_arg(code, at, Arg::None);
+		self.recover = recover;
+		token
+	}
+
+	#[cold]
+	#[inline(never)]
+	fn fail_arg(&mut self, code: Code, at: usize, arg: Arg) -> Token {
+		if self.error.is_none() {
+			self.error = Some(LexError {
+				code,
+				pos: at as u32,
+				end: at as u32,
+				arg,
+			});
+		}
+		let end = self.src.len();
+		self.pos = end;
+		token(end, end, Kind::Eof, 0)
+	}
+
+	#[inline]
+	fn comment(&mut self, start: usize, end: usize, kind: CommentKind) {
+		if self.keep_comments {
+			self.comments.push(Comment {
+				start: start as u32,
+				end: end as u32,
+				kind,
+			});
+		}
+	}
+
+	/// Where the block comment at `pos` ends and whether it holds a line break.
+	#[inline(never)]
+	fn block_comment(&mut self, pos: usize) -> Option<(usize, bool)> {
+		let bytes = self.src.as_bytes();
+		let mut at = pos + 2;
+		loop {
+			at = find(bytes, at, [b'*'], false);
+			if at >= bytes.len() {
+				return None;
+			}
+			if bytes.get(at + 1) == Some(&b'/') {
+				break;
+			}
+			at += 1;
+		}
+		let body = &bytes[pos + 2..at];
+		let broke = line_end(body) < body.len();
+		self.comment(pos, at + 2, CommentKind::Block);
+		Some((at + 2, broke))
+	}
+
+	/// A word that holds an escape or a character past ASCII, from `from` on. A keyword spelled
+	/// with an escape is that keyword, remembered until something reads it as a name.
+	#[cold]
+	#[inline(never)]
+	fn word_slow(&mut self, start: usize, from: usize, kind: Kind, mut flags: u8, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		let first_at = if kind == Kind::PrivateName { start + 1 } else { start };
+		let mut pos = from;
+		loop {
+			match bytes.get(pos) {
+				Some(b'\\') => match values::word_escape(self.src, pos, pos == first_at) {
+					Ok((_, end)) => {
+						flags |= ESCAPED;
+						pos = end;
+					}
+					Err((code, at)) => {
+						return self.bad(start, flags, code, at, word_escape_reach(bytes, pos), Arg::None, regex);
+					}
+				},
+				Some(&b) if b < 0x80 => {
+					if CLASS[b as usize] & ID_CONTINUE == 0 {
+						break;
+					}
+					pos += 1;
+				}
+				Some(_) => {
+					let c = self.src[pos..].chars().next().unwrap();
+					let ok = if pos == first_at { is_id_start(c) } else { is_id_continue(c) };
+					if !ok {
+						break;
+					}
+					pos += c.len_utf8();
+				}
+				None => break,
+			}
+		}
+		self.pos = pos;
+		let mut kind = kind;
+		if kind == Kind::Ident {
+			if flags & ESCAPED == 0 {
+				kind = keyword_spelled(&bytes[start..pos]);
+			} else {
+				let mut values = values::Values::default();
+				let word = values.word(self.src, start, pos);
+				kind = keyword_spelled(word.as_bytes());
+				if kind != Kind::Ident && self.escaped_keyword.is_none() && !self.recover {
+					self.escaped_keyword = Some((start as u32, pos as u32));
+				}
+			}
+		}
+		token(start, pos, kind, flags)
+	}
+
+	#[inline(never)]
+	fn private_name(&mut self, start: usize, flags: u8, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		match bytes.get(start + 1) {
+			Some(&b) if CLASS[b as usize] & ID_START != 0 => {
+				let end = ident_end(bytes, start + 2);
+				if bytes.get(end).is_some_and(|&b| b == b'\\' || b >= 0x80) {
+					return self.word_slow(start, end, Kind::PrivateName, flags, regex);
+				}
+				self.pos = end;
+				token(start, end, Kind::PrivateName, flags)
+			}
+			Some(b'\\') => self.word_slow(start, start + 1, Kind::PrivateName, flags, regex),
+			Some(&b) if b >= 0x80 && is_id_start(self.src[start + 1..].chars().next().unwrap()) => {
+				self.word_slow(start, start + 1, Kind::PrivateName, flags, regex)
+			}
+			_ => {
+				let c = self.src[start + 1..].chars().next().unwrap_or('\u{10000}');
+				self.bad(start, flags, Code::UnexpectedCharacter, start + 1, start + 1, Arg::Char(c), regex)
+			}
+		}
+	}
+
+	#[inline(never)]
+	fn number(&mut self, start: usize, starts_with_dot: bool, flags: u8, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		// digits alone, the usual number: nothing after them that a longer one continues with
+		if !starts_with_dot && bytes[start] != b'0' {
+			let mut end = start + 1;
+			while bytes.get(end).is_some_and(|&b| CLASS[b as usize] & DIGIT != 0) {
+				end += 1;
+			}
+			let plain = match bytes.get(end) {
+				Some(&b) => b < 0x80 && CLASS[b as usize] & ID_START == 0 && b != b'.',
+				None => true,
+			};
+			if plain {
+				self.pos = end;
+				return token(start, end, Kind::Number, flags);
+			}
+		}
+		let mut pos = start;
+		if !starts_with_dot && bytes[pos] == b'0' {
+			let radix = match bytes.get(pos + 1) {
+				Some(b'x' | b'X') => 16,
+				Some(b'o' | b'O') => 8,
+				Some(b'b' | b'B') => 2,
+				_ => 0,
+			};
+			if radix != 0 {
+				let from = pos + 2;
+				pos = match digits(bytes, from, radix, false) {
+					Ok(end) if end > from => end,
+					Ok(end) => return self.bad(start, flags, Code::ExpectedNumberInRadix, end, end, Arg::Radix(radix), regex),
+					Err((code, at)) => return self.bad(start, flags, code, at, digits_reach(code, at), Arg::None, regex),
+				};
+				if bytes.get(pos) == Some(&b'n') {
+					self.pos = pos + 1;
+					return token(start, pos + 1, Kind::BigInt, flags);
+				}
+				return self.after_number(start, pos, Kind::Number, flags, regex);
+			}
+		}
+		if !starts_with_dot {
+			pos = match digits(bytes, pos, 10, true) {
+				Ok(end) => end,
+				Err((code, at)) => return self.bad(start, flags, code, at, digits_reach(code, at), Arg::None, regex),
+			};
+		}
+		let legacy = pos - start >= 2 && bytes[start] == b'0';
+		if legacy && self.strict {
+			return self.bad(start, flags, Code::InvalidNumber, start, pos, Arg::None, regex);
+		}
+		if !legacy && !starts_with_dot && bytes.get(pos) == Some(&b'n') {
+			return self.after_number(start, pos + 1, Kind::BigInt, flags, regex);
+		}
+		let octal = legacy && bytes[start..pos].iter().all(|b| (b'0'..=b'7').contains(b));
+		if !octal && bytes.get(pos) == Some(&b'.') {
+			pos = match digits(bytes, pos + 1, 10, false) {
+				Ok(end) => end,
+				Err((code, at)) => return self.bad(start, flags, code, at, digits_reach(code, at), Arg::None, regex),
+			};
+		}
+		if !octal && matches!(bytes.get(pos), Some(b'e' | b'E')) {
+			pos += 1;
+			if matches!(bytes.get(pos), Some(b'+' | b'-')) {
+				pos += 1;
+			}
+			pos = match digits(bytes, pos, 10, false) {
+				Ok(end) if end > pos => end,
+				Ok(_) => return self.bad(start, flags, Code::InvalidNumber, start, pos, Arg::None, regex),
+				Err((code, at)) => return self.bad(start, flags, code, at, digits_reach(code, at), Arg::None, regex),
+			};
+		}
+		self.after_number(start, pos, Kind::Number, flags, regex)
+	}
+
+	/// A number may not run into a name.
+	#[inline]
+	fn after_number(&mut self, start: usize, end: usize, kind: Kind, flags: u8, regex: bool) -> Token {
+		match self.src.as_bytes().get(end) {
+			Some(&b) if b < 0x80 && CLASS[b as usize] & ID_START == 0 => {}
+			None => {}
+			Some(&b) if b < 0x80 => return self.bad(start, flags, Code::IdentifierAfterNumber, end, end, Arg::None, regex),
+			Some(_) => {
+				if is_id_start(self.src[end..].chars().next().unwrap()) {
+					return self.bad(start, flags, Code::IdentifierAfterNumber, end, end, Arg::None, regex);
+				}
+			}
+		}
+		self.pos = end;
+		token(start, end, kind, flags)
+	}
+
+	#[inline(never)]
+	fn string(&mut self, start: usize, quote: u8, mut flags: u8, regex: bool) -> Token {
+		let bytes = self.src.as_bytes();
+		let mut pos = start + 1;
+		loop {
+			#[cfg(not(feature = "strtable"))]
+			{
+				pos = find(bytes, pos, [quote, b'\\', b'\n', b'\r'], false);
+			}
+			#[cfg(feature = "strtable")]
+			{
+				pos = string_stop(bytes, pos, if quote == b'"' { 1 } else { 2 } | 4);
+			}
+			match bytes.get(pos) {
+				Some(b'\\') => {
+					flags |= ESCAPED;
+					let (escape, next) = values::escape(self.src, pos + 1);
+					match escape {
+						values::Escape::Invalid(code, at) => {
+							return self.bad(start, flags, code, at, string_escape_reach(bytes, pos), Arg::None, regex);
+						}
+						values::Escape::Octal(_, at, is_89) if self.strict => {
+							let code = if is_89 { Code::StrictEscape } else { Code::StrictOctal };
+							return self.bad(start, flags, code, at, next, Arg::None, regex);
+						}
+						_ => {}
+					}
+					pos = next;
+				}
+				Some(&b) if b == quote => break,
+				_ if self.recover => {
+					// recorded, and the string ends where its line does
+					self.soft(crate::error::SyntaxError::new(start as u32, Code::UnterminatedString), None);
+					self.pos = pos;
+					return token(start, pos, Kind::String, flags | BROKEN);
+				}
+				_ => return self.fail(Code::UnterminatedString, start),
+			}
+		}
+		self.pos = pos + 1;
+		token(start, pos + 1, Kind::String, flags)
+	}
+
+	/// A template chunk from `from` on: `whole` when it ends at the backquote, `open` at `${`.
+	#[inline(never)]
+	fn template(&mut self, start: usize, from: usize, whole: Kind, open: Kind, mut flags: u8) -> Token {
+		let bytes = self.src.as_bytes();
+		let mut pos = from;
+		loop {
+			pos = find(bytes, pos, *b"`$\\\r", false);
+			match bytes.get(pos) {
+				Some(b'`') => {
+					self.pos = pos + 1;
+					return token(start, pos + 1, whole, flags);
+				}
+				Some(b'$') if bytes.get(pos + 1) == Some(&b'{') => {
+					self.pos = pos + 2;
+					return token(start, pos + 2, open, flags);
+				}
+				Some(b'$') => pos += 1,
+				Some(b'\\') => {
+					flags |= ESCAPED;
+					pos += 2;
+				}
+				// a carriage return is a line feed in the cooked value
+				Some(_) => {
+					flags |= ESCAPED;
+					pos += 1;
+				}
+				None => {
+					self.pos = bytes.len();
+					return token(start, bytes.len(), whole, flags | BROKEN);
+				}
+			}
+		}
+	}
+
+	#[inline(never)]
+	fn regex_at(&mut self, start: usize, flags: u8, again: bool) -> Token {
+		if !again {
+			// a regular expression that does not lex is the grammar's error, met where the
+			// operand is read: until then the `/` is the operator it would be
+			let errors = self.soft_len();
+			let token = self.regex_at(start, flags, true);
+			if self.error.take().is_some() {
+				self.forget_errors(errors);
+				let (kind, end) = if self.src.as_bytes().get(start + 1) == Some(&b'=') {
+					(Kind::SlashEq, start + 2)
+				} else {
+					(Kind::Slash, start + 1)
+				};
+				self.pos = end;
+				return token_at(start, end, kind, flags);
+			}
+			return token;
+		}
+		let bytes = self.src.as_bytes();
+		let mut pos = start + 1;
+		let mut in_class = false;
+		loop {
+			while bytes
+				.get(pos)
+				.is_some_and(|&b| CLASS[b as usize] & (NEWLINE | REGEXP) == 0)
+			{
+				pos += 1;
+			}
+			let escaped = bytes.get(pos) == Some(&b'\\');
+			pos += escaped as usize;
+			let cut = match bytes.get(pos..).unwrap_or_default() {
+				[] | [b'\n' | b'\r', ..] => true,
+				rest @ [0xe2, ..] => is_separator(rest),
+				_ => false,
+			};
+			if cut {
+				if self.recover {
+					self.soft(crate::error::SyntaxError::new(start as u32 + 1, Code::UnterminatedRegexp), None);
+					self.pos = pos;
+					return token(start, pos, Kind::RegExp, flags | BROKEN);
+				}
+				return self.fail(Code::UnterminatedRegexp, start + 1);
+			}
+			if !escaped {
+				match bytes[pos] {
+					b'[' => in_class = true,
+					b']' => in_class = false,
+					b'/' if !in_class => break,
+					_ => {}
+				}
+			}
+			pos += 1;
+		}
+		pos += 1;
+		// the flags: a word, and an escape in it is an error where they start
+		let flags_start = pos;
+		let mut escaped = false;
+		loop {
+			match bytes.get(pos) {
+				Some(&b) if b < 0x80 && CLASS[b as usize] & ID_CONTINUE != 0 => pos += 1,
+				Some(b'\\') => match values::word_escape(self.src, pos, pos == flags_start) {
+					Ok((_, end)) => {
+						escaped = true;
+						pos = end;
+					}
+					Err((code, at)) => return self.fail_hard(code, at, pos),
+				},
+				Some(&b) if b >= 0x80 => {
+					let c = self.src[pos..].chars().next().unwrap();
+					if !is_id_continue(c) {
+						break;
+					}
+					pos += c.len_utf8();
+				}
+				_ => break,
+			}
+		}
+		if escaped {
+			if !self.recover {
+				return self.fail(Code::UnexpectedToken, flags_start);
+			}
+			self.soft(crate::error::SyntaxError::new(flags_start as u32, Code::UnexpectedToken), None);
+		}
+		self.pos = pos;
+		token(start, pos, Kind::RegExp, flags)
+	}
+}
+
+fn token_at(start: usize, end: usize, kind: Kind, flags: u8) -> Token {
+	token(start, end, kind, flags)
+}
+
+#[inline(always)]
+fn token(start: usize, end: usize, kind: Kind, flags: u8) -> Token {
+	Token {
+		start: start as u32,
+		end: end as u32,
+		kind,
+		flags,
+	}
+}
+
+/// Where the run of ASCII identifier bytes from `pos` ends.
+#[cfg(feature = "batch")]
+#[inline(always)]
+fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
+	// eight bytes behind one bounds check
+	while let Some(chunk) = bytes.get(pos..pos + 8) {
+		let chunk: &[u8; 8] = chunk.try_into().unwrap();
+		let mut i = 0;
+		while i < 8 {
+			if CLASS[chunk[i] as usize] & ID_CONTINUE == 0 {
+				return pos + i;
+			}
+			i += 1;
+		}
+		pos += 8;
+	}
+	while let Some(&b) = bytes.get(pos) {
+		if CLASS[b as usize] & ID_CONTINUE == 0 {
+			break;
+		}
+		pos += 1;
+	}
+	pos
+}
+
+#[cfg(not(any(feature = "swar", feature = "batch")))]
+#[inline(always)]
+fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
+	while let Some(&b) = bytes.get(pos) {
+		if CLASS[b as usize] & ID_CONTINUE == 0 {
+			break;
+		}
+		pos += 1;
+	}
+	pos
+}
+
+#[cfg(feature = "swar")]
+#[inline(always)]
+fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
+	const L: u64 = 0x0101_0101_0101_0101;
+	const H: u64 = 0x8080_8080_8080_8080;
+	// per byte of seven bits: the high bit where it is at least `n`
 	#[inline(always)]
-	pub(crate) fn check_pattern_errors(&self, errors: &Option<DestructuringErrors>) -> Result<()> {
-		let Some(errors) = errors else { return Ok(()) };
-		if errors.operand.is_none() && errors.trailing_comma.is_none() && errors.parenthesized_assign.is_none() {
-			return Ok(());
-		}
-		self.first_error([
-			errors.operand,
-			errors.trailing_comma.map(|pos| (pos, Code::CommaAfterRest)),
-			errors
-				.parenthesized_assign
-				.map(|pos| (pos, Code::InvalidAssignmentTarget)),
-		])
+	fn at_least(v: u64, n: u8) -> u64 {
+		(v | H).wrapping_sub(L * n as u64) & H
 	}
+	#[inline(always)]
+	fn is(v: u64, c: u8) -> u64 {
+		!(((v ^ (L * c as u64)) | H).wrapping_sub(L)) & H
+	}
+	while let Some(chunk) = bytes.get(pos..pos + 8) {
+		let x = u64::from_le_bytes(chunk.try_into().unwrap());
+		let low = x & !H;
+		let lower = low | (L * 0x20);
+		let letter = at_least(lower, b'a') & !at_least(lower, b'z' + 1);
+		let digit = at_least(low, b'0') & !at_least(low, b'9' + 1);
+		let part = (letter | digit | is(low, b'_') | is(low, b'$')) & !x;
+		let stop = !part & H;
+		if stop != 0 {
+			return pos + (stop.trailing_zeros() / 8) as usize;
+		}
+		pos += 8;
+	}
+	while let Some(&b) = bytes.get(pos) {
+		if CLASS[b as usize] & ID_CONTINUE == 0 {
+			break;
+		}
+		pos += 1;
+	}
+	pos
+}
 
-	pub(crate) fn check_yield_await_in_default_params(&self) -> Result<()> {
-		if self.yield_pos != 0 && (self.await_pos == 0 || self.yield_pos < self.await_pos) {
-			return self.error(self.yield_pos, Code::YieldInDefaultValue);
-		}
-		if self.await_pos != 0 {
-			return self.error(self.await_pos, Code::AwaitInDefaultValue);
-		}
-		Ok(())
+#[cfg(feature = "hash")]
+#[inline(always)]
+fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
+	let len = end - start;
+	// the word as one integer, hashed to the one keyword it could be
+	if len <= 8
+		&& let Some(chunk) = bytes.get(start..start + 8)
+	{
+		let word = u64::from_le_bytes(chunk.try_into().unwrap()) & (u64::MAX >> (64 - 8 * len));
+		let (is, kind) = KEYWORDS[(word.wrapping_mul(MAGIC) >> SHIFT) as usize];
+		return if is == word { kind } else { Kind::Ident };
 	}
+	keyword_spelled(&bytes[start..end])
+}
 
-	pub(crate) fn is_simple_assign_target(&self, id: NodeId) -> bool {
-		match self.kind(id) {
-			NodeKind::Identifier { .. } | NodeKind::MemberExpression { .. } => true,
-			_ => self
-				.unwrap(id, Unwrap::Simple)
-				.is_some_and(|inner| self.is_simple_assign_target(inner)),
+#[cfg(feature = "hash")]
+include!("../keywords.txt");
+
+#[cfg(not(any(feature = "first-byte", feature = "hash")))]
+#[inline(always)]
+fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
+	keyword_spelled(&bytes[start..end])
+}
+
+#[cfg(not(feature = "first-byte"))]
+#[inline(always)]
+fn keyword_spelled(word: &[u8]) -> Kind {
+	use Kind::*;
+	match word {
+		b"do" => Do,
+		b"if" => If,
+		b"in" => In,
+		b"for" => For,
+		b"new" => New,
+		b"try" => Try,
+		b"var" => Var,
+		b"case" => Case,
+		b"else" => Else,
+		b"null" => Null,
+		b"this" => This,
+		b"true" => True,
+		b"void" => Void,
+		b"with" => With,
+		b"break" => Break,
+		b"catch" => Catch,
+		b"class" => Class,
+		b"const" => Const,
+		b"false" => False,
+		b"super" => Super,
+		b"throw" => Throw,
+		b"while" => While,
+		b"delete" => Delete,
+		b"export" => Export,
+		b"import" => Import,
+		b"return" => Return,
+		b"switch" => Switch,
+		b"typeof" => Typeof,
+		b"default" => Default,
+		b"extends" => Extends,
+		b"finally" => Finally,
+		b"continue" => Continue,
+		b"debugger" => Debugger,
+		b"function" => Function,
+		b"instanceof" => Instanceof,
+		_ => Ident,
+	}
+}
+
+#[cfg(feature = "first-byte")]
+#[inline(always)]
+fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
+	use Kind::*;
+	let word = &bytes[start..end];
+	let rest = &word[1..];
+	match word[0] {
+		b'b' => match rest {
+			b"reak" => Break,
+			_ => Ident,
+		},
+		b'c' => match rest {
+			b"ase" => Case,
+			b"atch" => Catch,
+			b"lass" => Class,
+			b"onst" => Const,
+			b"ontinue" => Continue,
+			_ => Ident,
+		},
+		b'd' => match rest {
+			b"o" => Do,
+			b"elete" => Delete,
+			b"efault" => Default,
+			b"ebugger" => Debugger,
+			_ => Ident,
+		},
+		b'e' => match rest {
+			b"lse" => Else,
+			b"xport" => Export,
+			b"xtends" => Extends,
+			_ => Ident,
+		},
+		b'f' => match rest {
+			b"or" => For,
+			b"alse" => False,
+			b"inally" => Finally,
+			b"unction" => Function,
+			_ => Ident,
+		},
+		b'i' => match rest {
+			b"f" => If,
+			b"n" => In,
+			b"mport" => Import,
+			b"nstanceof" => Instanceof,
+			_ => Ident,
+		},
+		b'n' => match rest {
+			b"ew" => New,
+			b"ull" => Null,
+			_ => Ident,
+		},
+		b'r' => match rest {
+			b"eturn" => Return,
+			_ => Ident,
+		},
+		b's' => match rest {
+			b"uper" => Super,
+			b"witch" => Switch,
+			_ => Ident,
+		},
+		b't' => match rest {
+			b"ry" => Try,
+			b"his" => This,
+			b"rue" => True,
+			b"hrow" => Throw,
+			b"ypeof" => Typeof,
+			_ => Ident,
+		},
+		b'v' => match rest {
+			b"ar" => Var,
+			b"oid" => Void,
+			_ => Ident,
+		},
+		b'w' => match rest {
+			b"ith" => With,
+			b"hile" => While,
+			_ => Ident,
+		},
+		_ => Ident,
+	}
+}
+
+/// The end of the digits from `from`, separators checked; a misplaced separator's rule and place.
+fn digits(bytes: &[u8], from: usize, radix: u32, maybe_legacy_octal: bool) -> Result<usize, (Code, usize)> {
+	let legacy_octal = maybe_legacy_octal && bytes.get(from) == Some(&b'0');
+	let mut pos = from;
+	let mut last_was_separator = false;
+	while let Some(&b) = bytes.get(pos) {
+		if b == b'_' {
+			if legacy_octal {
+				return Err((Code::NumericSeparatorLegacyOctal, pos));
+			}
+			if last_was_separator {
+				return Err((Code::NumericSeparatorDouble, pos));
+			}
+			if pos == from {
+				return Err((Code::NumericSeparatorFirst, pos));
+			}
+			last_was_separator = true;
+			pos += 1;
+			continue;
+		}
+		if !(b as char).is_digit(radix) {
+			break;
+		}
+		last_was_separator = false;
+		pos += 1;
+		if radix == 10 {
+			while bytes.get(pos).is_some_and(|&b| CLASS[b as usize] & DIGIT != 0) {
+				pos += 1;
+			}
 		}
 	}
+	if last_was_separator {
+		return Err((Code::NumericSeparatorLast, pos - 1));
+	}
+	Ok(pos)
+}
+
+/// Where the lexer in use stood when `digits` failed with `code` at `at`.
+fn digits_reach(code: Code, at: usize) -> usize {
+	at + (code == Code::NumericSeparatorLast) as usize
+}
+
+/// How many of the `len` bytes from `at` the lexer in use read as hex digits.
+fn hex_reach(bytes: &[u8], at: usize, len: usize) -> usize {
+	let mut pos = at;
+	while pos < at + len && bytes.get(pos).is_some_and(u8::is_ascii_hexdigit) {
+		pos += 1;
+	}
+	pos
+}
+
+/// Where the lexer in use stopped in the code point after a `\u` that ends at `at`.
+fn code_point_reach(bytes: &[u8], at: usize) -> usize {
+	if bytes.get(at) != Some(&b'{') {
+		return hex_reach(bytes, at, 4);
+	}
+	let mut pos = at + 1;
+	while bytes.get(pos).is_some_and(u8::is_ascii_hexdigit) {
+		pos += 1;
+	}
+	if pos == at + 1 || bytes.get(pos) != Some(&b'}') {
+		return pos;
+	}
+	pos + 1
+}
+
+/// Where the lexer in use stopped in the word escape at `pos`, a backslash, that failed.
+fn word_escape_reach(bytes: &[u8], pos: usize) -> usize {
+	match bytes.get(pos + 1) {
+		Some(b'u') => code_point_reach(bytes, pos + 2),
+		_ => pos + 1,
+	}
+}
+
+/// Where the lexer in use stopped in the string escape at `pos`, a backslash, that failed.
+fn string_escape_reach(bytes: &[u8], pos: usize) -> usize {
+	match bytes.get(pos + 1) {
+		Some(b'x') => hex_reach(bytes, pos + 2, 2),
+		_ => code_point_reach(bytes, pos + 2),
+	}
+}
+
+/// What may end a string or change its value: bit 1 a double quote, 2 a single one, 4 a
+/// backslash or a line break.
+#[cfg(feature = "strtable")]
+static STRING: [u8; 256] = {
+	let mut table = [0u8; 256];
+	table[b'"' as usize] = 1;
+	table[b'\'' as usize] = 2;
+	table[b'\\' as usize] = 4;
+	table[b'\n' as usize] = 4;
+	table[b'\r' as usize] = 4;
+	table
+};
+
+/// Where the first byte of `mask` stands from `pos` on.
+#[cfg(feature = "strtable")]
+#[inline(always)]
+fn string_stop(bytes: &[u8], mut pos: usize, mask: u8) -> usize {
+	while let Some(chunk) = bytes.get(pos..pos + 8) {
+		let chunk: &[u8; 8] = chunk.try_into().unwrap();
+		let mut i = 0;
+		while i < 8 {
+			if STRING[chunk[i] as usize] & mask != 0 {
+				return pos + i;
+			}
+			i += 1;
+		}
+		pos += 8;
+	}
+	while let Some(&b) = bytes.get(pos) {
+		if STRING[b as usize] & mask != 0 {
+			break;
+		}
+		pos += 1;
+	}
+	pos
 }

@@ -376,14 +376,14 @@ static ID_CONTINUE: Trie = Trie {
 	],
 };
 
-pub(crate) fn is_id_start(c: char) -> bool {
+pub fn is_id_start(c: char) -> bool {
 	if c.is_ascii() {
 		return c.is_ascii_alphabetic() || c == '$' || c == '_';
 	}
 	ID_START.contains(c as u32)
 }
 
-pub(crate) fn is_id_continue(c: char) -> bool {
+pub fn is_id_continue(c: char) -> bool {
 	if c.is_ascii() {
 		return c.is_ascii_alphanumeric() || c == '$' || c == '_';
 	}

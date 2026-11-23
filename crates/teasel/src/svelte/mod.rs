@@ -16,7 +16,7 @@ use self::markup::Once;
 use crate::ast::{Ast, ElementType, List, NodeId, NodeKind};
 use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
-use crate::lexer::scan::{find, is_space};
+use crate::parser::scan::{find, is_space};
 use crate::parser::{Options, Result};
 
 /// Parses a Svelte component: its tree with the JavaScript inside it, positions of the whole

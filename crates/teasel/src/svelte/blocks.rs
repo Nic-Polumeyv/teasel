@@ -3,8 +3,8 @@
 use super::{Frame, Walker};
 use crate::ast::{List, NodeId, NodeKind, VariableKind};
 use crate::error::Code;
-use crate::lexer::scan::is_space;
-use crate::lexer::unicode::{is_id_continue, is_id_start};
+use crate::parser::scan::is_space;
+use crate::parser::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Result};
 
 /// A construct that starts with `{`.

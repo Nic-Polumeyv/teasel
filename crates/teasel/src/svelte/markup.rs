@@ -7,8 +7,8 @@ use super::{Frame, Walker};
 use crate::ast::{CommentKind, DirectiveType, ElementType, List, NodeId, NodeKind};
 use crate::error::Code;
 use crate::interner::StrId;
-use crate::lexer::scan::{find_pair, is_space};
-use crate::lexer::unicode::{is_id_continue, is_id_start};
+use crate::parser::scan::{find_pair, is_space};
+use crate::parser::unicode::{is_id_continue, is_id_start};
 use crate::parser::{Entry as JsEntry, Result};
 
 /// Whether the browser closes `current` when `next` opens inside it.
