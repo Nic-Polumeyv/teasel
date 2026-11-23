@@ -349,6 +349,55 @@ fn a_slot_in_a_shadow_root_is_an_element() {
 	);
 }
 
+// `svelte:element` reads `this` from the first chunk of a value of several, as Svelte still does;
+// `svelte:component` takes an expression alone
+#[test]
+fn the_first_chunk_of_this_names_a_dynamic_element() {
+	let tag = |source: &str| {
+		let answer = svelte(source, Options::MODULE);
+		let at = answer.find("\"tag\":{").unwrap_or_else(|| panic!("{answer}")) + 6;
+		answer[at..at + answer[at..].find('}').unwrap() + 1].to_string()
+	};
+	assert_eq!(
+		tag("<svelte:element this=\"h{n}\" />"),
+		r#"{"type":"Literal","start":22,"end":23,"value":"h","raw":"h"}"#
+	);
+	assert_eq!(
+		tag("<svelte:element this=\"&amp;{n}\" />"),
+		r#"{"type":"Literal","start":22,"end":27,"value":"&","raw":"&amp;"}"#
+	);
+	assert_eq!(
+		tag("<svelte:element this=\"{a}{b}\" />"),
+		r#"{"type":"Identifier","start":23,"end":24,"name":"a"}"#
+	);
+	// the parts left out are in no scope and referenced by nothing
+	let scoped = svelte(
+		"<script>let a, b;</script><svelte:element this=\"{a}{b}\" />",
+		Options::MODULE | Options::SCOPES,
+	);
+	assert!(
+		scoped.contains("\"binding\":0,") && !scoped.contains("\"binding\":1,"),
+		"{scoped}"
+	);
+	// but they are read: an error in one is the component's, and under recovery is listed
+	let broken = "<svelte:element this=\"h{b +}\" />";
+	assert!(svelte(broken, Options::MODULE).starts_with("{\"node\":null,"));
+	let recovered = svelte(broken, Options::MODULE | Options::ERROR_RECOVERY);
+	assert!(
+		recovered.contains(r#""tag":{"type":"Literal","start":22,"end":23,"value":"h","raw":"h"}"#)
+			&& recovered.contains("\"errors\":[{\"code\":0,"),
+		"{recovered}"
+	);
+	for source in [
+		"<svelte:element this />",
+		"<svelte:component this=\"a{b}\" />",
+		"<svelte:component this=\"{a}{b}\" />",
+	] {
+		let answer = svelte(source, Options::MODULE);
+		assert!(answer.starts_with("{\"node\":null,"), "{source}: {answer}");
+	}
+}
+
 // a field a block's head did not read is null, or absent where Svelte leaves it out
 #[test]
 fn an_unread_field_is_null_or_absent() {

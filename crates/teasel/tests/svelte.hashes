@@ -673,8 +673,8 @@ migrate/samples/state-ts/input.svelte 77e2700b07b3223a
 migrate/samples/state-ts/output.svelte 55b100fe6253b0b0
 migrate/samples/svelte-component/input.svelte 95763b1c5113eb9f
 migrate/samples/svelte-component/output.svelte 02e8501027ecf02b
-migrate/samples/svelte-element/input.svelte 86cbab01796788b0
-migrate/samples/svelte-element/output.svelte 9f87198e23277848
+migrate/samples/svelte-element/input.svelte 6eea33e77526d148
+migrate/samples/svelte-element/output.svelte 8c20acb37f04bda4
 migrate/samples/svelte-ignore/input.svelte ece96ff30cd86267
 migrate/samples/svelte-ignore/output.svelte 52b5e4e62b20aaea
 migrate/samples/svelte-self/input.svelte f24450a51c070051
