@@ -18,15 +18,6 @@ pub(crate) const UINT8_ARRAY: i32 = 1;
 pub(crate) const UINT32_ARRAY: i32 = 6;
 pub(crate) const FLOAT64_ARRAY: i32 = 8;
 
-pub(crate) fn element_size(kind: i32) -> usize {
-	match kind {
-		UINT8_ARRAY => 1,
-		UINT32_ARRAY => 4,
-		FLOAT64_ARRAY => 8,
-		_ => unreachable!("an element size for every view kind"),
-	}
-}
-
 // a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe or libnode.dll
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
