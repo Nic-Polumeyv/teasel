@@ -417,7 +417,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	/// The token at the cursor, just read after `prev`, counted: the bracket it opens or closes,
 	/// whether it is one of the host's, and the read ended there when it is and `prev` ended an
 	/// operand (`first`: nothing was read before it).
-	#[inline(always)]
 	pub(super) fn tracked(&mut self, prev: Token, first: bool) {
 		// no word with an escape before it, the tree within its limit, and no host's stop
 		// starts with the token's first byte: the brackets alone, as the slow path counts them
@@ -555,7 +554,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	/// Whether a stop starts with the byte `t` starts with: most tokens start with none.
-	#[inline(always)]
 	fn starts_a_stop(&self, t: Token) -> bool {
 		let first = self.src.as_bytes()[t.start as usize];
 		self.scratch.stop_firsts[first as usize >> 6] >> (first & 63) & 1 != 0

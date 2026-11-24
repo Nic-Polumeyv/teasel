@@ -497,7 +497,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// A statement that starts with a word: a declaration by a contextual word, a label, or an
 	/// expression.
-	#[inline(always)]
 	fn word_statement(&mut self, place: u8) -> NodeId {
 		let t = self.tok;
 		let start = t.start;

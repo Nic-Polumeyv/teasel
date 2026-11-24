@@ -292,7 +292,6 @@ fn assignment(kind: Kind) -> Option<AssignmentOperator> {
 
 impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A parser reading with `lexer`, nothing read; TypeScript's tables are the caller's to clear.
-	#[inline(always)]
 	pub(super) fn with_lexer(
 		src: &'a str,
 		ast: &'a mut Ast,
@@ -401,7 +400,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		}
 	}
 
-	#[inline(always)]
 	pub(super) fn add(&mut self, kind: NodeKind, start: u32) -> NodeId {
 		self.ast.add(kind, start, self.prev_end)
 	}
@@ -411,7 +409,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.tok.flags & NEWLINE_BEFORE != 0
 	}
 
-	#[inline(always)]
 	pub(super) fn list(&mut self, base: usize) -> List {
 		let list = self.ast.add_list(&self.scratch.items[base..]);
 		self.scratch.items.truncate(base);
@@ -523,7 +520,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	// ── values: a token's text is its value unless it holds an escape
 
-	#[inline(always)]
 	pub(super) fn word(&mut self, t: Token) -> StrId {
 		if t.flags & ESCAPED != 0 {
 			return self.word_slow(t);
@@ -554,7 +550,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		values::number(&self.src[t.start as usize..t.end as usize])
 	}
 
-	#[inline(always)]
 	fn string(&mut self, t: Token) -> StrId {
 		if t.flags & (ESCAPED | BROKEN) != 0 {
 			return self.string_slow(t);
@@ -871,7 +866,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// A prefix operator's expression, or an atom with what follows it; `exp` says a `**` may
 	/// follow, which no operator before it allows.
-	#[inline(always)]
 	pub(super) fn unary(&mut self, exp: bool, errors: &mut Errors) -> NodeId {
 		self.depth += 1;
 		if self.depth > MAX_DEPTH {
@@ -1024,7 +1018,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	/// `await` where it is the operator: at the top of a module or in an async function.
-	#[inline(always)]
 	fn at_await(&self) -> bool {
 		let t = self.tok;
 		t.end - t.start == 5
@@ -2357,7 +2350,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		node
 	}
 
-	#[inline(always)]
 	fn array_inside(&mut self, start: u32, errors: &mut Errors) -> NodeId {
 		self.bump(true);
 		let base = self.scratch.items.len();
@@ -2406,7 +2398,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		node
 	}
 
-	#[inline(always)]
 	fn object_inside(&mut self, start: u32, errors: &mut Errors) -> NodeId {
 		self.bump(false);
 		let base = self.scratch.items.len();
@@ -2450,7 +2441,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	/// The token at the cursor can start a property's key.
-	#[inline(always)]
 	pub(super) fn at_property_name(&self) -> bool {
 		let kind = self.tok.kind;
 		matches!(kind, Kind::Ident | Kind::Number | Kind::BigInt | Kind::String | Kind::BracketL) || kind.is_keyword()
@@ -2594,7 +2584,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	/// A second `__proto__: value` in one literal: an error unless the literal is a pattern.
-	#[inline(always)]
 	fn proto_clash(&mut self, key: NodeId, has_proto: &mut bool, errors: &mut Errors) {
 		let node = *self.ast.node(key);
 		let name = match node.kind {

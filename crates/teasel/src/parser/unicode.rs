@@ -10,7 +10,6 @@ struct Trie {
 }
 
 impl Trie {
-	#[inline]
 	fn contains(&self, c: u32) -> bool {
 		let chunk = if c < 0x800 {
 			self.r1[(c >> 6) as usize]

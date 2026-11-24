@@ -490,7 +490,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// Whether the name written at `start` may be one of the words the checks know: by its
 	/// first byte.
-	#[inline(always)]
 	pub(super) fn special_at(&self, start: u32) -> bool {
 		const STARTS: u32 = 1 << (b'a' - b'a')
 			| 1 << (b'e' - b'a')

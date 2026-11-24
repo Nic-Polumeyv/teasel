@@ -766,7 +766,6 @@ impl<'a> Lexer<'a> {
 	}
 
 	/// How many errors recovery recorded.
-	#[inline]
 	pub fn soft_len(&self) -> usize {
 		self.soft.as_ref().map_or(0, |soft| soft.errors.len())
 	}
@@ -878,7 +877,6 @@ impl<'a> Lexer<'a> {
 		token(end, end, Kind::Eof, 0)
 	}
 
-	#[inline]
 	fn comment(&mut self, start: usize, end: usize, kind: CommentKind) {
 		if self.keep_comments {
 			self.comments.push(Comment {
@@ -1061,7 +1059,6 @@ impl<'a> Lexer<'a> {
 	}
 
 	/// A number may not run into a name.
-	#[inline]
 	fn after_number(&mut self, start: usize, end: usize, kind: Kind, flags: u8, regex: bool) -> Token {
 		match self.src.as_bytes().get(end) {
 			Some(&b) if b < 0x80 && CLASS[b as usize] & ID_START == 0 => {}
@@ -1247,7 +1244,6 @@ fn token_at(start: usize, end: usize, kind: Kind, flags: u8) -> Token {
 	token(start, end, kind, flags)
 }
 
-#[inline(always)]
 fn token(start: usize, end: usize, kind: Kind, flags: u8) -> Token {
 	Token {
 		start: start as u32,
