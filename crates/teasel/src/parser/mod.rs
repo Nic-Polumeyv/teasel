@@ -1079,14 +1079,7 @@ impl<'a> Lexer<'a> {
 		let bytes = self.src.as_bytes();
 		let mut pos = start + 1;
 		loop {
-			#[cfg(not(feature = "strtable"))]
-			{
-				pos = find(bytes, pos, [quote, b'\\', b'\n', b'\r'], false);
-			}
-			#[cfg(feature = "strtable")]
-			{
-				pos = string_stop(bytes, pos, if quote == b'"' { 1 } else { 2 } | 4);
-			}
+			pos = string_stop(bytes, pos, if quote == b'"' { 1 } else { 2 } | 4);
 			match bytes.get(pos) {
 				Some(b'\\') => {
 					flags |= ESCAPED;
@@ -1417,7 +1410,6 @@ fn string_escape_reach(bytes: &[u8], pos: usize) -> usize {
 
 /// What may end a string or change its value: bit 1 a double quote, 2 a single one, 4 a
 /// backslash or a line break.
-#[cfg(feature = "strtable")]
 static STRING: [u8; 256] = {
 	let mut table = [0u8; 256];
 	table[b'"' as usize] = 1;
@@ -1429,7 +1421,6 @@ static STRING: [u8; 256] = {
 };
 
 /// Where the first byte of `mask` stands from `pos` on.
-#[cfg(feature = "strtable")]
 #[inline(always)]
 fn string_stop(bytes: &[u8], mut pos: usize, mask: u8) -> usize {
 	while let Some(chunk) = bytes.get(pos..pos + 8) {
