@@ -14,7 +14,6 @@ pub mod parser;
 pub(crate) mod positions;
 pub mod recipe;
 pub mod scopes;
-pub(crate) mod stack;
 
 pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};

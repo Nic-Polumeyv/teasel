@@ -24,6 +24,13 @@ thread_local! {
 /// collection.
 const HOOK_DEPTH: usize = 128 << 10;
 
+/// Where the stack stands, to within the frame that asks.
+#[inline(always)]
+fn stack_position() -> usize {
+	let here = 0u8;
+	std::hint::black_box(&here) as *const u8 as usize
+}
+
 /// # Safety
 /// Each hook result must own a distinct writable allocation matching the layout, valid on this thread until
 /// `release` gets its token; `release` stays in force on this thread after `f` returns.
@@ -38,7 +45,7 @@ pub unsafe fn allocating<R>(allocate: Allocate, release: Release, f: impl FnOnce
 	RELEASE.set(Some(release));
 	let _restore = Restore(
 		ALLOCATE.replace(Some(allocate)),
-		FLOOR.replace(crate::stack::position().saturating_sub(HOOK_DEPTH)),
+		FLOOR.replace(stack_position().saturating_sub(HOOK_DEPTH)),
 	);
 	f()
 }
@@ -69,7 +76,7 @@ impl<T: Copy> Handed<T> {
 		let layout = Layout::array::<T>(capacity).expect("buffer capacity overflow");
 		if layout.size() != 0 {
 			let ptr = if let Some(allocate) = ALLOCATE.get()
-				&& crate::stack::position() >= FLOOR.get()
+				&& stack_position() >= FLOOR.get()
 			{
 				let allocation = allocate(layout);
 				buffer.token = Some(allocation.token);
