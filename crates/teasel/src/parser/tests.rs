@@ -359,6 +359,11 @@ fn deep_trees() {
 			for bits in [0, Options::COMMENTS, Options::SCOPES] {
 				assert_eq!(answer(bits), failed);
 			}
+			// the facts of an erased wrapper whose child the count left out go on no other node
+			let cut = format!("x = ((v = w as any){}){};", ".b".repeat(5_000), ".b".repeat(5_235));
+			let bits = Options::MODULE | Options::TYPESCRIPT | Options::ERASE | Options::SCOPES | Options::ERROR_RECOVERY;
+			let recovered = crate::estree::parse(&cut, Entry::Program, 0, Options(bits));
+			assert!(recovered.contains(r#""right":null}"#) && !recovered.contains(r#""writes":[1]"#));
 		})
 		.unwrap()
 		.join()

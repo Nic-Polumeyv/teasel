@@ -15,7 +15,7 @@ use crate::scopes::Role;
 /// How many levels the writer may recurse. The parser's loops nest a tree deeper than the parser
 /// recursed: chains of operators or subscripts, and chains inside parentheses.
 // past the 10,001 levels of the deepest tree the tests write, a chain of 9,999 links; at 592 bytes
-// a level (x86_64 release), 6.1 MB of the 8 MB main thread the CLI runs on
+// a level (x86_64 release), 6.1 MB of the 8 MB a main thread has on Linux and macOS
 const MAX_WALK: u32 = 10_240;
 
 /// One entry at a byte offset, as JSON.
@@ -595,6 +595,7 @@ impl<'a> Writer<'a> {
 		if self.depth == MAX_WALK {
 			let node = self.ast.node(id);
 			self.deep.push(SyntaxError::new(node.start, Code::NestingDepth).to(node.end));
+			self.adopted.clear();
 			return self.json.null();
 		}
 		self.depth += 1;
