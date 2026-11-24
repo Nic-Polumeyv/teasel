@@ -1,9 +1,9 @@
 //! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, Depth, Extras, List, NodeId, NodeKind};
+use crate::ast::{Ast, Extras, List, NodeId, NodeKind};
 use crate::engine;
-use crate::error::SyntaxError;
+use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -11,6 +11,12 @@ use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
 use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
+
+/// How many levels the writer may recurse. The parser's loops nest a tree deeper than the parser
+/// recursed: chains of operators or subscripts, and chains inside parentheses.
+// past the 10,001 levels of the deepest tree the tests write, a chain of 9,999 links; at 592 bytes
+// a level (x86_64 release), 6.1 MB of the 8 MB main thread the CLI runs on
+const MAX_WALK: u32 = 10_240;
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
@@ -39,7 +45,7 @@ pub struct Writer<'a> {
 	kept: Vec<(&'static str, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
-	depth: Depth,
+	depth: u32,
 	/// The subtrees too deep to write, each written as null.
 	deep: Vec<SyntaxError>,
 }
@@ -57,7 +63,7 @@ impl<'a> Writer<'a> {
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
-			depth: Depth::default(),
+			depth: 0,
 			deep: Vec::new(),
 		}
 	}
@@ -586,17 +592,19 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
-		if !self.depth.enter() {
-			self.deep.push(self.ast.too_deep(id));
+		if self.depth == MAX_WALK {
+			let node = self.ast.node(id);
+			self.deep.push(SyntaxError::new(node.start, Code::NestingDepth).to(node.end));
 			return self.json.null();
 		}
+		self.depth += 1;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		// erasing may put a child in the node's place, which closes itself
 		let base = kind as *const NodeKind as *const u8;
 		if self.run(id, KINDS[tag(base)], base) {
 			self.end();
 		}
-		self.depth.leave();
+		self.depth -= 1;
 	}
 
 	/// Writes the keys TypeScript adds to a node.

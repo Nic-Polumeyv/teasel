@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, Depth, Kind, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, Kind, List, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Raw};
 use crate::interner::{FastMap, StrId};
@@ -315,6 +315,7 @@ struct Scratch {
 	/// The name maps of earlier analyses by environment id, emptied: a document of the same shape
 	/// finds each environment's map back where it was, so a root's room never lands on a small scope.
 	names: Vec<FastMap<StrId, BindingId>>,
+	links: Vec<Link>,
 }
 
 /// A name map with room for more than this is freed rather than kept.
@@ -466,6 +467,7 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 		open,
 		mut env_of,
 		owned,
+		links,
 		..
 	} = binder;
 	for (id, binding) in out.bindings.iter().enumerate() {
@@ -499,6 +501,7 @@ fn analyze_with(ast: &mut Ast, kind: ScopeKind, root: Option<NodeId>, f: impl Fn
 		env_of,
 		owned,
 		names,
+		links,
 	};
 	ast.scopes = Some(out);
 }
@@ -562,7 +565,17 @@ pub struct Binder<'a> {
 	/// Whether any node has decorators.
 	// looked up at every node of a tree that has none instead, a parse with scopes took 1 to 2% longer
 	decorated: bool,
-	depth: Depth,
+	/// What the links of the chains being walked down hold after the links they nest, the last
+	/// link met last.
+	links: Vec<Link>,
+}
+
+/// What a link of a chain holds after the link it nests: the chain's operand or property to its
+/// right, or a call's arguments.
+#[derive(Clone, Copy, Debug)]
+enum Link {
+	Node(NodeId),
+	List(List),
 }
 
 impl<'a> Binder<'a> {
@@ -585,6 +598,7 @@ impl<'a> Binder<'a> {
 			env_of,
 			owned,
 			names,
+			links,
 		} = std::mem::take(&mut out.scratch);
 		out.scratch.names = names;
 		Binder {
@@ -602,7 +616,7 @@ impl<'a> Binder<'a> {
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
 			decorated: ast.extras.records().iter().any(|extras| extras.decorators.is_some()),
-			depth: Depth::default(),
+			links,
 		}
 	}
 
@@ -1044,36 +1058,43 @@ impl<'a> Binder<'a> {
 		self.visit_member_target(id, root);
 	}
 
-	fn visit_member_target(&mut self, id: NodeId, root: Option<NodeId>) {
-		if !self.depth.enter() {
-			return self.too_deep(id);
-		}
-		match self.kind(id) {
-			NodeKind::Identifier { .. } if Some(id) == root => self.reference(id, false, true),
-			NodeKind::MemberExpression {
-				object,
-				property,
-				computed,
-				..
-			} => {
-				self.visit_member_target(object, root);
-				if computed {
-					self.visit(property, Mode::Expression);
+	fn visit_member_target(&mut self, mut id: NodeId, root: Option<NodeId>) {
+		let mut links = 0;
+		loop {
+			match self.kind(id) {
+				NodeKind::Identifier { .. } if Some(id) == root => break self.reference(id, false, true),
+				NodeKind::MemberExpression {
+					object,
+					property,
+					computed,
+					..
+				} => {
+					if computed {
+						self.links.push(Link::Node(property));
+						links += 1;
+					}
+					id = object;
 				}
+				NodeKind::ChainExpression { expression } => id = expression,
+				_ => match self.ast.wrapped(id) {
+					Some(inner) => id = inner,
+					None => break self.visit(id, Mode::Expression),
+				},
 			}
-			NodeKind::ChainExpression { expression } => self.visit_member_target(expression, root),
-			_ => match self.ast.wrapped(id) {
-				Some(inner) => self.visit_member_target(inner, root),
-				None => self.visit(id, Mode::Expression),
-			},
 		}
-		self.depth.leave();
+		self.back_up(links);
 	}
 
-	#[cold]
-	#[inline(never)]
-	fn too_deep(&mut self, id: NodeId) {
-		self.out.errors.push(self.ast.too_deep(id));
+	/// What the last `count` links of the chains walked down hold after the links they nest, the
+	/// innermost link's first.
+	#[inline(always)]
+	fn back_up(&mut self, count: u32) {
+		for _ in 0..count {
+			match self.links.pop().unwrap() {
+				Link::Node(id) => self.visit(id, Mode::Expression),
+				Link::List(list) => self.list(list, Mode::Expression),
+			}
+		}
 	}
 
 	fn decorators(&mut self, id: NodeId) {
@@ -1084,12 +1105,7 @@ impl<'a> Binder<'a> {
 		}
 	}
 
-	// with `class`, a level of its own: uncounted, a level of nested arrows took 352 bytes of stack
-	// against 184, of nested classes 244 against 168
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
-		if !self.depth.enter() {
-			return self.too_deep(id);
-		}
 		// a parameter's decorators are evaluated where the function is defined
 		if self.decorated {
 			for &param in self.ast.list(params).iter().flatten() {
@@ -1112,15 +1128,11 @@ impl<'a> Binder<'a> {
 			_ => self.visit(body, Mode::Expression),
 		}
 		self.exit();
-		self.depth.leave();
 	}
 
 	/// A class body: a class expression binds its own name inside, a declaration's body sees the
 	/// declaration's binding.
 	fn class(&mut self, id: NodeId, class: crate::ast::Class, expression: bool) {
-		if !self.depth.enter() {
-			return self.too_deep(id);
-		}
 		self.enter(ScopeKind::Class, Some(id), false);
 		if let (true, Some(name)) = (expression, class.id) {
 			self.declare_by(name, BindingKind::ClassName, id);
@@ -1128,7 +1140,6 @@ impl<'a> Binder<'a> {
 		self.maybe(class.super_class, Mode::Expression);
 		self.visit(class.body, Mode::Expression);
 		self.exit();
-		self.depth.leave();
 	}
 
 	fn declaration_kind(kind: VariableKind) -> BindingKind {
@@ -1239,11 +1250,21 @@ impl<'a> Binder<'a> {
 		root.references[1] = self.out.references.len() as u32;
 	}
 
-	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
-		use NodeKind::*;
-		if !self.depth.enter() {
-			return self.too_deep(id);
+	fn visit_with(&mut self, mut id: NodeId, mut mode: Mode, extras: bool) {
+		// a chain is a loop of the parser's: it nests the tree deeper than the parser recursed
+		let mut links = 0;
+		let mut extras = extras;
+		while let Some(link) = self.visit_node(id, mode, extras, &mut links) {
+			(id, mode, extras) = (link.0, link.1, true);
 		}
+		self.back_up(links);
+	}
+
+	/// Visits the node at `id`, or, at a link of a chain, pushes what it holds after the link it
+	/// nests to `links` and answers that link, with the mode it is visited in.
+	#[inline(always)]
+	fn visit_node(&mut self, id: NodeId, mode: Mode, extras: bool, links: &mut u32) -> Option<(NodeId, Mode)> {
+		use NodeKind::*;
 		if extras && self.decorated {
 			self.decorators(id);
 		}
@@ -1408,7 +1429,8 @@ impl<'a> Binder<'a> {
 			| NonNullExpression { expression }
 			| TypeAssertion { expression, .. }
 			| InstantiationExpression { expression, .. }
-			| ParameterProperty { parameter: expression } => self.visit(expression, mode),
+			| ParameterProperty { parameter: expression }
+			| ChainExpression { expression } => return Some((expression, mode)),
 			Decorator { expression } | ExportAssignment { expression } => self.visit(expression, Mode::Expression),
 			EnumDeclaration { id: name, members, .. } => {
 				self.declare_by(name, BindingKind::Enum, id);
@@ -1517,8 +1539,9 @@ impl<'a> Binder<'a> {
 			| ExportAllDeclaration { .. } => {}
 			TemplateLiteral { expressions, .. } => self.list(expressions, Mode::Expression),
 			TaggedTemplateExpression { tag, quasi } => {
-				self.visit(tag, Mode::Expression);
-				self.visit(quasi, Mode::Expression);
+				self.links.push(Link::Node(quasi));
+				*links += 1;
+				return Some((tag, Mode::Expression));
 			}
 			ArrayExpression { elements } => self.list(elements, Mode::Expression),
 			ObjectExpression { properties } => self.list(properties, Mode::Expression),
@@ -1540,8 +1563,9 @@ impl<'a> Binder<'a> {
 			}
 			UpdateExpression { argument, .. } => self.writing(None, true, |b| b.target(argument)),
 			BinaryExpression { left, right, .. } | LogicalExpression { left, right, .. } => {
-				self.visit(left, Mode::Expression);
-				self.visit(right, Mode::Expression);
+				self.links.push(Link::Node(right));
+				*links += 1;
+				return Some((left, Mode::Expression));
 			}
 			AssignmentExpression { left, right, operator } => {
 				let compound = operator != crate::ast::AssignmentOperator::Assign;
@@ -1563,16 +1587,17 @@ impl<'a> Binder<'a> {
 				computed,
 				..
 			} => {
-				self.visit(object, Mode::Expression);
 				if computed {
-					self.visit(property, Mode::Expression);
+					self.links.push(Link::Node(property));
+					*links += 1;
 				}
+				return Some((object, Mode::Expression));
 			}
 			CallExpression { callee, arguments, .. } | NewExpression { callee, arguments } => {
-				self.visit(callee, Mode::Expression);
-				self.list(arguments, Mode::Expression);
+				self.links.push(Link::List(arguments));
+				*links += 1;
+				return Some((callee, Mode::Expression));
 			}
-			ChainExpression { expression } => self.visit(expression, mode),
 			SequenceExpression { expressions } => self.list(expressions, Mode::Expression),
 			ArrowFunctionExpression { params, body, .. } => self.function(id, params, body, true),
 			FunctionExpression { function } => match function.id {
@@ -1770,14 +1795,14 @@ impl<'a> Binder<'a> {
 			}
 			ExportDefaultDeclaration { declaration } => self.visit(declaration, Mode::Expression),
 		}
-		self.depth.leave();
+		None
 	}
 
 	/// An assignment or update target: an identifier is written, a member chain mutates its root,
 	/// a pattern does both to what it names.
-	fn target(&mut self, id: NodeId) {
-		if !self.depth.enter() {
-			return self.too_deep(id);
+	fn target(&mut self, mut id: NodeId) {
+		while let Some(inner) = self.ast.wrapped(id) {
+			id = inner;
 		}
 		match self.kind(id) {
 			NodeKind::Identifier { .. } => self.reference(id, true, false),
@@ -1798,12 +1823,8 @@ impl<'a> Binder<'a> {
 				}
 				self.target(value);
 			}
-			_ => match self.ast.wrapped(id) {
-				Some(inner) => self.target(inner),
-				None => self.visit(id, Mode::Expression),
-			},
+			_ => self.visit(id, Mode::Expression),
 		}
-		self.depth.leave();
 	}
 
 	fn targets(&mut self, list: List) {

@@ -511,10 +511,11 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 	assert.throws(() => js("import { '\\udc00' as y } from 'm';"), { code: 'lone_surrogate_in_module_name', pos: 9 });
 }
 
-// a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
+// a tree too deep for the parser or the decoder is a parse error on every backend, and the engine reads the next source
 {
 	const deep = { code: 'nesting_depth' };
-	// chains are loops of the parser: in parentheses, they nest a tree deeper than the parser recursed
+	// chains are loops of the parser: in parentheses, they nest a tree deeper than the parser recursed, which the
+	// walks over it loop down and the decoder has no room for here
 	let chains = 'a /* c */';
 	for (let i = 0; i < 5; i++) chains = `(${chains}${'.b'.repeat(3_000)})`;
 	for (const scopes of [false, true]) {

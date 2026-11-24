@@ -315,21 +315,19 @@ pub(crate) fn read<R>(
 			Err(error) => fail(&mut ast, *error),
 		};
 		if let Some(list) = roots {
-			let parsed = ast.errors.len();
 			if options.has(Options::COMMENTS) {
 				attach(&mut ast, source, list, offset);
 			}
 			if options.has(Options::SCOPES) {
 				scopes::analyze(&mut ast, entry, list);
 				let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-				ast.errors.extend(errors);
-			}
-			if ast.errors.len() > parsed {
-				if options.has(Options::ERROR_RECOVERY) {
-					ast.errors.sort_by_key(|error| error.pos);
-				} else {
-					let first = *ast.errors.iter().min_by_key(|error| error.pos).unwrap();
-					roots = fail(&mut ast, first);
+				if !errors.is_empty() {
+					if options.has(Options::ERROR_RECOVERY) {
+						ast.errors.extend(errors);
+						ast.errors.sort_by_key(|error| error.pos);
+					} else {
+						roots = fail(&mut ast, errors[0]);
+					}
 				}
 			}
 		}

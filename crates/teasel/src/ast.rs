@@ -1,4 +1,3 @@
-use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Raw};
 use crate::interner::{Interner, StrId, Surrogate};
 use crate::layout::{Field, Ty, tag};
@@ -51,35 +50,6 @@ impl NodeId {
 
 	pub fn index(self) -> u32 {
 		self.0.get() - 1
-	}
-}
-
-/// How many levels a walk over a finished tree may recurse: the scope pass, the comment attacher
-/// and the JSON writer. The parser's loops nest a tree deeper than the parser recursed: chains of
-/// operators or subscripts, and chains inside parentheses.
-// past the 10,001 levels of the deepest tree the tests walk, a chain of 9,999 links; at the most
-// stack a level was measured to take (x86_64 release: 256 bytes in the scope pass, 112 in the
-// attacher, 592 in the writer) 2.6 MB of a worker's 4, and the writer's 6.1 MB of the 8 of the
-// main thread it runs on
-pub(crate) const MAX_WALK: u32 = 10_240;
-
-#[derive(Default)]
-pub(crate) struct Depth(u32);
-
-impl Depth {
-	/// One level deeper; false when the walk already stands `MAX_WALK` deep.
-	#[inline(always)]
-	pub(crate) fn enter(&mut self) -> bool {
-		if self.0 == MAX_WALK {
-			return false;
-		}
-		self.0 += 1;
-		true
-	}
-
-	#[inline(always)]
-	pub(crate) fn leave(&mut self) {
-		self.0 -= 1;
 	}
 }
 
@@ -536,13 +506,6 @@ impl Ast {
 
 	pub fn node_mut(&mut self, id: NodeId) -> &mut Node {
 		&mut self.nodes[id.index() as usize]
-	}
-
-	/// The error of a walk that cannot go into the subtree at `id`.
-	#[cold]
-	pub(crate) fn too_deep(&self, id: NodeId) -> SyntaxError {
-		let node = self.node(id);
-		SyntaxError::new(node.start, Code::NestingDepth).to(node.end)
 	}
 
 	pub fn str(&self, id: StrId) -> &str {
