@@ -1393,15 +1393,21 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	#[inline(always)]
 	pub(super) fn special(&self, t: Token) -> bool {
 		// yield, await, arguments, enum, the strict-mode reserved words, a keyword spelled with an escape
-		const STARTS: u32 = 1 << (b'a' - b'a')
-			| 1 << (b'e' - b'a')
-			| 1 << (b'i' - b'a')
-			| 1 << (b'l' - b'a')
-			| 1 << (b'p' - b'a')
-			| 1 << (b's' - b'a')
-			| 1 << (b'y' - b'a');
+		// the words with facts, by first letter: the lengths they have
+		const LENGTHS: [u16; 26] = {
+			let mut l = [0u16; 26];
+			l[0] = 1 << 5 | 1 << 9; // await, arguments
+			l[(b'e' - b'a') as usize] = 1 << 4; // eval, enum
+			l[(b'i' - b'a') as usize] = 1 << 9 | 1 << 10; // interface, implements
+			l[(b'l' - b'a') as usize] = 1 << 3; // let
+			l[(b'p' - b'a') as usize] = 1 << 6 | 1 << 7 | 1 << 9; // public, package private, protected
+			l[(b's' - b'a') as usize] = 1 << 6; // static
+			l[(b'y' - b'a') as usize] = 1 << 5; // yield
+			l
+		};
 		let first = self.src.as_bytes()[t.start as usize].wrapping_sub(b'a');
-		t.flags & ESCAPED != 0 || (first < 26 && STARTS >> first & 1 != 0)
+		let len = t.end - t.start;
+		t.flags & ESCAPED != 0 || (first < 26 && len < 16 && LENGTHS[first as usize] >> len & 1 != 0)
 	}
 
 	/// A name where an identifier is needed: a keyword is read as one, and is an error after.
