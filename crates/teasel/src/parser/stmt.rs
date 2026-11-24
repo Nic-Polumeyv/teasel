@@ -578,6 +578,30 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		let nested = place > CASE;
 		match word {
 			b"let" => {
+				// tried: the bytes after `let` looked at, then read again as a token, 1.5% more
+				// instructions on the scripts of Svelte's tests
+				if !self.recover {
+					self.bump(false);
+					if self.lexer.error.is_none() {
+						let kind = self.tok.kind;
+						let escape = kind == Kind::Ident && self.src.as_bytes()[self.tok.start as usize] == b'\\';
+						let binds = matches!(kind, Kind::BraceL | Kind::Ident)
+							|| (kind.is_keyword() && !matches!(kind, Kind::In | Kind::Instanceof));
+						if kind == Kind::BracketL || escape || (!nested && binds) {
+							if nested {
+								self.back(t, prev, comments);
+								return Some(self.fail());
+							}
+							let node = self.declarators(start, VariableKind::Let, false);
+							return Some(self.declared(node));
+						}
+						self.back(t, prev, comments);
+						return None;
+					}
+					// what does not lex is judged by its bytes, unread
+					self.lexer.error = None;
+					self.back(t, prev, comments);
+				}
 				if (self.strict && self.recovering()) || self.lexer.declares_after_let(nested) {
 					if nested {
 						return Some(self.fail());
@@ -1064,6 +1088,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A declaration, its keyword at the cursor and at `start`.
 	pub(super) fn var_statement(&mut self, start: u32, kind: VariableKind) -> NodeId {
 		let node = self.var(start, kind, false);
+		self.declared(node)
+	}
+
+	/// The end of a declaration statement whose declarators are `node`.
+	fn declared(&mut self, node: NodeId) -> NodeId {
 		self.semicolon();
 		if !self.error {
 			self.ast.node_mut(node).end = self.prev_end;
@@ -1083,6 +1112,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		if kind == VariableKind::AwaitUsing {
 			self.bump(false);
 		}
+		self.declarators(start, kind, in_for)
+	}
+
+	/// The declarators at the cursor, their keyword read.
+	fn declarators(&mut self, start: u32, kind: VariableKind, in_for: bool) -> NodeId {
 		let base = self.scratch.items.len();
 		loop {
 			let at = self.tok.start;
