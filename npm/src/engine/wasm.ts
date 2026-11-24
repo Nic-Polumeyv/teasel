@@ -14,7 +14,8 @@ interface Exports {
 	text_ptr(): number;
 	text_len(): number;
 	tree(): number;
-	stamp(): number;
+	/** Missing from a build older than the check. */
+	stamp?(): number;
 }
 
 // `teasel.wasm` beside the package entry: a bundler includes the file without configuration
@@ -25,7 +26,7 @@ let wasm: Exports;
 function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): Engine {
 	module = compiled;
 	wasm = instance.exports as unknown as Exports;
-	if (wasm.stamp() >>> 0 !== stamp) throw new Error('@teasel/parser: teasel.wasm writes the tree by another layout than this JavaScript reads it by; install or build the two together');
+	if (wasm.stamp === undefined || wasm.stamp() >>> 0 !== stamp) throw new Error('@teasel/parser: teasel.wasm writes the tree by another layout than this JavaScript reads it by; install or build the two together');
 	return engine;
 }
 
