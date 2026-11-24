@@ -7,6 +7,8 @@ pub(crate) struct Json {
 	first: bool,
 	/// The open containers, `true` for a list.
 	stack: Vec<bool>,
+	/// How deep the containers are whose entries each start a line.
+	wrap: usize,
 }
 
 impl Default for Json {
@@ -15,20 +17,37 @@ impl Default for Json {
 			out: String::new(),
 			first: true,
 			stack: Vec::new(),
+			wrap: 0,
 		}
 	}
 }
 
 impl Json {
+	/// JSON text whose containers `wrap` deep start each entry on a line of its own.
+	pub(crate) fn wrapped(wrap: usize) -> Self {
+		Json { wrap, ..Json::default() }
+	}
+
 	pub(crate) fn finish(self) -> String {
 		self.out
 	}
 
+	// a list's value starts an entry; an object's starts at its key
 	fn sep(&mut self) {
 		if !self.first {
 			self.out.push(',');
 		}
 		self.first = false;
+		if self.stack.last() == Some(&true) {
+			self.line(self.stack.len());
+		}
+	}
+
+	fn line(&mut self, depth: usize) {
+		if depth <= self.wrap {
+			self.out.push('\n');
+			self.out.extend(std::iter::repeat_n('\t', depth));
+		}
 	}
 
 	fn open(&mut self, list: bool) {
@@ -61,12 +80,19 @@ impl Json {
 	}
 
 	pub(crate) fn end(&mut self) {
+		let depth = self.stack.len();
+		if !self.first && depth <= self.wrap {
+			self.line(depth - 1);
+		}
 		self.out.push(if self.stack.pop() == Some(true) { ']' } else { '}' });
 		self.first = false;
 	}
 
 	pub(crate) fn key(&mut self, key: &str) {
-		self.sep();
+		if !self.first {
+			self.out.push(',');
+		}
+		self.line(self.stack.len());
 		write_json_string(&mut self.out, key);
 		self.out.push(':');
 		self.first = true;

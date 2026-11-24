@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import type { Expression, Identifier, Pattern, Program, VariableDeclaration } from 'estree';
 import type { AST, Options } from '../src/index.ts';
 import type { Addon } from '../src/engine/addon.ts';
@@ -564,10 +565,16 @@ if (name !== 'native') {
 	assert.equal((built.parse('<p>{x}</p>').node.fragment.nodes[0] as Any).name, 'p', `${name} dist`);
 }
 
-// src/children.ts is written from the engine's layout by scripts/children.ts: the two must agree
+// a build refuses a package whose layout is not its own, at load
 {
-	const { engine } = await import('#engine');
-	const made = generate(JSON.parse(engine.layout()));
+	const other = `require('node:module').registerHooks({ load: (url, context, next) => { const loaded = next(url, context); return url.endsWith('/dist/layout.js') ? { ...loaded, source: String(loaded.source).replace(/stamp = \\d+/, 'stamp = 1') } : loaded; } }); require('@teasel/parser')`;
+	const run = spawnSync(process.execPath, [...process.execArgv, '--input-type=commonjs', '-e', other], { encoding: 'utf8' });
+	assert.match(run.stderr, /writes the tree by another layout/, `${name} takes a package of another layout`);
+}
+
+// src/children.ts is written from src/layout.ts by scripts/children.ts: the two must agree
+{
+	const made = generate();
 	assert.deepEqual(JSON.parse(JSON.stringify(tables.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
 	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');

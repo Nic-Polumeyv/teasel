@@ -18,15 +18,6 @@ pub(crate) const UINT8_ARRAY: i32 = 1;
 pub(crate) const UINT32_ARRAY: i32 = 6;
 pub(crate) const FLOAT64_ARRAY: i32 = 8;
 
-pub(crate) fn element_size(kind: i32) -> usize {
-	match kind {
-		UINT8_ARRAY => 1,
-		UINT32_ARRAY => 4,
-		FLOAT64_ARRAY => 8,
-		_ => unreachable!("an element size for every view kind"),
-	}
-}
-
 // a Windows DLL cannot leave an import unresolved, so there `load` looks each function up in node.exe or libnode.dll
 macro_rules! api {
 	($(fn $name:ident($($arg:ident: $ty:ty),*) -> Status;)*) => {
@@ -94,7 +85,6 @@ api! {
 	fn napi_create_reference(env: Env, value: Value, count: u32, result: *mut Ref) -> Status;
 	fn napi_delete_reference(env: Env, reference: Ref) -> Status;
 	fn napi_get_reference_value(env: Env, reference: Ref, result: *mut Value) -> Status;
-	fn napi_create_string_utf8(env: Env, text: *const c_char, length: usize, result: *mut Value) -> Status;
 	fn napi_create_array_with_length(env: Env, length: usize, result: *mut Value) -> Status;
 	fn napi_set_element(env: Env, array: Value, index: u32, value: Value) -> Status;
 	fn napi_create_uint32(env: Env, value: u32, result: *mut Value) -> Status;

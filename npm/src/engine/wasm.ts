@@ -1,4 +1,5 @@
 import type { Engine, Tree } from '../types.ts';
+import { stamp } from '../layout.ts';
 
 const encoder = new TextEncoder();
 const utf8 = new TextDecoder();
@@ -13,7 +14,8 @@ interface Exports {
 	text_ptr(): number;
 	text_len(): number;
 	tree(): number;
-	layout(): void;
+	/** Missing from a build older than the check. */
+	stamp?(): number;
 }
 
 // `teasel.wasm` beside the package entry: a bundler includes the file without configuration
@@ -24,6 +26,7 @@ let wasm: Exports;
 function start(compiled: WebAssembly.Module, instance: WebAssembly.Instance): Engine {
 	module = compiled;
 	wasm = instance.exports as unknown as Exports;
+	if (wasm.stamp === undefined || wasm.stamp() >>> 0 !== stamp) throw new Error('@teasel/parser: teasel.wasm writes the tree by another layout than this JavaScript reads it by; install or build the two together');
 	return engine;
 }
 
@@ -84,15 +87,6 @@ const text = () => utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.text_ptr(
 const words = () => new Uint32Array(wasm.memory.buffer, wasm.words_ptr(), wasm.words_len());
 
 const trees: ({ buffer: ArrayBuffer; at: Uint32Array; views: Tree[number][] } | undefined)[] = [undefined, undefined];
-let layout_text: string | undefined;
-// read once, before any view of the tree: writing it can grow the memory and detach them
-function layout() {
-	if (layout_text === undefined) {
-		guarded(() => wasm.layout());
-		layout_text = text();
-	}
-	return layout_text;
-}
 
 const engine: Engine = {
 	parse(source, flags, language) {
@@ -101,11 +95,8 @@ const engine: Engine = {
 			wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
 		}
 		if (guarded(() => wasm.parse(...bytes(source), flags, language)) !== 0) throw new Error(text());
-		// the layout comes first: writing it can grow the memory and detach a view taken before
-		layout();
 		return words();
 	},
-	layout,
 	// the tree sits in the module's memory until the next parse: a view is made anew when its buffer moved or the memory grew
 	tree(typescript, moved) {
 		const known = trees[+typescript];

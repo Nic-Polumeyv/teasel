@@ -1,13 +1,15 @@
 // scripts/addon.ts imports this file to build the binary that node.ts loads on import, so the two stay apart
 const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
 const { createRequire } = process.getBuiltinModule('node:module');
-import type { Engine, Tree } from '../types.ts';
+import type { Tree } from '../types.ts';
 
 /** `crates/teasel-node/src/lib.rs`: the operations over a source, the source as V8's bytes. */
-export interface Addon extends Omit<Engine, 'parse' | 'tree'> {
+export interface Addon {
 	readonly parse: (source: Uint8Array, flags: number, language: number) => Uint32Array;
 	/** Whether the tree is the TypeScript one, then each view as long as its buffer's room; the lengths ride in the answer's words. */
 	readonly tree: () => Tree | undefined;
+	/** The stamp of the layout the build writes the tree by. */
+	readonly stamp: number;
 }
 
 export const platforms: Record<string, { target: string; os: NodeJS.Platform; cpu: NodeJS.Architecture; libc?: string }> = {

@@ -16,6 +16,9 @@ use teasel::handed::{Allocation, Element, Raw};
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
 compile_error!("the addon links the C runtime statically: build with .cargo/config.toml's rustflags");
 
+/// The layout this build writes the tree by, as the package's copy of it names it.
+const STAMP: u32 = engine::stamp(include_bytes!("../../../npm/src/layout.ts"));
+
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
 /// the TypeScript one, each an array.
 const VIEWS: usize = 3;
@@ -79,12 +82,6 @@ fn number(env: Env, value: Value) -> Result<f64> {
 	})
 }
 
-fn text(env: Env, text: &str) -> Result<Value> {
-	out(null_mut(), "a string", |r| unsafe {
-		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
-	})
-}
-
 fn undefined(env: Env) -> Result<Value> {
 	out(null_mut(), "undefined", |r| unsafe {
 		node_api::napi_get_undefined(env, r)
@@ -122,27 +119,24 @@ unsafe extern "C" fn tree(env: Env, _: CallbackInfo) -> Value {
 			};
 			let slot = 1 + typescript as usize;
 			let (_, mut refs) = VIEW.get();
-			let mut array = null_mut();
-			if refs[slot].is_null() {
-				check(
-					unsafe { node_api::napi_create_array_with_length(env, 1 + count as usize, &mut array) },
-					"an array",
-				)?;
+			let array = if refs[slot].is_null() {
+				let array = out(null_mut(), "an array", |r| unsafe {
+					node_api::napi_create_array_with_length(env, 1 + count as usize, r)
+				})?;
 				check(
 					unsafe { node_api::napi_set_element(env, array, 0, uint32(env, typescript as u32)?) },
 					"an element",
 				)?;
-				check(
-					unsafe { node_api::napi_create_reference(env, array, 1, &mut refs[slot]) },
-					"keeping the views",
-				)?;
+				refs[slot] = out(null_mut(), "keeping the views", |r| unsafe {
+					node_api::napi_create_reference(env, array, 1, r)
+				})?;
 				VIEW.set((env, refs));
+				array
 			} else {
-				check(
-					unsafe { node_api::napi_get_reference_value(env, refs[slot], &mut array) },
-					"the views",
-				)?;
-			}
+				out(null_mut(), "the views", |r| unsafe {
+					node_api::napi_get_reference_value(env, refs[slot], r)
+				})?
+			};
 			for (i, value) in moved {
 				if let Some(value) = value? {
 					check(
@@ -168,10 +162,6 @@ fn uint32(env: Env, value: u32) -> Result<Value> {
 	out(null_mut(), "a number", |r| unsafe {
 		node_api::napi_create_uint32(env, value, r)
 	})
-}
-
-unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
-	guard(env, || text(env, &teasel::engine::layout_json()))
 }
 
 // a panic must not cross into the host; it and any error become a thrown Error
@@ -249,53 +239,35 @@ fn buffer_view(env: Env, buffer: &mut dyn Raw) -> Result<Option<Value>> {
 	let Some(reference) = buffer.allocation() else {
 		return Ok(None);
 	};
-	let mut array = null_mut();
-	check(
-		unsafe { node_api::napi_get_reference_value(env, reference.as_ptr(), &mut array) },
-		"the view's buffer",
-	)?;
-	let mut value = null_mut();
-	let kind = kind_of(buffer.element());
-	check(
-		unsafe {
-			node_api::napi_create_typedarray(
-				env,
-				kind,
-				buffer.capacity_bytes() / node_api::element_size(kind),
-				array,
-				0,
-				&mut value,
-			)
-		},
-		"the view",
-	)?;
+	let array = out(null_mut(), "the view's buffer", |r| unsafe {
+		node_api::napi_get_reference_value(env, reference.as_ptr(), r)
+	})?;
+	let element = buffer.element();
+	let length = buffer.capacity_bytes() / element.size();
+	let value = out(null_mut(), "the view", |r| unsafe {
+		node_api::napi_create_typedarray(env, kind_of(element), length, array, 0, r)
+	})?;
 	Ok(Some(value))
 }
 
 fn view_of(env: Env, slot: usize, buffer: &mut dyn Raw) -> Result<Value> {
 	let (_, mut refs) = VIEW.get();
-	let mut value = null_mut();
-	if let Some(next) = buffer_view(env, buffer)? {
+	if let Some(value) = buffer_view(env, buffer)? {
 		if !refs[slot].is_null() {
 			let old = std::mem::replace(&mut refs[slot], null_mut());
 			VIEW.set((env, refs));
 			check(unsafe { node_api::napi_delete_reference(env, old) }, "the old view")?;
 		}
-		value = next;
-		let mut reference = null_mut();
-		check(
-			unsafe { node_api::napi_create_reference(env, value, 1, &mut reference) },
-			"keeping the view",
-		)?;
-		refs[slot] = reference;
+		refs[slot] = out(null_mut(), "keeping the view", |r| unsafe {
+			node_api::napi_create_reference(env, value, 1, r)
+		})?;
 		VIEW.set((env, refs));
+		Ok(value)
 	} else {
-		check(
-			unsafe { node_api::napi_get_reference_value(env, refs[slot], &mut value) },
-			"the view",
-		)?;
+		out(null_mut(), "the view", |r| unsafe {
+			node_api::napi_get_reference_value(env, refs[slot], r)
+		})
 	}
-	Ok(value)
 }
 
 // the answer is written into the words in place; one the words outgrew stays with the view that shows it
@@ -352,27 +324,19 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"tree", tree),
-			(c"layout", layout),
 		] {
-			let mut function = null_mut();
-			check(
-				unsafe {
-					node_api::napi_create_function(
-						env,
-						name.as_ptr(),
-						name.count_bytes(),
-						Some(callback),
-						null_mut(),
-						&mut function,
-					)
-				},
-				"a function",
-			)?;
+			let function = out(null_mut(), "a function", |r| unsafe {
+				node_api::napi_create_function(env, name.as_ptr(), name.count_bytes(), Some(callback), null_mut(), r)
+			})?;
 			check(
 				unsafe { node_api::napi_set_named_property(env, exports, name.as_ptr(), function) },
 				"an export",
 			)?;
 		}
+		check(
+			unsafe { node_api::napi_set_named_property(env, exports, c"stamp".as_ptr(), uint32(env, STAMP)?) },
+			"an export",
+		)?;
 		Ok(exports)
 	})
 }
