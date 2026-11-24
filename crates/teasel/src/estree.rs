@@ -3,6 +3,7 @@
 use crate::Options;
 use crate::ast::{Ast, Extras, List, NodeId, NodeKind};
 use crate::engine;
+use crate::error::{Code, SyntaxError};
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -10,6 +11,12 @@ use crate::parser::Entry;
 use crate::positions::{Cursor, Positions};
 use crate::recipe::{ADDS, EXTRAS_ERASED, ExtraSlot, KINDS, Op, ROWS, Slot};
 use crate::scopes::Role;
+
+/// How many levels the writer may recurse. The parser's loops nest a tree deeper than the parser
+/// recursed: chains of operators or subscripts, and chains inside parentheses.
+// past the 10,001 levels of the deepest tree the tests write, a chain of 9,999 links; at 592 bytes
+// a level (x86_64 release), 6.1 MB of the 8 MB a main thread has on Linux and macOS
+const MAX_WALK: u32 = 10_240;
 
 /// One entry at a byte offset, as JSON.
 pub fn parse(source: &str, entry: Entry, offset: u32, options: Options) -> String {
@@ -38,6 +45,9 @@ pub struct Writer<'a> {
 	kept: Vec<(&'static str, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
+	depth: u32,
+	/// The subtrees too deep to write, each written as null.
+	deep: Vec<SyntaxError>,
 }
 
 impl<'a> Writer<'a> {
@@ -53,6 +63,8 @@ impl<'a> Writer<'a> {
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
+			depth: 0,
+			deep: Vec::new(),
 		}
 	}
 
@@ -69,7 +81,16 @@ impl<'a> Writer<'a> {
 			Some(roots) if entry == Entry::Params => self.list("node", roots),
 			Some(roots) => self.field("node", self.ast.list(roots)[0].unwrap()),
 		}
-		self.trailers(roots.is_none());
+		if !self.deep.is_empty() && !self.options.has(Options::ERROR_RECOVERY) {
+			let first = *self.deep.iter().min_by_key(|error| error.pos).unwrap();
+			self.json = Json::default();
+			self.json.object();
+			self.key("node");
+			self.json.null();
+			self.errors(&[first]);
+		} else {
+			self.trailers(roots.is_none());
+		}
 		self.json.end();
 		self.json.finish()
 	}
@@ -210,11 +231,11 @@ impl<'a> Writer<'a> {
 	}
 
 	/// The recovered errors as the thrown one would be: code, args, `pos`, `end`, `line`, `column`.
-	fn errors(&mut self) {
-		let places = self.positions.of_errors(self.source, &self.ast.errors);
+	fn errors(&mut self, errors: &[SyntaxError]) {
+		let places = self.positions.of_errors(self.source, errors);
 		self.key("errors");
 		self.json.list();
-		for (error, [pos, end, line, column]) in self.ast.errors.iter().zip(places) {
+		for (error, [pos, end, line, column]) in errors.iter().zip(places) {
 			self.json.object();
 			self.key("code");
 			self.json.int(error.code as u32);
@@ -241,15 +262,23 @@ impl<'a> Writer<'a> {
 	/// kept, the scopes; a failed parse lists its error alone.
 	/// A failed parse has its one error and nothing else listed.
 	fn trailers(&mut self, failed: bool) {
+		let ast = self.ast;
 		if failed {
-			return self.errors();
+			return self.errors(&ast.errors);
 		}
 		if self.options.has(Options::COMMENTS) {
 			self.key("comments");
 			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.options.has(Options::ERROR_RECOVERY) {
-			self.errors();
+			if self.deep.is_empty() {
+				self.errors(&ast.errors);
+			} else {
+				let mut errors = ast.errors.clone();
+				errors.append(&mut self.deep);
+				errors.sort_by_key(|error| error.pos);
+				self.errors(&errors);
+			}
 		}
 		if self.options.has(Options::ERASE) {
 			self.all_kept();
@@ -563,13 +592,20 @@ impl<'a> Writer<'a> {
 	}
 
 	pub(crate) fn node(&mut self, id: NodeId) {
+		if self.depth == MAX_WALK {
+			let node = self.ast.node(id);
+			self.deep.push(SyntaxError::new(node.start, Code::NestingDepth).to(node.end));
+			self.adopted.clear();
+			return self.json.null();
+		}
+		self.depth += 1;
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		// erasing may put a child in the node's place, which closes itself
 		let base = kind as *const NodeKind as *const u8;
-		if !self.run(id, KINDS[tag(base)], base) {
-			return;
+		if self.run(id, KINDS[tag(base)], base) {
+			self.end();
 		}
-		self.end();
+		self.depth -= 1;
 	}
 
 	/// Writes the keys TypeScript adds to a node.

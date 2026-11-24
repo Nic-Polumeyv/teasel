@@ -279,6 +279,7 @@ pub struct Ast {
 	pub comment_rows: Handed<CommentRow>,
 	/// Comments attached to nodes by `comments::attach`, as indices into `comments`.
 	pub attached: Slots<Attached>,
+	pub(crate) attaching: crate::comments::Spare,
 	/// The items of lists erasure leaves out, when the answer erases TypeScript.
 	pub erased: NodeSet,
 	/// Nodes with what few have, for the decoder that builds the rest in one piece: parentheses,

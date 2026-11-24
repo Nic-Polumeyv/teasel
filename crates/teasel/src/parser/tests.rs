@@ -296,6 +296,13 @@ fn nesting_limits() {
 			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
 			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
 			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
+			// a heritage is an expression that may hold a class
+			let heritage = format!("x = {}a{};", "class extends ".repeat(40_000), " {}".repeat(40_000));
+			assert_eq!(module_error(&heritage).as_str(), "nesting_depth (13962)");
+			let generic = |levels| format!("x = {}a;", "<T>(a) => ".repeat(levels));
+			assert!(program(&generic(831), typescript(Options(Options::MODULE))).is_ok());
+			let error = program(&generic(2000), typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 9968));
 			// a list the closer reader leaves undecided is tried once: without its outcome kept, every
 			// enclosing failure tried it again, 2x per level, and 24 levels took 15 s
 			let nest = format!(
@@ -313,6 +320,54 @@ fn nesting_limits() {
 	let waited = finished.recv_timeout(std::time::Duration::from_secs(20));
 	assert_ne!(waited, Err(std::sync::mpsc::RecvTimeoutError::Timeout));
 	limits.join().unwrap();
+}
+
+/// A chain is a loop of the parser, so chains in parentheses nest a tree deeper than the parser
+/// recursed: the walks over it loop where the parser did, and the JSON writer stops at a count.
+#[test]
+fn deep_trees() {
+	let mut deep = String::from("a /* c */");
+	for _ in 0..5 {
+		deep = format!("({deep}{})", ".b".repeat(9_000));
+	}
+	let source = format!("y; // y\nx = {deep};\nlet y = 1; // let\n");
+	let walks = {
+		let source = source.clone();
+		// a level of recursion a link would take more than this
+		std::thread::Builder::new().stack_size(1 << 20).spawn(move || {
+			for recover in [0, Options::ERROR_RECOVERY] {
+				let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | recover);
+				crate::engine::read(&source, options, Entry::Program, 0, |ast, roots, _, _| {
+					assert!(roots.is_some() && ast.errors.is_empty());
+					let scopes = ast.scopes.as_ref().unwrap();
+					let text = |r: &crate::scopes::Reference| &source[ast.node(r.node).start as usize..ast.node(r.node).end as usize];
+					let names: Vec<_> = scopes.references.iter().map(|r| (text(r), r.binding.is_some())).collect();
+					assert_eq!(names, [("y", true), ("x", false), ("a", false)]);
+					let trailing = |comment: u32| ast.attached.owners().iter().any(|&n| ast.attached.get(n).unwrap().trailing.indices().any(|i| i == comment));
+					assert!(trailing(0) && trailing(1) && trailing(2));
+				});
+			}
+		})
+	};
+	walks.unwrap().join().unwrap();
+	std::thread::Builder::new()
+		.stack_size(64 << 20)
+		.spawn(move || {
+			let answer = |bits: u32| crate::estree::parse(&source, Entry::Program, 0, Options(Options::MODULE | bits));
+			let code = Code::NestingDepth as u32;
+			let failed = format!(r#"{{"node":null,"errors":[{{"code":{code},"args":[],"pos":14,"end":69555,"line":2,"column":6}}]}}"#);
+			for bits in [0, Options::COMMENTS, Options::SCOPES] {
+				assert_eq!(answer(bits), failed);
+			}
+			// the facts of an erased wrapper whose child the count left out go on no other node
+			let cut = format!("x = ((v = w as any){}){};", ".b".repeat(5_000), ".b".repeat(5_235));
+			let bits = Options::MODULE | Options::TYPESCRIPT | Options::ERASE | Options::SCOPES | Options::ERROR_RECOVERY;
+			let recovered = crate::estree::parse(&cut, Entry::Program, 0, Options(bits));
+			assert!(recovered.contains(r#""right":null}"#) && !recovered.contains(r#""writes":[1]"#));
+		})
+		.unwrap()
+		.join()
+		.unwrap();
 }
 
 #[test]

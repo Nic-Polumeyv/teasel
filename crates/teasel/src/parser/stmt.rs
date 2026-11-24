@@ -1603,9 +1603,14 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		}
 		let super_class = if self.tok.kind == Kind::Extends {
 			self.bump(true);
+			self.depth += 1;
+			if self.depth > MAX_DEPTH {
+				return self.raise(self.tok.start, Code::NestingDepth);
+			}
 			self.arrow_at = u32::MAX;
 			let at = self.tok.start;
 			let atom = self.atom(&mut None, false);
+			self.depth -= 1;
 			if self.error {
 				return atom;
 			}

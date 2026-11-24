@@ -68,6 +68,8 @@ function guarded<T>(f: () => T): T {
 		// a stack overflow unwinds the module mid-parse and leaves it as unusable as a trap does
 		if (!(error instanceof WebAssembly.RuntimeError || error instanceof RangeError)) throw error;
 		spent = true;
+		// `read` answers a stack overflow as nesting_depth
+		if (error instanceof RangeError) throw error;
 		throw new Error('the engine panicked and started over', { cause: error });
 	}
 }

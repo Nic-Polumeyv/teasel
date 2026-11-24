@@ -10,6 +10,15 @@
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
 use crate::parser::scan::{is_new_line, is_space};
 
+/// The buffers of the last attachment, emptied, kept by the tree for the next.
+// each attachment growing buffers of its own took 0.7% more instructions of a parse with comments
+// and scopes (sheer-ui's TypeScript)
+#[derive(Debug, Default)]
+pub struct Spare {
+	scratch: Vec<NodeId>,
+	steps: Vec<Step>,
+}
+
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.
 pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
@@ -24,20 +33,27 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		ast.attached = attached;
 		return;
 	}
+	let Spare { scratch, steps } = std::mem::take(&mut ast.attaching);
 	let mut attacher = Attacher {
 		ast,
 		source,
 		next: first as u32,
 		attached,
-		scratch: Vec::new(),
+		scratch,
+		steps,
 		asked: (u32::MAX, false),
 	};
 	for i in 0..roots.len {
 		let root = attacher.ast.nth(roots, i).unwrap();
-		attacher.visit(root, None, u32::MAX);
+		attacher.walk(root);
 	}
 	let rest = attacher.next;
+	let spare = Spare {
+		scratch: attacher.scratch,
+		steps: attacher.steps,
+	};
 	let mut attached = attacher.attached;
+	ast.attaching = spare;
 	let last_node = *ast.node(last);
 	if rest < ast.comments.len() as u32
 		&& !last_node.kind.is_svelte()
@@ -57,7 +73,18 @@ struct Attacher<'a> {
 	next: u32,
 	attached: Slots<Attached>,
 	scratch: Vec<NodeId>,
+	/// What is left to do of a walk, the next step last.
+	steps: Vec<Step>,
 	asked: (u32, bool),
+}
+
+/// A node to visit, or one whose children are visited and whose trailing comments are next.
+#[derive(Clone, Copy, Debug)]
+struct Step {
+	node: NodeId,
+	parent: Option<NodeId>,
+	limit: u32,
+	children_done: bool,
 }
 
 impl Attacher<'_> {
@@ -79,43 +106,77 @@ impl Attacher<'_> {
 		self.next += 1;
 	}
 
-	/// `limit` is where the parent's own syntax resumes after `node`: the next child, or its end.
-	fn visit(&mut self, node: NodeId, parent: Option<NodeId>, limit: u32) {
-		let (start, end) = {
-			let n = self.ast.node(node);
-			(n.start, n.end)
-		};
-		let markup = self.ast.node(node).kind.is_svelte();
-		while self.peek().is_some_and(|c| self.start(c) < start) {
-			if markup {
-				self.next += 1;
-			} else {
-				self.take(node, Place::Leading);
+	/// Attaches the comments in the tree under `root`, keeping its levels off the stack: the
+	/// parser's loops nest a tree deeper than the parser recursed.
+	fn walk(&mut self, root: NodeId) {
+		let mut steps = std::mem::take(&mut self.steps);
+		steps.push(Step {
+			node: root,
+			parent: None,
+			limit: u32::MAX,
+			children_done: false,
+		});
+		while let Some(step) = steps.pop() {
+			let Step { node, parent, limit, .. } = step;
+			if step.children_done {
+				self.trail(node, parent, limit);
+				continue;
 			}
-		}
-		let Some(next) = self.peek() else { return };
-		// a comment past the node reaches a descendant only over commas, parens and blanks
-		if self.start(next) < end || self.only_separators(end, self.start(next)) {
-			let base = self.scratch.len();
-			self.ast.children(node, &mut self.scratch);
-			let count = self.scratch.len() - base;
-			if count == 0 && self.body_of(node).is_some() {
-				while self.peek().is_some_and(|c| self.start(c) < end) {
-					self.take(node, Place::Inner);
+			let (start, end) = {
+				let n = self.ast.node(node);
+				(n.start, n.end)
+			};
+			let markup = self.ast.node(node).kind.is_svelte();
+			while self.peek().is_some_and(|c| self.start(c) < start) {
+				if markup {
+					self.next += 1;
+				} else {
+					self.take(node, Place::Leading);
 				}
 			}
-			for i in 0..count {
-				let child = self.scratch[base + i];
-				let limit = if i + 1 < count {
-					self.ast.node(self.scratch[base + i + 1]).start
-				} else {
-					end
-				};
-				self.visit(child, Some(node), limit);
+			// what is left of the walk attaches nothing
+			let Some(next) = self.peek() else { break };
+			// a comment past the node reaches a descendant only over commas, parens and blanks
+			if self.start(next) < end || self.only_separators(end, self.start(next)) {
+				let base = self.scratch.len();
+				self.ast.children(node, &mut self.scratch);
+				let count = self.scratch.len() - base;
+				if count == 0 && self.body_of(node).is_some() {
+					while self.peek().is_some_and(|c| self.start(c) < end) {
+						self.take(node, Place::Inner);
+					}
+				}
+				if count > 0 {
+					steps.push(Step {
+						children_done: true,
+						..step
+					});
+					let mut limit = end;
+					for &child in self.scratch[base..].iter().rev() {
+						steps.push(Step {
+							node: child,
+							parent: Some(node),
+							limit,
+							children_done: false,
+						});
+						limit = self.ast.node(child).start;
+					}
+					self.scratch.truncate(base);
+					continue;
+				}
 			}
-			self.scratch.truncate(base);
+			self.trail(node, parent, limit);
 		}
+		steps.clear();
+		self.steps = steps;
+	}
+
+	/// The comments after `node` that trail it; `limit` is where the parent's own syntax resumes
+	/// after it: the next child, or the parent's end.
+	fn trail(&mut self, node: NodeId, parent: Option<NodeId>, limit: u32) {
 		let Some(comment) = self.peek() else { return };
+		let n = self.ast.node(node);
+		let (end, markup) = (n.end, n.kind.is_svelte());
 		let parent_end = parent.map(|p| self.ast.node(p).end);
 		if markup || parent_end == Some(end) {
 			return;
