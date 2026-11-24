@@ -1,0 +1,697 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 264,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 40,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 6,
+						"end": 39,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 6,
+							"end": 7,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 10,
+							"end": 39,
+							"scope": 1,
+							"defines": [
+								1,
+								2
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 23,
+									"end": 24,
+									"declares": 1,
+									"leadingComments": [
+										{
+											"type": "Block",
+											"value": " first ",
+											"start": 11,
+											"end": 22
+										}
+									],
+									"name": "x"
+								},
+								{
+									"type": "RestElement",
+									"start": 26,
+									"end": 33,
+									"argument": {
+										"type": "Identifier",
+										"start": 29,
+										"end": 33,
+										"declares": 2,
+										"name": "rest"
+									}
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 38,
+								"end": 39,
+								"reference": 0,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 41,
+				"end": 80,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 47,
+						"end": 79,
+						"defines": [
+							3
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 47,
+							"end": 48,
+							"declares": 3,
+							"name": "b"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 51,
+							"end": 79,
+							"scope": 2,
+							"defines": [
+								4
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "RestElement",
+									"start": 63,
+									"end": 70,
+									"leadingComments": [
+										{
+											"type": "Block",
+											"value": " only ",
+											"start": 52,
+											"end": 62
+										}
+									],
+									"argument": {
+										"type": "Identifier",
+										"start": 66,
+										"end": 70,
+										"declares": 4,
+										"name": "rest"
+									}
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 75,
+								"end": 79,
+								"reference": 1,
+								"name": "rest"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 81,
+				"end": 117,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 87,
+						"end": 116,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 87,
+							"end": 88,
+							"declares": 5,
+							"name": "c"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 91,
+							"end": 116,
+							"scope": 3,
+							"defines": [
+								6,
+								7
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 92,
+									"end": 93,
+									"declares": 6,
+									"name": "x"
+								},
+								{
+									"type": "Identifier",
+									"start": 108,
+									"end": 109,
+									"declares": 7,
+									"leadingComments": [
+										{
+											"type": "Block",
+											"value": " second ",
+											"start": 95,
+											"end": 107
+										}
+									],
+									"name": "y"
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 115,
+								"end": 116,
+								"reference": 2,
+								"name": "y"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 118,
+				"end": 164,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 124,
+						"end": 163,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 124,
+							"end": 125,
+							"declares": 8,
+							"name": "d"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 128,
+							"end": 163,
+							"scope": 4,
+							"defines": [
+								9,
+								10
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": true,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 147,
+									"end": 148,
+									"declares": 9,
+									"leadingComments": [
+										{
+											"type": "Block",
+											"value": " async ",
+											"start": 135,
+											"end": 146
+										}
+									],
+									"name": "x"
+								},
+								{
+									"type": "RestElement",
+									"start": 150,
+									"end": 157,
+									"argument": {
+										"type": "Identifier",
+										"start": 153,
+										"end": 157,
+										"declares": 10,
+										"name": "rest"
+									}
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 162,
+								"end": 163,
+								"reference": 3,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 165,
+				"end": 225,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 171,
+						"end": 224,
+						"defines": [
+							11
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 171,
+							"end": 172,
+							"declares": 11,
+							"name": "e"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 175,
+							"end": 224,
+							"scope": 5,
+							"defines": [
+								12,
+								13,
+								14
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 198,
+									"end": 199,
+									"declares": 12,
+									"leadingComments": [
+										{
+											"type": "Block",
+											"value": "* @type {number} ",
+											"start": 176,
+											"end": 197
+										}
+									],
+									"name": "x"
+								},
+								{
+									"type": "AssignmentPattern",
+									"start": 201,
+									"end": 209,
+									"left": {
+										"type": "ArrayPattern",
+										"start": 201,
+										"end": 204,
+										"elements": [
+											{
+												"type": "Identifier",
+												"start": 202,
+												"end": 203,
+												"declares": 13,
+												"name": "y"
+											}
+										]
+									},
+									"right": {
+										"type": "ArrayExpression",
+										"start": 207,
+										"end": 209,
+										"elements": []
+									}
+								},
+								{
+									"type": "RestElement",
+									"start": 211,
+									"end": 218,
+									"argument": {
+										"type": "Identifier",
+										"start": 214,
+										"end": 218,
+										"declares": 14,
+										"name": "rest"
+									}
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 223,
+								"end": 224,
+								"reference": 4,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 226,
+				"end": 263,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 232,
+						"end": 262,
+						"defines": [
+							15
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 232,
+							"end": 233,
+							"declares": 15,
+							"name": "f"
+						},
+						"init": {
+							"type": "ArrowFunctionExpression",
+							"start": 236,
+							"end": 262,
+							"scope": 6,
+							"defines": [
+								16,
+								17
+							],
+							"id": null,
+							"expression": true,
+							"generator": false,
+							"async": false,
+							"params": [
+								{
+									"type": "Identifier",
+									"start": 246,
+									"end": 247,
+									"declares": 16,
+									"leadingComments": [
+										{
+											"type": "Line",
+											"value": " line",
+											"start": 237,
+											"end": 244
+										}
+									],
+									"name": "x"
+								},
+								{
+									"type": "RestElement",
+									"start": 249,
+									"end": 256,
+									"argument": {
+										"type": "Identifier",
+										"start": 252,
+										"end": 256,
+										"declares": 17,
+										"name": "rest"
+									}
+								}
+							],
+							"body": {
+								"type": "Identifier",
+								"start": 261,
+								"end": 262,
+								"reference": 5,
+								"name": "x"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			}
+		],
+		"sourceType": "module"
+	},
+	"comments": [
+		{
+			"type": "Block",
+			"value": " first ",
+			"start": 11,
+			"end": 22
+		},
+		{
+			"type": "Block",
+			"value": " only ",
+			"start": 52,
+			"end": 62
+		},
+		{
+			"type": "Block",
+			"value": " second ",
+			"start": 95,
+			"end": 107
+		},
+		{
+			"type": "Block",
+			"value": " async ",
+			"start": 135,
+			"end": 146
+		},
+		{
+			"type": "Block",
+			"value": "* @type {number} ",
+			"start": 176,
+			"end": 197
+		},
+		{
+			"type": "Line",
+			"value": " line",
+			"start": 237,
+			"end": 244
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		},
+		{
+			"name": "rest",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		},
+		{
+			"name": "b",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "rest",
+			"kind": "param",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 3,
+			"write": true
+		},
+		{
+			"name": "y",
+			"kind": "param",
+			"scope": 3,
+			"write": true
+		},
+		{
+			"name": "d",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 4,
+			"write": true
+		},
+		{
+			"name": "rest",
+			"kind": "param",
+			"scope": 4,
+			"write": true
+		},
+		{
+			"name": "e",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 5,
+			"write": true
+		},
+		{
+			"name": "y",
+			"kind": "param",
+			"scope": 5,
+			"write": true
+		},
+		{
+			"name": "rest",
+			"kind": "param",
+			"scope": 5,
+			"write": true
+		},
+		{
+			"name": "f",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "param",
+			"scope": 6,
+			"write": true
+		},
+		{
+			"name": "rest",
+			"kind": "param",
+			"scope": 6,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 1,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 2,
+			"binding": 4,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 3,
+			"binding": 7,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 4,
+			"binding": 9,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 5,
+			"binding": 12,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 6,
+			"binding": 16,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

@@ -8,7 +8,7 @@
 //! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
-use crate::lexer::scan::{is_new_line, is_space};
+use crate::parser::scan::{is_new_line, is_space};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
 /// earlier attachment; what is left trails the last one.

@@ -709,8 +709,7 @@ fn undeclared_exports_can_be_allowed() {
 fn phases() {
 	use crate::Options;
 	use crate::estree::Writer;
-	use crate::lexer::Lexer;
-	use crate::lexer::token::TokenKind;
+	use crate::parser::{Kind, Lexer};
 	use crate::positions::Positions;
 	let Ok(path) = std::env::var("TEASEL_BENCH") else {
 		return;
@@ -735,12 +734,12 @@ fn phases() {
 	let mut tokens = 0;
 	let mut reached = 0;
 	best("lex every token", &mut || {
-		let mut lexer = Lexer::new(&source);
-		lexer.module = true;
+		let mut lexer = Lexer::new(&source, true, true);
 		tokens = 0;
-		while let Ok(token) = lexer.next_token() {
+		loop {
+			let token = lexer.next(false);
 			tokens += 1;
-			if token.kind == TokenKind::Eof {
+			if token.kind == Kind::Eof {
 				break;
 			}
 		}
@@ -830,7 +829,7 @@ fn phases() {
 	eprintln!(
 		"node {} bytes, token {} bytes",
 		std::mem::size_of::<crate::ast::Node>(),
-		std::mem::size_of::<crate::lexer::token::Token>()
+		std::mem::size_of::<crate::parser::Token>()
 	);
 }
 
@@ -935,8 +934,8 @@ fn profile() {
 	eprintln!(
 		"samples {}, {cut} of them without their callers, sink {sink}, token {} bytes, result {} bytes",
 		stacks.len(),
-		std::mem::size_of::<crate::lexer::token::Token>(),
-		std::mem::size_of::<std::result::Result<crate::lexer::token::Token, Box<crate::error::SyntaxError>>>()
+		std::mem::size_of::<crate::parser::Token>(),
+		std::mem::size_of::<std::result::Result<crate::parser::Token, Box<crate::error::SyntaxError>>>()
 	);
 	let share = |count: usize| count as f64 * 100.0 / stacks.len() as f64;
 	let short = |name: &str| {
@@ -1208,17 +1207,17 @@ fn layout_sizes() {
 		size_of::<crate::ast::Node>(),
 		size_of::<crate::ast::NodeKind>(),
 		size_of::<Option<NodeId>>(),
-		size_of::<crate::lexer::token::Token>(),
-		size_of::<crate::lexer::token::TokenKind>()
+		size_of::<crate::parser::Token>(),
+		size_of::<crate::parser::Kind>()
 	);
 	eprintln!(
-		"Scope {} Binding {} Reference {} Comment {} Attached {} TokenSnapshot {}",
+		"Scope {} Binding {} Reference {} Comment {} Attached {} TokSnap {}",
 		size_of::<crate::scopes::Scope>(),
 		size_of::<crate::scopes::Binding>(),
 		size_of::<crate::scopes::Reference>(),
 		size_of::<crate::ast::Comment>(),
 		size_of::<crate::ast::Attached>(),
-		size_of::<super::TokenSnapshot>()
+		size_of::<super::ts::TokSnap>()
 	);
 }
 

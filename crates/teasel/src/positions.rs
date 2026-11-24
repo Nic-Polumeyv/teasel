@@ -23,7 +23,7 @@ impl Positions {
 		let mut gap = 0u32;
 		let mut i = if bytes.is_ascii() { bytes.len() } else { 0 };
 		while i < bytes.len() {
-			i = crate::lexer::scan::find(bytes, i, [], true);
+			i = crate::parser::scan::find(bytes, i, [], true);
 			let Some(&b) = bytes.get(i) else { break };
 			let len = if b >= 0xf0 {
 				4
@@ -61,7 +61,7 @@ impl Positions {
 		let mut next = Some(0);
 		std::iter::from_fn(move || {
 			let start = next?;
-			let end = start + crate::lexer::scan::line_end(&bytes[start..]);
+			let end = start + crate::parser::scan::line_end(&bytes[start..]);
 			next = bytes.get(end).map(|&b| {
 				end + match b {
 					b'\r' if bytes.get(end + 1) == Some(&b'\n') => 2,

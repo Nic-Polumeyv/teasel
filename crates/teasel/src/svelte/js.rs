@@ -4,9 +4,9 @@
 use super::Walker;
 use crate::ast::{List, NodeId, NodeKind};
 use crate::error::Code;
-use crate::lexer::scan::{find, find_pair, is_space};
-use crate::lexer::unicode::{is_id_continue, is_id_start};
-use crate::parser::{Entry as JsEntry, Options, Parser, Result};
+use crate::parser::scan::{find, find_pair, is_space};
+use crate::parser::unicode::{is_id_continue, is_id_start};
+use crate::parser::{Entry as JsEntry, Options, Result};
 
 /// Whether the component is TypeScript: a script tag says `lang="ts"`.
 pub(crate) fn typescript(src: &str) -> bool {
@@ -98,7 +98,7 @@ pub(crate) fn tag_carries(src: &str, name: &str, wanted: &[(&str, Option<&str>)]
 
 /// A word that cannot name a binding.
 pub(crate) fn reserved(word: &str) -> bool {
-	use crate::lexer::token::word::{ENUM, KEYWORD, STRICT, flags};
+	use crate::parser::word::{ENUM, KEYWORD, STRICT, flags};
 	flags(word) & (KEYWORD | STRICT | ENUM) != 0
 }
 
@@ -133,31 +133,11 @@ impl<'a> Walker<'a> {
 	}
 
 	fn js_in<const TS: bool>(&mut self, entry: JsEntry, stop: &str) -> Result<List> {
-		let ast = self.ast.take().unwrap();
-		let src = self.src;
-		let mut parser = Parser::<TS>::new(src, self.at, self.options, stop, ast);
-		let first = parser.tok.start;
-		let roots = match parser.start().and_then(|()| parser.read_entry(entry)) {
-			// the placeholder spans what was read: a snippet's type parameters are copied as text by their range
-			Err(error) if parser.recovering() => {
-				let at = error.pos;
-				parser.record(Err(error)).unwrap();
-				parser.skip_to_end();
-				parser.prev_end = parser.prev_end.max(at);
-				if entry == JsEntry::Params {
-					Ok(List::EMPTY)
-				} else {
-					let name = parser.intern("");
-					let end = parser.consumed_end().max(first);
-					let placeholder = parser.add_with_end(NodeKind::Identifier { name }, first, end);
-					Ok(parser.list_of(&[placeholder]))
-				}
-			}
-			result => result,
-		};
-		let end = parser.consumed_end();
-		self.stopped = roots.is_ok() && parser.stopped();
-		self.ast = Some(parser.finish());
+		let mut ast = self.ast.take().unwrap();
+		let (roots, end, stopped) =
+			crate::parser::entry::walker_entry::<TS>(self.src, self.at, self.options, stop, entry, &mut ast);
+		self.ast = Some(ast);
+		self.stopped = stopped;
 		let roots = roots?;
 		self.at = end;
 		Ok(roots)
@@ -177,13 +157,12 @@ impl<'a> Walker<'a> {
 	}
 
 	fn program_in<const TS: bool>(&mut self, start: u32, end: u32) -> Result<NodeId> {
-		let ast = self.ast.take().unwrap();
+		let mut ast = self.ast.take().unwrap();
 		let src = &self.src[..end as usize];
 		// the markup may declare what the script exports
 		let options = self.options.with(Options::ALLOW_UNDECLARED_EXPORTS);
-		let mut parser = Parser::<TS>::new(src, start, options, "", ast);
-		let program = parser.start().and_then(|()| parser.parse_program());
-		self.ast = Some(parser.finish());
+		let program = crate::parser::entry::walker_program::<TS>(src, start, options, &mut ast);
+		self.ast = Some(ast);
 		program
 	}
 

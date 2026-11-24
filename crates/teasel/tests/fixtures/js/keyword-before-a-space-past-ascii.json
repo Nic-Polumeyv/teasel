@@ -1,0 +1,488 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 178,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 0,
+				"end": 14,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 4,
+						"end": 12,
+						"defines": [
+							0
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 4,
+							"end": 5,
+							"declares": 0,
+							"name": "a"
+						},
+						"init": {
+							"type": "ThisExpression",
+							"start": 8,
+							"end": 12
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 15,
+				"end": 29,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 19,
+						"end": 27,
+						"defines": [
+							1
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 19,
+							"end": 20,
+							"declares": 1,
+							"name": "b"
+						},
+						"init": {
+							"type": "Literal",
+							"start": 23,
+							"end": 27,
+							"value": null,
+							"raw": "null"
+						}
+					}
+				],
+				"kind": "var"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 30,
+				"end": 49,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 36,
+						"end": 48,
+						"defines": [
+							2
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 36,
+							"end": 37,
+							"declares": 2,
+							"name": "c"
+						},
+						"init": {
+							"type": "UnaryExpression",
+							"start": 40,
+							"end": 48,
+							"operator": "typeof",
+							"prefix": true,
+							"argument": {
+								"type": "Identifier",
+								"start": 47,
+								"end": 48,
+								"reference": 0,
+								"name": "a"
+							}
+						}
+					}
+				],
+				"kind": "const"
+			},
+			{
+				"type": "IfStatement",
+				"start": 50,
+				"end": 63,
+				"test": {
+					"type": "Literal",
+					"start": 54,
+					"end": 58,
+					"value": true,
+					"raw": "true"
+				},
+				"consequent": {
+					"type": "ExpressionStatement",
+					"start": 61,
+					"end": 63,
+					"expression": {
+						"type": "Identifier",
+						"start": 61,
+						"end": 62,
+						"reference": 1,
+						"name": "c"
+					}
+				},
+				"alternate": null
+			},
+			{
+				"type": "FunctionDeclaration",
+				"start": 64,
+				"end": 91,
+				"scope": 1,
+				"defines": [
+					3
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 73,
+					"end": 74,
+					"declares": 3,
+					"name": "f"
+				},
+				"expression": false,
+				"generator": false,
+				"async": false,
+				"params": [],
+				"body": {
+					"type": "BlockStatement",
+					"start": 77,
+					"end": 91,
+					"body": [
+						{
+							"type": "ReturnStatement",
+							"start": 80,
+							"end": 89,
+							"argument": {
+								"type": "Identifier",
+								"start": 87,
+								"end": 88,
+								"reference": 2,
+								"name": "a"
+							}
+						}
+					]
+				}
+			},
+			{
+				"type": "ForOfStatement",
+				"start": 92,
+				"end": 117,
+				"scope": 2,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 97,
+					"end": 104,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 103,
+							"end": 104,
+							"defines": [
+								4
+							],
+							"id": {
+								"type": "Identifier",
+								"start": 103,
+								"end": 104,
+								"declares": 4,
+								"name": "d"
+							},
+							"init": null
+						}
+					],
+					"kind": "const"
+				},
+				"right": {
+					"type": "ArrayExpression",
+					"start": 108,
+					"end": 110,
+					"elements": []
+				},
+				"body": {
+					"type": "BreakStatement",
+					"start": 112,
+					"end": 117,
+					"label": null
+				}
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 119,
+				"end": 177,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 123,
+						"end": 133,
+						"defines": [
+							5
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 123,
+							"end": 124,
+							"declares": 5,
+							"name": "e"
+						},
+						"init": {
+							"type": "UnaryExpression",
+							"start": 127,
+							"end": 133,
+							"operator": "void",
+							"prefix": true,
+							"argument": {
+								"type": "Literal",
+								"start": 132,
+								"end": 133,
+								"value": 0,
+								"raw": "0"
+							}
+						}
+					},
+					{
+						"type": "VariableDeclarator",
+						"start": 135,
+						"end": 144,
+						"defines": [
+							6
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 135,
+							"end": 136,
+							"declares": 6,
+							"name": "g"
+						},
+						"init": {
+							"type": "NewExpression",
+							"start": 139,
+							"end": 144,
+							"callee": {
+								"type": "Identifier",
+								"start": 143,
+								"end": 144,
+								"reference": 3,
+								"name": "f"
+							},
+							"arguments": []
+						}
+					},
+					{
+						"type": "VariableDeclarator",
+						"start": 146,
+						"end": 156,
+						"defines": [
+							7
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 146,
+							"end": 147,
+							"declares": 7,
+							"name": "h"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 150,
+							"end": 156,
+							"left": {
+								"type": "Identifier",
+								"start": 150,
+								"end": 151,
+								"reference": 4,
+								"name": "a"
+							},
+							"operator": "in",
+							"right": {
+								"type": "Identifier",
+								"start": 155,
+								"end": 156,
+								"reference": 5,
+								"name": "b"
+							}
+						}
+					},
+					{
+						"type": "VariableDeclarator",
+						"start": 158,
+						"end": 176,
+						"defines": [
+							8
+						],
+						"id": {
+							"type": "Identifier",
+							"start": 158,
+							"end": 159,
+							"declares": 8,
+							"name": "i"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 162,
+							"end": 176,
+							"left": {
+								"type": "Identifier",
+								"start": 162,
+								"end": 163,
+								"reference": 6,
+								"name": "a"
+							},
+							"operator": "instanceof",
+							"right": {
+								"type": "Identifier",
+								"start": 175,
+								"end": 176,
+								"reference": 7,
+								"name": "f"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "for",
+			"parent": 0,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "b",
+			"kind": "var",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "c",
+			"kind": "const",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "f",
+			"kind": "function",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "d",
+			"kind": "const",
+			"scope": 2,
+			"write": true
+		},
+		{
+			"name": "e",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "g",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "h",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "i",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 2,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 1,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 1,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 0,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": 3,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

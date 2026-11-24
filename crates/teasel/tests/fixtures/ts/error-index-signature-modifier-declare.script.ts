@@ -1,0 +1,1 @@
+class A { declare [k: string]: any }

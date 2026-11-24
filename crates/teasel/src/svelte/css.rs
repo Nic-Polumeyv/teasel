@@ -5,7 +5,7 @@ use super::Walker;
 use super::markup::closing_tag;
 use crate::ast::{List, NodeId, NodeKind, SelectorType};
 use crate::error::Code;
-use crate::lexer::scan::is_space;
+use crate::parser::scan::is_space;
 use crate::parser::Result;
 
 /// A comment read out of the CSS: where it sits, and its offset into the value it interrupted.

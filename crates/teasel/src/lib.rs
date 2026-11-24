@@ -10,12 +10,10 @@ pub(crate) mod svelte;
 pub mod interner;
 pub(crate) mod json;
 pub mod layout;
-pub(crate) mod lexer;
 pub mod parser;
 pub(crate) mod positions;
 pub mod recipe;
 pub mod scopes;
-mod typescript;
 
 pub use error::{Code, SyntaxError};
 pub use interner::{Interner, StrId};

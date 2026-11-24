@@ -1,0 +1,54 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 17,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 17,
+				"expression": {
+					"type": "ImportExpression",
+					"start": 0,
+					"end": 17,
+					"source": {
+						"type": "Literal",
+						"start": 13,
+						"end": 16,
+						"leadingComments": [
+							{
+								"type": "Line",
+								"value": "c",
+								"start": 7,
+								"end": 11
+							}
+						],
+						"value": "x",
+						"raw": "\"x\""
+					},
+					"options": null
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"comments": [
+		{
+			"type": "Line",
+			"value": "c",
+			"start": 7,
+			"end": 11
+		}
+	],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

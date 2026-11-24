@@ -1,0 +1,1 @@
+({ get x<T>() { return 1 } })

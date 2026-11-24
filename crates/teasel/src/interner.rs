@@ -165,8 +165,6 @@ pub struct Interner {
 	/// string is outside the table.
 	marks: Handed<Surrogate>,
 	slots: Slots,
-	/// What the lexer knows of each word by id, filled as words are met; see `token::word`.
-	pub(crate) word_flags: Vec<u8>,
 }
 
 /// `FastHasher`'s mix over the length and then eight bytes at a time, the tail read as two
@@ -224,7 +222,6 @@ impl Interner {
 			starts,
 			marks: Handed::new(0),
 			slots: Slots::sized(slots),
-			word_flags: Vec::new(),
 		}
 	}
 
@@ -235,7 +232,6 @@ impl Interner {
 		self.starts.push(0);
 		self.marks.clear();
 		self.slots.clear();
-		self.word_flags.clear();
 	}
 
 	pub fn intern(&mut self, s: &str) -> StrId {

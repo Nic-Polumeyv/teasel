@@ -1,0 +1,403 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 109,
+		"scope": 0,
+		"body": [
+			{
+				"type": "VariableDeclaration",
+				"start": 8,
+				"end": 23,
+				"declare": false,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 12,
+						"end": 22,
+						"defines": [
+							0
+						],
+						"definite": false,
+						"id": {
+							"type": "Identifier",
+							"start": 12,
+							"end": 13,
+							"declares": 0,
+							"decorators": [],
+							"optional": false,
+							"name": "y"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 16,
+							"end": 22,
+							"left": {
+								"type": "Identifier",
+								"start": 16,
+								"end": 17,
+								"reference": 0,
+								"decorators": [],
+								"optional": false,
+								"name": "a"
+							},
+							"operator": ">>",
+							"right": {
+								"type": "Identifier",
+								"start": 21,
+								"end": 22,
+								"reference": 1,
+								"decorators": [],
+								"optional": false,
+								"name": "b"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 24,
+				"end": 41,
+				"declare": false,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 28,
+						"end": 40,
+						"defines": [
+							1
+						],
+						"definite": false,
+						"id": {
+							"type": "Identifier",
+							"start": 28,
+							"end": 29,
+							"declares": 1,
+							"decorators": [],
+							"optional": false,
+							"name": "x"
+						},
+						"init": {
+							"type": "TemplateLiteral",
+							"start": 32,
+							"end": 40,
+							"expressions": [
+								{
+									"type": "Identifier",
+									"start": 36,
+									"end": 37,
+									"reference": 2,
+									"decorators": [],
+									"optional": false,
+									"name": "b"
+								}
+							],
+							"quasis": [
+								{
+									"type": "TemplateElement",
+									"start": 33,
+									"end": 34,
+									"value": {
+										"raw": "a",
+										"cooked": "a"
+									},
+									"tail": false
+								},
+								{
+									"type": "TemplateElement",
+									"start": 38,
+									"end": 39,
+									"value": {
+										"raw": "c",
+										"cooked": "c"
+									},
+									"tail": true
+								}
+							]
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 42,
+				"end": 70,
+				"declare": false,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 46,
+						"end": 56,
+						"defines": [
+							2
+						],
+						"definite": false,
+						"id": {
+							"type": "Identifier",
+							"start": 46,
+							"end": 47,
+							"declares": 2,
+							"decorators": [],
+							"optional": false,
+							"name": "z"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 50,
+							"end": 56,
+							"left": {
+								"type": "Identifier",
+								"start": 50,
+								"end": 51,
+								"reference": 3,
+								"decorators": [],
+								"optional": false,
+								"name": "a"
+							},
+							"operator": ">=",
+							"right": {
+								"type": "Identifier",
+								"start": 55,
+								"end": 56,
+								"reference": 4,
+								"decorators": [],
+								"optional": false,
+								"name": "b"
+							}
+						}
+					},
+					{
+						"type": "VariableDeclarator",
+						"start": 58,
+						"end": 69,
+						"defines": [
+							3
+						],
+						"definite": false,
+						"id": {
+							"type": "Identifier",
+							"start": 58,
+							"end": 59,
+							"declares": 3,
+							"decorators": [],
+							"optional": false,
+							"name": "w"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 62,
+							"end": 69,
+							"left": {
+								"type": "Identifier",
+								"start": 62,
+								"end": 63,
+								"reference": 5,
+								"decorators": [],
+								"optional": false,
+								"name": "a"
+							},
+							"operator": ">>>",
+							"right": {
+								"type": "Identifier",
+								"start": 68,
+								"end": 69,
+								"reference": 6,
+								"decorators": [],
+								"optional": false,
+								"name": "b"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			},
+			{
+				"type": "VariableDeclaration",
+				"start": 93,
+				"end": 108,
+				"declare": false,
+				"declarations": [
+					{
+						"type": "VariableDeclarator",
+						"start": 97,
+						"end": 107,
+						"defines": [
+							4
+						],
+						"definite": false,
+						"id": {
+							"type": "Identifier",
+							"start": 97,
+							"end": 98,
+							"declares": 4,
+							"decorators": [],
+							"optional": false,
+							"name": "v"
+						},
+						"init": {
+							"type": "BinaryExpression",
+							"start": 101,
+							"end": 107,
+							"left": {
+								"type": "Identifier",
+								"start": 101,
+								"end": 102,
+								"reference": 7,
+								"decorators": [],
+								"optional": false,
+								"name": "a"
+							},
+							"operator": ">>",
+							"right": {
+								"type": "Identifier",
+								"start": 106,
+								"end": 107,
+								"reference": 8,
+								"decorators": [],
+								"optional": false,
+								"name": "b"
+							}
+						}
+					}
+				],
+				"kind": "let"
+			}
+		],
+		"sourceType": "module"
+	},
+	"comments": [],
+	"errors": [
+		{
+			"code": 0,
+			"args": [],
+			"pos": 6,
+			"end": 7,
+			"line": 1,
+			"column": 6
+		},
+		{
+			"code": 0,
+			"args": [],
+			"pos": 91,
+			"end": 92,
+			"line": 5,
+			"column": 20
+		}
+	],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "y",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "x",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "z",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "w",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		},
+		{
+			"name": "v",
+			"kind": "let",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

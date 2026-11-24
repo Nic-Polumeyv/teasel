@@ -1,0 +1,131 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 36,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ClassDeclaration",
+				"start": 0,
+				"end": 36,
+				"scope": 1,
+				"defines": [
+					0
+				],
+				"id": {
+					"type": "Identifier",
+					"start": 6,
+					"end": 7,
+					"declares": 0,
+					"name": "A"
+				},
+				"superClass": null,
+				"body": {
+					"type": "ClassBody",
+					"start": 8,
+					"end": 36,
+					"body": [
+						{
+							"type": "PropertyDefinition",
+							"start": 10,
+							"end": 13,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "PrivateIdentifier",
+								"start": 10,
+								"end": 12,
+								"name": "a"
+							},
+							"value": null
+						},
+						{
+							"type": "MethodDefinition",
+							"start": 14,
+							"end": 34,
+							"static": false,
+							"computed": false,
+							"key": {
+								"type": "Identifier",
+								"start": 14,
+								"end": 15,
+								"name": "m"
+							},
+							"kind": "method",
+							"value": {
+								"type": "FunctionExpression",
+								"start": 15,
+								"end": 34,
+								"scope": 2,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": false,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 18,
+									"end": 34,
+									"body": [
+										{
+											"type": "ExpressionStatement",
+											"start": 20,
+											"end": 32,
+											"expression": {
+												"type": "MemberExpression",
+												"start": 20,
+												"end": 32,
+												"object": {
+													"type": "ThisExpression",
+													"start": 20,
+													"end": 24
+												},
+												"property": {
+													"type": "PrivateIdentifier",
+													"start": 25,
+													"end": 32,
+													"name": "a"
+												},
+												"computed": false,
+												"optional": false
+											}
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "class",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "A",
+			"kind": "class",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": []
+}
