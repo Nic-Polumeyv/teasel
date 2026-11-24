@@ -562,6 +562,8 @@ pub struct Binder<'a> {
 	/// Whether any node has decorators.
 	// looked up at every node of a tree that has none instead, a parse with scopes took 1 to 2% longer
 	decorated: bool,
+	/// The lowest the stack may reach.
+	floor: usize,
 }
 
 impl<'a> Binder<'a> {
@@ -601,6 +603,29 @@ impl<'a> Binder<'a> {
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
 			decorated: ast.extras.records().iter().any(|extras| extras.decorators.is_some()),
+			floor: crate::stack::floor(),
+		}
+	}
+
+	/// Whether the walk can go no deeper: the tree is deeper than the stack has room for, or was.
+	#[inline(always)]
+	fn too_deep(&mut self, id: NodeId) -> bool {
+		if crate::stack::position() >= self.floor {
+			return false;
+		}
+		self.stop(id);
+		true
+	}
+
+	#[cold]
+	#[inline(never)]
+	fn stop(&mut self, id: NodeId) {
+		if self.floor != usize::MAX {
+			self.floor = usize::MAX;
+			let n = *self.ast.node(id);
+			self.out
+				.errors
+				.push(SyntaxError::new(n.start, Code::NestingDepth).to(n.end));
 		}
 	}
 
@@ -1043,6 +1068,9 @@ impl<'a> Binder<'a> {
 	}
 
 	fn visit_member_target(&mut self, id: NodeId, root: Option<NodeId>) {
+		if self.too_deep(id) {
+			return;
+		}
 		match self.kind(id) {
 			NodeKind::Identifier { .. } if Some(id) == root => self.reference(id, false, true),
 			NodeKind::MemberExpression {
@@ -1219,6 +1247,9 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
+		if self.too_deep(id) {
+			return;
+		}
 		if extras && self.decorated {
 			self.decorators(id);
 		}
@@ -1750,6 +1781,9 @@ impl<'a> Binder<'a> {
 	/// An assignment or update target: an identifier is written, a member chain mutates its root,
 	/// a pattern does both to what it names.
 	fn target(&mut self, id: NodeId) {
+		if self.too_deep(id) {
+			return;
+		}
 		match self.kind(id) {
 			NodeKind::Identifier { .. } => self.reference(id, true, false),
 			NodeKind::MemberExpression { .. } => self.assign_member(id),

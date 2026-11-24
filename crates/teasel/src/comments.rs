@@ -8,21 +8,23 @@
 //! in the list alone.
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
+use crate::error::{Code, SyntaxError};
 use crate::parser::scan::{is_new_line, is_space};
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
-/// earlier attachment; what is left trails the last one.
-pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
+/// earlier attachment; what is left trails the last one. A comment deeper in a tree than the stack
+/// has room to reach is `nesting_depth`.
+pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) -> Option<SyntaxError> {
 	let mut attached = std::mem::take(&mut ast.attached);
 	attached.clear();
 	let first = ast.comments.partition_point(|c| c.start < from);
 	let Some(last) = ast.list(roots).last().copied().flatten() else {
 		ast.attached = attached;
-		return;
+		return None;
 	};
 	if first == ast.comments.len() {
 		ast.attached = attached;
-		return;
+		return None;
 	}
 	let mut attacher = Attacher {
 		ast,
@@ -31,12 +33,15 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		attached,
 		scratch: Vec::new(),
 		asked: (u32::MAX, false),
+		floor: crate::stack::floor(),
+		deep: None,
 	};
 	for i in 0..roots.len {
 		let root = attacher.ast.nth(roots, i).unwrap();
 		attacher.visit(root, None, u32::MAX);
 	}
 	let rest = attacher.next;
+	let deep = attacher.deep;
 	let mut attached = attacher.attached;
 	let last_node = *ast.node(last);
 	if rest < ast.comments.len() as u32
@@ -49,6 +54,7 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		}
 	}
 	ast.attached = attached;
+	deep
 }
 
 struct Attacher<'a> {
@@ -58,9 +64,22 @@ struct Attacher<'a> {
 	attached: Slots<Attached>,
 	scratch: Vec<NodeId>,
 	asked: (u32, bool),
+	/// The lowest the stack may reach.
+	floor: usize,
+	/// Where the comments reached deeper than that.
+	deep: Option<SyntaxError>,
 }
 
 impl Attacher<'_> {
+	#[cold]
+	#[inline(never)]
+	fn stop(&mut self, start: u32, end: u32) {
+		if self.deep.is_none() {
+			self.floor = usize::MAX;
+			self.deep = Some(SyntaxError::new(start, Code::NestingDepth).to(end));
+		}
+	}
+
 	fn peek(&self) -> Option<u32> {
 		(self.next < self.ast.comments.len() as u32).then_some(self.next)
 	}
@@ -85,6 +104,9 @@ impl Attacher<'_> {
 			let n = self.ast.node(node);
 			(n.start, n.end)
 		};
+		if crate::stack::position() < self.floor {
+			return self.stop(start, end);
+		}
 		let markup = self.ast.node(node).kind.is_svelte();
 		while self.peek().is_some_and(|c| self.start(c) < start) {
 			if markup {
@@ -97,13 +119,7 @@ impl Attacher<'_> {
 		// a comment past the node reaches a descendant only over commas, parens and blanks
 		if self.start(next) < end || self.only_separators(end, self.start(next)) {
 			let base = self.scratch.len();
-			self.ast.children(node, &mut self.scratch);
-			let count = self.scratch.len() - base;
-			if count == 0 && self.body_of(node).is_some() {
-				while self.peek().is_some_and(|c| self.start(c) < end) {
-					self.take(node, Place::Inner);
-				}
-			}
+			let count = self.children(node, end);
 			for i in 0..count {
 				let child = self.scratch[base + i];
 				let limit = if i + 1 < count {
@@ -115,6 +131,28 @@ impl Attacher<'_> {
 			}
 			self.scratch.truncate(base);
 		}
+		self.trail(node, parent, markup, end, limit);
+	}
+
+	/// The children of `node` pushed, and their count: a node without any but with a body keeps what
+	/// lies inside it.
+	// inlined into `visit`, it took a comment's path 320 bytes of stack a level against 96
+	#[inline(never)]
+	fn children(&mut self, node: NodeId, end: u32) -> usize {
+		let base = self.scratch.len();
+		self.ast.children(node, &mut self.scratch);
+		let count = self.scratch.len() - base;
+		if count == 0 && self.body_of(node).is_some() {
+			while self.peek().is_some_and(|c| self.start(c) < end) {
+				self.take(node, Place::Inner);
+			}
+		}
+		count
+	}
+
+	/// The comments after `node`, which ends at `end`, that trail it.
+	#[inline(never)]
+	fn trail(&mut self, node: NodeId, parent: Option<NodeId>, markup: bool, end: u32, limit: u32) {
 		let Some(comment) = self.peek() else { return };
 		let parent_end = parent.map(|p| self.ast.node(p).end);
 		if markup || parent_end == Some(end) {

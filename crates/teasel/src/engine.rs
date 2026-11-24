@@ -315,19 +315,20 @@ pub(crate) fn read<R>(
 			Err(error) => fail(&mut ast, *error),
 		};
 		if let Some(list) = roots {
+			let mut errors = Vec::new();
 			if options.has(Options::COMMENTS) {
-				attach(&mut ast, source, list, offset);
+				errors.extend(attach(&mut ast, source, list, offset));
 			}
 			if options.has(Options::SCOPES) {
 				scopes::analyze(&mut ast, entry, list);
-				let errors = std::mem::take(&mut ast.scopes.as_mut().unwrap().errors);
-				if !errors.is_empty() {
-					if options.has(Options::ERROR_RECOVERY) {
-						ast.errors.extend(errors);
-						ast.errors.sort_by_key(|error| error.pos);
-					} else {
-						roots = fail(&mut ast, errors[0]);
-					}
+				errors.append(&mut ast.scopes.as_mut().unwrap().errors);
+			}
+			if !errors.is_empty() {
+				if options.has(Options::ERROR_RECOVERY) {
+					ast.errors.extend(errors);
+					ast.errors.sort_by_key(|error| error.pos);
+				} else {
+					roots = fail(&mut ast, errors[0]);
 				}
 			}
 		}

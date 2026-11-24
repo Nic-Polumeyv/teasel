@@ -321,6 +321,38 @@ fn nesting_limits() {
 	limits.join().unwrap();
 }
 
+/// A chain is a loop of the parser, so chains in parentheses nest a tree deeper than any recursion
+/// of the parser: what walks the tree after it stops at the same limit.
+#[test]
+fn deep_trees() {
+	let mut source = String::from("a /* c */");
+	for _ in 0..8 {
+		source = format!("({source}{})", ".b".repeat(9_000));
+	}
+	let source = format!("x = {source};");
+	let code = format!("\"code\":{},", Code::NestingDepth as u32);
+	let options = |bits: u32| Options(Options::MODULE | bits);
+	assert!(crate::estree::parse(&source, Entry::Program, 0, options(0)).contains(&code));
+	for bits in [Options::COMMENTS, Options::SCOPES] {
+		let answer = crate::estree::parse(&source, Entry::Program, 0, options(bits | Options::ERROR_RECOVERY));
+		assert!(answer.starts_with("{\"node\":null") && answer.contains(&code), "{bits}");
+		let answer = crate::estree::parse(&source, Entry::Program, 0, options(bits));
+		assert!(answer.starts_with("{\"node\":null") && answer.contains(&code), "{bits}");
+	}
+	// under recovery the tree stays, the walk's error listed
+	let mut ast = None;
+	crate::engine::read(
+		&source,
+		options(Options::SCOPES | Options::ERROR_RECOVERY),
+		Entry::Program,
+		0,
+		|tree, roots, _, _| {
+			ast = Some((roots.is_some(), tree.errors.iter().map(|e| e.code).collect::<Vec<_>>()));
+		},
+	);
+	assert_eq!(ast, Some((true, vec![Code::NestingDepth])));
+}
+
 #[test]
 fn entry_points() {
 	let options = Options(Options::MODULE);
