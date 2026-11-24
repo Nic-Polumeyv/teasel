@@ -1,7 +1,6 @@
-//! LANE PROTOTYPE, milestone 2b: what the grammar alone does not say. The scopes a parse opens
-//! and the names declared in them, labels, private names, reserved words, assignment and binding
-//! targets, and the facts of a literal that may yet be a pattern. Each as the parser in use has
-//! it, so the two reject the same text with the same error.
+//! What the grammar alone does not say. The scopes a parse opens and the names declared in
+//! them, labels, private names, reserved words, assignment and binding targets, and the facts of
+//! a literal that may yet be a pattern.
 
 use super::parse::Parser;
 use crate::ast::{AssignmentOperator, List, NodeId, NodeKind, PropertyKind};
@@ -185,7 +184,6 @@ pub(super) enum PrivateKind {
 	Set,
 	StaticGet,
 	StaticSet,
-	Accessor,
 }
 
 #[derive(Default)]
@@ -238,15 +236,11 @@ impl Facts {
 	pub(super) fn pending(&self) -> bool {
 		self.shorthand_assign.is_some() || self.double_proto.is_some() || self.operand.is_some()
 	}
-
-	pub(super) fn any(&self) -> bool {
-		self.pending() || self.trailing_comma.is_some() || self.parenthesized_assign.is_some() || self.owner.is_some()
-	}
 }
 
 /// What the checks keep between the files of a run: their buffers.
 #[derive(Default)]
-pub struct Checks {
+pub(crate) struct Checks {
 	pub(super) scopes: Vec<Scope>,
 	/// The names of each open scope, by its depth: a list past the open scopes is empty.
 	names: Vec<Names>,
@@ -331,7 +325,7 @@ impl Checks {
 	}
 }
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
+impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(super) fn enter_scope(&mut self, flags: u32) {
 		let checks = &mut self.scratch.checks;
 		if checks.names.len() == checks.scopes.len() {
@@ -436,9 +430,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 
 	/// The name declared where the cursor stands in the scopes; twice in one is an error.
 	pub(super) fn declare_name(&mut self, name: StrId, binding: Binding, pos: u32) {
-		if !SCOPES {
-			return;
-		}
 		let mut redeclared = false;
 		let serial = self.scratch.checks.serial;
 		match binding {
@@ -826,7 +817,3 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 	}
 }
-
-/// Whether names are declared and redeclarations found: the part of the checks that a scope
-/// pass could do instead.
-pub(super) const SCOPES: bool = true;

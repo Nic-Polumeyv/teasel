@@ -1,6 +1,4 @@
-//! LANE PROTOTYPE, milestone 2b: statements, declarations, functions, classes and modules in the
-//! new shape, written into teasel's own tree as the parser in use writes them, and rejecting
-//! what it rejects with the error it gives. No recovery, no TypeScript.
+//! Statements, declarations, functions, classes and modules.
 
 use super::checks::{
 	Binding, Label, LabelKind, PrivateKind, PrivateScope, SCOPE_CLASS_FIELD_INIT, SCOPE_CLASS_STATIC_BLOCK,
@@ -37,27 +35,12 @@ pub(super) struct Head {
 	pub(super) old_strict: bool,
 }
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
-	/// The whole text as a program; none when it is not one.
-	pub fn program(&mut self) -> Option<NodeId> {
-		self.error = false;
-		self.err = None;
-		self.err_first = false;
-		self.unsupported = None;
-		self.scratch.items.clear();
-		self.scratch.checks.clear();
-		self.tok = self.lexer.next(true);
-		if COUNT {
-			self.tokens += 1;
-		}
-		self.program_from(0)
-	}
-
+impl<'a, const TS: bool> Parser<'a, TS> {
 	/// The program from `start` to the end of the text, its first token at the cursor.
 	pub(super) fn program_from(&mut self, start: u32) -> Option<NodeId> {
 		self.enter_scope(SCOPE_TOP);
 		self.body(Kind::Eof, TOP, None);
-		if !self.error && TS && self.erase {
+		if !self.error && TS && self.options.has(crate::parser::Options::ERASE) {
 			self.mark_type_exports(0);
 		}
 		if !self.error && self.module && !self.options.has(crate::parser::Options::ALLOW_UNDECLARED_EXPORTS) {
@@ -316,9 +299,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.lexer.comments.truncate(comments);
 		self.tok = t;
 		self.prev_end = prev_end;
-		if COUNT {
-			self.tokens -= 1;
-		}
 	}
 
 	pub(super) fn expect_word(&mut self, word: &[u8]) {
@@ -1426,12 +1406,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.enter_scope(function_flags(is_async, generator));
 		let outer = self.ctx;
 		self.ctx = Ctx {
-			function: true,
-			is_async,
 			generator,
 			can_await: is_async,
 			no_in: false,
-			for_await: false,
 		};
 		if !declaration && self.tok.kind == Kind::Ident {
 			id = Some(self.ident());
@@ -1474,12 +1451,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		let start = self.tok.start;
 		let outer = self.ctx;
 		self.ctx = Ctx {
-			function: true,
-			is_async,
 			generator,
 			can_await: is_async,
 			no_in: false,
-			for_await: false,
 		};
 		self.expect(Kind::ParenL, false);
 		let params = self.binding_list(Kind::ParenR, false);
@@ -2442,12 +2416,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		let start = self.tok.start;
 		let outer = self.ctx;
 		self.ctx = Ctx {
-			function: true,
-			is_async,
 			generator,
 			can_await: is_async,
 			no_in: false,
-			for_await: false,
 		};
 		self.expect(Kind::ParenL, false);
 		self.modifiers_ok = in_class;

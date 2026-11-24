@@ -51,7 +51,7 @@ fn read<const TS: bool>(
 ) -> (Box<Ast>, Result<(List, u32)>) {
 	let mut scratch = ast.spare.0.take().unwrap_or_default();
 	let roots = {
-		let mut parser = Parser::<false, TS>::open(src, start, options, stop, &mut ast, &mut scratch);
+		let mut parser = Parser::<TS>::open(src, start, options, stop, &mut ast, &mut scratch);
 		let roots = parser.read_roots(entry, false).map(|roots| {
 			let end = if entry == Entry::Program {
 				end
@@ -80,7 +80,7 @@ pub(crate) fn walker_entry<const TS: bool>(
 ) -> (Result<List>, u32, bool) {
 	let mut scratch = ast.spare.0.take().unwrap_or_default();
 	let out = {
-		let mut parser = Parser::<false, TS>::open(src, at, options, stop, ast, &mut scratch);
+		let mut parser = Parser::<TS>::open(src, at, options, stop, ast, &mut scratch);
 		let roots = parser.read_roots(entry, true);
 		let end = parser.consumed_end();
 		let stopped = roots.is_ok() && parser.stopped();
@@ -95,7 +95,7 @@ pub(crate) fn walker_entry<const TS: bool>(
 pub(crate) fn walker_program<const TS: bool>(src: &str, start: u32, options: Options, ast: &mut Box<Ast>) -> Result<NodeId> {
 	let mut scratch = ast.spare.0.take().unwrap_or_default();
 	let out = {
-		let mut parser = Parser::<false, TS>::open(src, start, options, "", ast, &mut scratch);
+		let mut parser = Parser::<TS>::open(src, start, options, "", ast, &mut scratch);
 		parser.begin();
 		let program = parser.program_root();
 		parser.close();
@@ -161,9 +161,9 @@ pub(super) struct Brackets {
 	stop_hit: bool,
 }
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
+impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A parser at `at` of `src`, writing into `ast`, with nothing read.
-	pub fn open(
+	pub(crate) fn open(
 		src: &'a str,
 		at: u32,
 		options: Options,
@@ -195,7 +195,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 		let mut lexer = Lexer::at(src, at as usize, module, comments);
 		lexer.at_sign = TS;
-		let mut parser = Self::with_lexer(src, ast, scratch, module, options.has(Options::ERASE), lexer);
+		let mut parser = Self::with_lexer(src, ast, scratch, options, lexer);
 		parser.prev_end = at;
 		parser.tok = Token {
 			start: at,
@@ -204,7 +204,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			flags: 0,
 		};
 		parser.base = at;
-		parser.options = options;
 		parser.recover = options.has(Options::ERROR_RECOVERY);
 		parser.lexer.recover = parser.recover;
 		parser.stops = stop;
@@ -217,11 +216,10 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// The first token, read before anything is parsed.
-	pub fn begin(&mut self) {
+	pub(crate) fn begin(&mut self) {
 		self.error = false;
 		self.err = None;
 		self.err_first = false;
-		self.unsupported = None;
 		self.scratch.items.clear();
 		self.scratch.checks.clear();
 		if TS {
@@ -239,7 +237,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// The comments and the errors of the read, back in the tree.
-	pub fn close(&mut self) {
+	pub(crate) fn close(&mut self) {
 		self.ast.comments = std::mem::take(&mut self.lexer.comments);
 		self.ast.errors.append(&mut self.scratch.errors);
 		if let Some(mut soft) = self.lexer.soft.take() {
@@ -274,7 +272,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// The whole text from where the parser was opened, as a program.
-	pub fn program_root(&mut self) -> Result<NodeId> {
+	pub(crate) fn program_root(&mut self) -> Result<NodeId> {
 		match self.program_from(self.base) {
 			Some(program) => Ok(program),
 			None => self.failure(),
@@ -283,7 +281,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 
 	/// The roots of one `entry`; `walker` says the Svelte walker asks, whose placeholder under
 	/// recovery spans what was read.
-	pub fn read_roots(&mut self, entry: Entry, walker: bool) -> Result<List> {
+	pub(crate) fn read_roots(&mut self, entry: Entry, walker: bool) -> Result<List> {
 		let first = self.tok.start;
 		self.begin();
 		if entry == Entry::Program {
@@ -616,13 +614,13 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// Whether the read ended before the source did, at the host's own syntax.
-	pub fn stopped(&self) -> bool {
+	pub(crate) fn stopped(&self) -> bool {
 		self.tok.kind == Kind::Eof && (self.tok.start as usize) < self.src.len()
 	}
 
 	/// The offset after the last token read, or after the comments that follow it before the
 	/// next token: where a host embedding JavaScript resumes its own syntax.
-	pub fn consumed_end(&self) -> u32 {
+	pub(crate) fn consumed_end(&self) -> u32 {
 		match self.lexer.comments.last() {
 			Some(comment) if comment.start >= self.prev_end => comment.end,
 			_ => self.prev_end,
@@ -715,8 +713,8 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// The template at the cursor, which the grammar does not take as one, is its backquote
-	/// alone: the parser in use reads a template only where one is read, and what stands in
-	/// it as tokens otherwise.
+	/// alone: a template is read only where the grammar reads one, and what stands in it is
+	/// tokens otherwise.
 	pub(super) fn raw_backquote(&mut self) {
 		let t = self.tok;
 		if !matches!(t.kind, Kind::Template | Kind::TemplateHead) || t.end == t.start + 1 {
@@ -864,8 +862,8 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 	}
 
-	/// A program's body or a function's, read as the parser in use reads one under recovery:
-	/// the directive looked for ahead, then each statement recovered from.
+	/// A program's body or a function's under recovery: the directive looked for ahead, then
+	/// each statement recovered from.
 	#[cold]
 	#[inline(never)]
 	pub(super) fn body_recovering(&mut self, close: Kind, place: u8, head: Option<super::stmt::Head>) {

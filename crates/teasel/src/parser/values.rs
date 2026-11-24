@@ -1,12 +1,12 @@
-//! LANE PROTOTYPE, milestone 2b: what a token's text says, read where a node needs it: a
-//! string's value with its escapes, a template chunk cooked and raw, a number, a word written
-//! with escapes. The lexer reads the same escapes to reject a bad one where it stands.
+//! What a token's text says, read where a node needs it: a string's value with its escapes, a
+//! template chunk cooked and raw, a number, a word written with escapes. The lexer reads the
+//! same escapes to reject a bad one where it stands.
 
 use super::unicode::{is_id_continue, is_id_start};
 use crate::error::Code;
 use crate::interner::{Interner, StrId};
 
-pub enum Escape {
+pub(crate) enum Escape {
 	Char(char),
 	Code(u32),
 	/// A legacy octal escape or `\8`, `\9`: the character, where the error would stand, which.
@@ -25,7 +25,7 @@ fn hex(bytes: &[u8], pos: usize, len: usize) -> Option<u32> {
 }
 
 /// The code point written after `\u`, from `pos`: four hex digits or `{…}`; and where it ends.
-pub fn code_point(bytes: &[u8], pos: usize) -> Result<(u32, usize), (Code, usize)> {
+pub(crate) fn code_point(bytes: &[u8], pos: usize) -> Result<(u32, usize), (Code, usize)> {
 	if bytes.get(pos) == Some(&b'{') {
 		let digits = pos + 1;
 		let mut at = digits;
@@ -49,7 +49,7 @@ pub fn code_point(bytes: &[u8], pos: usize) -> Result<(u32, usize), (Code, usize
 }
 
 /// The character a word's escape at `pos`, a backslash, spells, and where the escape ends.
-pub fn word_escape(src: &str, pos: usize, first: bool) -> Result<(char, usize), (Code, usize)> {
+pub(crate) fn word_escape(src: &str, pos: usize, first: bool) -> Result<(char, usize), (Code, usize)> {
 	let bytes = src.as_bytes();
 	if bytes.get(pos + 1) != Some(&b'u') {
 		return Err((Code::ExpectedUnicodeEscape, pos + 1));
@@ -62,7 +62,7 @@ pub fn word_escape(src: &str, pos: usize, first: bool) -> Result<(char, usize), 
 }
 
 /// The escape after the backslash before `pos`, and where it ends.
-pub fn escape(src: &str, pos: usize) -> (Escape, usize) {
+pub(crate) fn escape(src: &str, pos: usize) -> (Escape, usize) {
 	let bytes = src.as_bytes();
 	let backslash = pos - 1;
 	let Some(c) = src[pos..].chars().next() else {
@@ -121,16 +121,15 @@ pub fn escape(src: &str, pos: usize) -> (Escape, usize) {
 	(Escape::Char(c), at)
 }
 
-/// A template chunk's values, and where a bad escape stands in it.
-pub struct Chunk {
+/// A template chunk's values; a chunk with a bad escape has no cooked one.
+pub(crate) struct Chunk {
 	pub cooked: Option<StrId>,
 	pub raw: StrId,
-	pub bad: Option<(Code, usize)>,
 }
 
 /// The text being built, with the lone surrogates it holds.
 #[derive(Default)]
-pub struct Values {
+pub(crate) struct Values {
 	buf: String,
 	marks: Vec<(u32, u16)>,
 	marked: usize,
@@ -193,12 +192,12 @@ impl Values {
 	}
 
 	/// Whether the value read last holds a lone surrogate.
-	pub fn marked(&self) -> bool {
+	pub(crate) fn marked(&self) -> bool {
 		!self.marks.is_empty()
 	}
 
 	/// The value of the string token from `start` to `end`, quotes included, its escapes valid.
-	pub fn string(&mut self, src: &str, start: usize, end: usize, strings: &mut Interner) -> StrId {
+	pub(crate) fn string(&mut self, src: &str, start: usize, end: usize, strings: &mut Interner) -> StrId {
 		self.start();
 		let bytes = src.as_bytes();
 		let close = end - 1;
@@ -229,10 +228,10 @@ impl Values {
 	}
 
 	/// The chunk of a template from `start` to `end`, neither a delimiter's.
-	pub fn template(&mut self, src: &str, start: usize, end: usize, strings: &mut Interner) -> Chunk {
+	pub(crate) fn template(&mut self, src: &str, start: usize, end: usize, strings: &mut Interner) -> Chunk {
 		self.start();
 		let bytes = src.as_bytes();
-		let mut bad = None;
+		let mut bad = false;
 		let mut plain = true;
 		let mut returns = false;
 		let mut pending = None;
@@ -253,12 +252,7 @@ impl Values {
 						}
 						Escape::Code(code) => self.push_code(code, &mut pending),
 						Escape::Nothing => {}
-						Escape::Octal(_, at, _) => {
-							bad.get_or_insert((Code::BadTemplateEscape, at));
-						}
-						Escape::Invalid(code, at) => {
-							bad.get_or_insert((code, at));
-						}
+						Escape::Octal(..) | Escape::Invalid(..) => bad = true,
 					}
 					pos = next;
 					chunk_start = pos;
@@ -287,18 +281,18 @@ impl Values {
 		} else {
 			strings.intern(raw_text)
 		};
-		let cooked = if bad.is_some() {
+		let cooked = if bad {
 			None
 		} else if plain {
 			Some(raw)
 		} else {
 			Some(self.intern_buf(strings))
 		};
-		Chunk { cooked, raw, bad }
+		Chunk { cooked, raw }
 	}
 
 	/// The word from `start` to `end`, its escapes read: they were checked when it was a token.
-	pub fn word<'b>(&'b mut self, src: &str, start: usize, end: usize) -> &'b str {
+	pub(crate) fn word<'b>(&'b mut self, src: &str, start: usize, end: usize) -> &'b str {
 		self.start();
 		let bytes = src.as_bytes();
 		let mut pos = start;
@@ -324,7 +318,7 @@ impl Values {
 }
 
 /// What the number token `text` is worth.
-pub fn number(text: &str) -> f64 {
+pub(crate) fn number(text: &str) -> f64 {
 	let bytes = text.as_bytes();
 	if bytes.len() > 1 && bytes[0] == b'0' {
 		let radix = match bytes[1] {

@@ -1,6 +1,4 @@
-//! LANE PROTOTYPE, milestone 2c: TypeScript in the new shape. What the parser in use reads in
-//! `typescript/{mod,types,declarations}.rs`, read the same way: the same speculations at the
-//! same places, so the answer is the same for what parses and for what does not.
+//! TypeScript: its types, and the speculations that tell them from expressions.
 
 use super::checks::{Binding, SCOPE_ARROW, SCOPE_FUNCTION, SCOPE_TS_MODULE, function_flags};
 use super::parse::{Ctx, MAX_DEPTH, Parser};
@@ -17,11 +15,6 @@ use crate::interner::{FastMap, StrId};
 pub struct Ts {
 	pub(super) state: State,
 	colon_after_body: FastMap<u32, bool>,
-	/// How many speculations ran, for the counts.
-	pub snapshots: u64,
-	pub rewinds: u64,
-	pub token_marks: u64,
-	pub peeks: u64,
 }
 
 impl Ts {
@@ -245,11 +238,10 @@ pub(super) struct Snap {
 	items: usize,
 	ctx: Ctx,
 	arrow_at: u32,
-	arrow_for_await: bool,
 	bare_arrow: bool,
 }
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
+impl<'a, const TS: bool> Parser<'a, TS> {
 	// ── tokens
 
 	#[inline(always)]
@@ -370,9 +362,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	/// The token after the one at the cursor, nothing read. A text that does not lex there ends
 	/// the parse with the lexer's error.
 	pub(super) fn peek_tok(&mut self) -> Token {
-		if COUNT {
-			self.scratch.ts.peeks += 1;
-		}
 		let pos = self.lexer.pos();
 		let comments = self.lexer.comments.len();
 		let escaped = self.lexer.escaped_keyword;
@@ -439,9 +428,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	pub(super) fn tok_snap(&mut self) -> TokSnap {
-		if COUNT {
-			self.scratch.ts.token_marks += 1;
-		}
 		TokSnap {
 			tok: self.tok,
 			prev_end: self.prev_end,
@@ -468,11 +454,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	pub(super) fn snapshot(&mut self) -> Snap {
-		self.scratch.ts.snapshots += 1;
 		let tokens = self.tok_snap();
-		if COUNT {
-			self.scratch.ts.token_marks -= 1;
-		}
 		Snap {
 			tokens,
 			error: self.error,
@@ -491,7 +473,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			items: self.scratch.items.len(),
 			ctx: self.ctx,
 			arrow_at: self.arrow_at,
-			arrow_for_await: self.arrow_for_await,
 			bare_arrow: self.bare_arrow,
 		}
 	}
@@ -538,7 +519,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	pub(super) fn restore(&mut self, s: Snap) {
-		self.scratch.ts.rewinds += 1;
 		self.restore_tokens(s.tokens);
 		self.error = s.error;
 		self.err = s.err;
@@ -557,7 +537,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.scratch.items.truncate(s.items);
 		self.ctx = s.ctx;
 		self.arrow_at = s.arrow_at;
-		self.arrow_for_await = s.arrow_for_await;
 		self.bare_arrow = s.bare_arrow;
 	}
 

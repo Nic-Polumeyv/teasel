@@ -1,6 +1,6 @@
 // The rest of `ts.rs`: what TypeScript reads around JavaScript's own grammar, and its declarations.
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
+impl<'a, const TS: bool> Parser<'a, TS> {
 	fn check_parameter_list(&mut self, params: List, signature: bool) {
 		let mut seen_optional = false;
 		for i in 0..params.len {
@@ -385,16 +385,11 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			p.scratch.ts.state.body_needs_colon = true;
 			p.function_start(FunctionKind::Arrow);
 			let outer = p.ctx;
-			let expression = p.tok.kind != Kind::BraceL;
 			p.ctx = Ctx {
-				function: true,
-				is_async,
 				generator: false,
 				can_await: is_async,
 				no_in: false,
-				for_await: false,
 			};
-			let _ = expression;
 			p.function_body(at, None, List::EMPTY, true, false);
 			p.ctx = outer;
 			p.restore_yield_await(old);
@@ -473,7 +468,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		))
 	}
 
-	/// The token at the cursor can start an expression, as the parser in use tells it.
+	/// The token at the cursor can start an expression.
 	fn starts_expression(&self) -> bool {
 		matches!(
 			self.tok.kind,
@@ -1475,8 +1470,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 	}
 
-	/// One element of a class body, as the parser in use reads it with TypeScript on; none
-	/// for a `;`.
+	/// One element of a class body with TypeScript on; none for a `;`.
 	pub(super) fn ts_class_element(&mut self, constructor_allows_super: bool) -> Option<NodeId> {
 		if self.eat(Kind::Semi) {
 			return None;
@@ -1848,13 +1842,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		let initializer = if self.tok.kind == Kind::Eq {
 			self.bump(true);
 			self.enter_scope(SCOPE_FUNCTION);
-			let outer = std::mem::replace(
-				&mut self.ctx,
-				Ctx {
-					function: true,
-					..Ctx::default()
-				},
-			);
+			let outer = std::mem::take(&mut self.ctx);
 			let initializer = self.assign();
 			self.ctx = outer;
 			self.exit_scope();

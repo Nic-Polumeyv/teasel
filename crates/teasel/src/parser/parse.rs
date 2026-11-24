@@ -1,10 +1,6 @@
-//! LANE PROTOTYPE, milestone 1: JavaScript expressions read in the new shape into teasel's own
-//! tree. Tokens carry no text, parse functions return the node, an error is recorded once and
-//! the input ends, binary operators are one precedence loop, and a list in parentheses that may
-//! be an arrow function's parameters is read in the role its tokens tell.
-//!
-//! Not here: functions and arrows with block bodies, classes, statements, TypeScript, recovery,
-//! scopes, the `parenthesized` option, stop words. Meeting one sets `unsupported`.
+//! JavaScript expressions. Tokens carry no text, parse functions return the node, an error is
+//! recorded once and the input ends, binary operators are one precedence loop, and a list in
+//! parentheses that may be an arrow function's parameters is read in the role its tokens tell.
 
 use super::values::{self, Values};
 use super::{Arg, BROKEN, ESCAPED, Kind, Lexer, NEWLINE_BEFORE, Token};
@@ -120,20 +116,16 @@ fn postfix(slash: Slash, token: Token) -> Slash {
 /// What the function being read is, and whether `in` is an operator where the cursor stands.
 #[derive(Clone, Copy, Default)]
 pub(super) struct Ctx {
-	pub(super) function: bool,
-	pub(super) is_async: bool,
 	pub(super) generator: bool,
 	/// `await` is an operator here.
 	pub(super) can_await: bool,
 	/// The head of a `for`: `in` ends the expression.
 	pub(super) no_in: bool,
-	/// The head of a `for await`: `async of` is two names.
-	pub(super) for_await: bool,
 }
 
-/// `TS`: TypeScript is read. A constant of the type, as in the parser in use, so the JavaScript
-/// copy compiles none of TypeScript's tests.
-pub struct Parser<'a, const COUNT: bool, const TS: bool = false> {
+/// `TS`: TypeScript is read. A constant of the type, so the JavaScript copy compiles none of
+/// TypeScript's tests.
+pub(crate) struct Parser<'a, const TS: bool> {
 	pub(super) src: &'a str,
 	pub(super) lexer: Lexer<'a>,
 	pub(super) tok: Token,
@@ -142,8 +134,6 @@ pub struct Parser<'a, const COUNT: bool, const TS: bool = false> {
 	pub(super) scratch: &'a mut Scratch,
 	/// Where the assignment expression being read starts: an arrow function can start only there.
 	pub(super) arrow_at: u32,
-	/// That assignment expression is the subject of a `for await`: `async of` is two names.
-	pub(super) arrow_for_await: bool,
 	/// Where the first `yield`, `await` and name `await` stand in the parameters being read.
 	pub(super) yield_pos: u32,
 	pub(super) await_pos: u32,
@@ -166,17 +156,10 @@ pub struct Parser<'a, const COUNT: bool, const TS: bool = false> {
 	pub(super) err_at: u32,
 	/// That error was met before the token read ahead was: it comes before the lexer's.
 	pub(super) err_first: bool,
-	pub unsupported: Option<&'static str>,
-	pub tokens: u64,
-	/// Of those, the ones not read before: a rewind reads a token again.
-	pub fresh: u64,
-	high: u32,
 	/// The cursor stands in a type: `<` and `>` are tokens of their own.
 	pub(super) in_type: bool,
 	/// The parameters about to be read are a class method's: they may be parameter properties.
 	pub(super) modifiers_ok: bool,
-	/// With TypeScript: exports of types are marked, for what erases them.
-	pub(super) erase: bool,
 	pub(super) options: crate::parser::Options,
 	/// Errors are recorded and reading goes on.
 	pub(super) recover: bool,
@@ -307,42 +290,17 @@ fn assignment(kind: Kind) -> Option<AssignmentOperator> {
 	})
 }
 
-impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
-	pub fn new(src: &'a str, ast: &'a mut Ast, scratch: &'a mut Scratch) -> Self {
-		Self::with(src, ast, scratch, true)
-	}
-
-	pub fn with(src: &'a str, ast: &'a mut Ast, scratch: &'a mut Scratch, module: bool) -> Self {
-		Self::with_ts(src, ast, scratch, module, false, false)
-	}
-
-	pub fn with_ts(
-		src: &'a str,
-		ast: &'a mut Ast,
-		scratch: &'a mut Scratch,
-		module: bool,
-		ts: bool,
-		erase: bool,
-	) -> Self {
-		debug_assert_eq!(ts, TS);
-		let mut lexer = Lexer::new(src, module, true);
-		lexer.at_sign = TS;
-		if TS {
-			scratch.ts.clear();
-		}
-		Self::with_lexer(src, ast, scratch, module, erase, lexer)
-	}
-
+impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A parser reading with `lexer`, nothing read; TypeScript's tables are the caller's to clear.
 	#[inline(always)]
 	pub(super) fn with_lexer(
 		src: &'a str,
 		ast: &'a mut Ast,
 		scratch: &'a mut Scratch,
-		module: bool,
-		erase: bool,
+		options: crate::parser::Options,
 		lexer: Lexer<'a>,
 	) -> Self {
+		let module = options.has(crate::parser::Options::MODULE);
 		Parser {
 			src,
 			lexer,
@@ -356,7 +314,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			ast,
 			scratch,
 			arrow_at: u32::MAX,
-			arrow_for_await: false,
 			yield_pos: 0,
 			await_pos: 0,
 			await_ident_pos: 0,
@@ -374,17 +331,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			err: None,
 			err_at: 0,
 			err_first: false,
-			unsupported: None,
-			tokens: 0,
-			fresh: 0,
-			high: 0,
 			in_type: false,
 			modifiers_ok: false,
-			erase,
-			options: crate::parser::Options(
-				if module { crate::parser::Options::MODULE } else { 0 }
-					| if erase { crate::parser::Options::ERASE } else { 0 },
-			),
+			options,
 			recover: false,
 			speculating: 0,
 			track: false,
@@ -398,69 +347,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			base: 0,
 			tree_limit: usize::MAX,
 			liberal_at: u32::MAX,
-		}
-	}
-
-	pub fn ast(&mut self) -> &mut Ast {
-		self.ast
-	}
-
-	/// The expression at `at`: its node and where it ends, a comment after it included; none
-	/// when it is not one or uses what this prototype does not read.
-	pub fn expression_at(&mut self, at: u32) -> Option<(NodeId, u32)> {
-		self.error = false;
-		self.err = None;
-		self.err_first = false;
-		self.unsupported = None;
-		self.scratch.checks.clear();
-		if TS {
-			self.scratch.ts.clear();
-			self.in_type = false;
-		}
-		self.enter_scope(super::checks::SCOPE_TOP);
-		self.bare_arrow = false;
-		self.arrow_at = u32::MAX;
-		self.lexer.set_pos(at as usize);
-		self.lexer.comments.clear();
-		self.prev_end = at;
-		self.tok = self.lexer.next(true);
-		if COUNT {
-			self.tokens += 1;
-		}
-		let node = self.sequence();
-		if self.error {
-			return None;
-		}
-		let end = match self.lexer.comments.last() {
-			Some(comment) if comment.start >= self.prev_end => comment.end,
-			_ => self.prev_end,
-		};
-		Some((node, end))
-	}
-
-	/// A word that cannot name a binding where the cursor stands, the keywords apart: those are
-	/// kinds of token.
-	#[inline]
-	pub(super) fn reserved(&self, word: &[u8]) -> bool {
-		// the words start with one of seven letters and are 3 to 10 long
-		const STARTS: u32 = 1 << (b'a' - b'a')
-			| 1 << (b'e' - b'a')
-			| 1 << (b'i' - b'a')
-			| 1 << (b'l' - b'a')
-			| 1 << (b'p' - b'a')
-			| 1 << (b's' - b'a')
-			| 1 << (b'y' - b'a');
-		let first = word[0].wrapping_sub(b'a');
-		if first >= 26 || STARTS >> first & 1 == 0 {
-			return false;
-		}
-		match word {
-			b"enum" => true,
-			b"await" => self.module || self.ctx.is_async,
-			b"yield" => self.strict || self.ctx.generator,
-			b"implements" | b"interface" | b"let" | b"package" | b"private" | b"protected" | b"public"
-			| b"static" => self.strict,
-			_ => false,
 		}
 	}
 
@@ -494,17 +380,10 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			self.tok = self.split_angle(self.tok);
 		}
 		self.tracked(prev, false);
-		if COUNT {
-			self.tokens += 1;
-			if self.tok.start >= self.high {
-				self.fresh += 1;
-				self.high = self.tok.start + 1;
-			}
-		}
 	}
 
-	/// The next token as the parser in use reads one it skips: a `/` is an operator, and a
-	/// backquote a token of its own.
+	/// The next token after one that is skipped: a `/` is an operator, and a backquote a token
+	/// of its own.
 	pub(super) fn bump_raw(&mut self) {
 		self.bump(false);
 		self.raw_backquote();
@@ -519,13 +398,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		self.tok = self.lexer.next(regex);
 		if TS && self.in_type {
 			self.tok = self.split_angle(self.tok);
-		}
-		if COUNT {
-			self.tokens += 1;
-			if self.tok.start >= self.high {
-				self.fresh += 1;
-				self.high = self.tok.start + 1;
-			}
 		}
 	}
 
@@ -561,8 +433,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	}
 
 	/// Where an error at the token at the cursor ends: a template's is its backquote alone, a
-	/// regular expression's its `/` or `/=`, the token the parser in use errs at before it
-	/// reads one.
+	/// regular expression's its `/` or `/=`.
 	pub(super) fn tok_end(&self) -> u32 {
 		let t = self.tok;
 		match t.kind {
@@ -612,7 +483,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 
 	/// An error of the lexer's, its argument in the tree's strings.
 	pub(super) fn lexed_error(&mut self, e: super::LexError) -> SyntaxError {
-		let error = SyntaxError::new(e.pos, e.code).to(e.end);
+		let error = SyntaxError::new(e.pos, e.code);
 		match e.arg {
 			Arg::None => error,
 			Arg::Char(c) => error.arg(self.ast.strings.intern(c.encode_utf8(&mut [0; 4]))),
@@ -623,7 +494,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	/// The error the parse ended with: the lexer's when it met one, since the grammar only saw
 	/// the end of the input after it; and before either, a keyword spelled with an escape that
 	/// was read as that keyword.
-	pub fn take_error(&mut self) -> Option<SyntaxError> {
+	pub(crate) fn take_error(&mut self) -> Option<SyntaxError> {
 		let lexed = self.lexer.error.take().map(|e| self.lexed_error(e));
 		let (chosen, at) = match (lexed, self.err.take()) {
 			(Some(_), Some(e)) if self.err_first => (Some(e), self.err_at),
@@ -639,15 +510,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			return Some(SyntaxError::new(start, Code::EscapeInKeyword).to(end).arg(arg));
 		}
 		chosen
-	}
-
-	#[cold]
-	#[inline(never)]
-	fn skip(&mut self, why: &'static str) -> NodeId {
-		if self.unsupported.is_none() && !self.error {
-			self.unsupported = Some(why);
-		}
-		self.fail()
 	}
 
 	#[inline(always)]
@@ -826,7 +688,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		}
 		let start = self.tok.start;
 		self.arrow_at = start;
-		self.arrow_for_await = self.ctx.for_await;
 		if matches!(self.tok.kind, Kind::BraceL | Kind::BracketL | Kind::ParenL) {
 			return self.assign_literal(errors, start);
 		}
@@ -1177,8 +1038,8 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 	#[inline(always)]
 	pub(super) fn suffixes(&mut self, mut base: NodeId, start: u32, calls: bool) -> NodeId {
 		let mut chained = false;
-		// decided once, for the name `async` with its `(` on the same line; the parser in use
-		// keeps the answer for every call of the chain, so `async.x(a) => b` is an arrow function
+		// decided once, for the name `async` with its `(` on the same line; the answer holds for
+		// every call of the chain, so `async.x(a) => b` is an arrow function
 		let maybe_arrow = calls
 			&& self.arrow_at == start
 			&& !self.newline()
@@ -1581,7 +1442,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			if self.tok.kind == Kind::Ident
 				&& self.is_async(id)
 				&& t.flags & ESCAPED == 0
-				&& !(self.arrow_for_await && self.is_word(b"of"))
 			{
 				return self.async_arrow(start);
 			}
@@ -1730,7 +1590,7 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 			}
 			return self.arrow(start, base, false);
 		}
-		// a token that does not lex after it: the parser in use reads that token for the arrow
+		// a token that does not lex after it is read for the arrow: the error is the lexer's
 		if !self.lexer.recover && self.lexer.error.is_some() {
 			return self.fail();
 		}
@@ -2152,12 +2012,9 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 		let outer = self.ctx;
 		let expression = self.tok.kind != Kind::BraceL;
 		self.ctx = Ctx {
-			function: true,
-			is_async,
 			generator: false,
 			can_await: is_async,
 			no_in: expression && outer.no_in,
-			for_await: expression && outer.for_await,
 		};
 		let body = self.function_body(start, None, params, true, false);
 		self.ctx = outer;
@@ -2861,9 +2718,6 @@ impl<'a, const COUNT: bool, const TS: bool> Parser<'a, COUNT, TS> {
 					break;
 				}
 				let chunk = self.lexer.template_continue(self.tok);
-				if COUNT {
-					self.tokens += 1;
-				}
 				self.tok = chunk;
 				self.tracked_chunk(chunk);
 				match chunk.kind {

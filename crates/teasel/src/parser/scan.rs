@@ -1,15 +1,13 @@
-pub const SPACE: u8 = 1;
-pub const NEWLINE: u8 = 2;
-pub const ID_START: u8 = 4;
-pub const ID_CONTINUE: u8 = 8;
-pub const DIGIT: u8 = 16;
-/// May start what `skip_space` reads: space, a line break, a comment or an HTML comment.
-pub const TRIVIA: u8 = 32;
+pub(crate) const SPACE: u8 = 1;
+pub(crate) const NEWLINE: u8 = 2;
+pub(crate) const ID_START: u8 = 4;
+pub(crate) const ID_CONTINUE: u8 = 8;
+pub(crate) const DIGIT: u8 = 16;
 /// Means something to the search for a regular expression literal's end, with `NEWLINE`: a
 /// slash, a backslash, a bracket, a `(` or the first byte of a line or paragraph separator.
-pub const REGEXP: u8 = 64;
+pub(crate) const REGEXP: u8 = 64;
 
-pub static CLASS: [u8; 256] = classes();
+pub(crate) static CLASS: [u8; 256] = classes();
 
 const fn classes() -> [u8; 256] {
 	let mut table = [0u8; 256];
@@ -29,9 +27,6 @@ const fn classes() -> [u8; 256] {
 		if c.is_ascii_digit() {
 			class |= DIGIT | ID_CONTINUE;
 		}
-		if class & (SPACE | NEWLINE) != 0 || matches!(c, b'/' | b'<' | b'-') {
-			class |= TRIVIA;
-		}
 		if matches!(c, b'/' | b'\\' | b'[' | b']' | b'(') {
 			class |= REGEXP;
 		}
@@ -40,19 +35,6 @@ const fn classes() -> [u8; 256] {
 	}
 	table[0xe2] = REGEXP;
 	table
-}
-
-#[inline]
-pub fn class(b: u8) -> u8 {
-	CLASS[b as usize]
-}
-
-#[inline]
-pub fn run_of(bytes: &[u8], mut from: usize, flag: u8) -> usize {
-	while from < bytes.len() && CLASS[bytes[from] as usize] & flag != 0 {
-		from += 1;
-	}
-	from
 }
 
 const ONES: u64 = 0x0101_0101_0101_0101;
@@ -66,7 +48,7 @@ fn bytes_equal(word: u64, byte: u8) -> u64 {
 }
 
 #[inline]
-pub fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; N], high: bool) -> usize {
+pub(crate) fn find<const N: usize>(bytes: &[u8], mut from: usize, needles: [u8; N], high: bool) -> usize {
 	let (chunks, _) = bytes.get(from..).unwrap_or_default().as_chunks::<8>();
 	for chunk in chunks {
 		let word = u64::from_le_bytes(*chunk);
@@ -99,7 +81,7 @@ fn bytes_exactly(word: u64, byte: u8) -> u64 {
 /// Where `first` stands with one of `seconds` after it, from `from` on, or a `first` among the last
 /// eight bytes, whatever follows it; the length when there is neither.
 #[inline]
-pub fn find_pair<const N: usize>(bytes: &[u8], mut from: usize, first: u8, seconds: [u8; N]) -> usize {
+pub(crate) fn find_pair<const N: usize>(bytes: &[u8], mut from: usize, first: u8, seconds: [u8; N]) -> usize {
 	while from + 9 <= bytes.len() {
 		let word = u64::from_le_bytes(bytes[from..from + 8].try_into().unwrap());
 		let next = word >> 8 | (bytes[from + 8] as u64) << 56;
@@ -117,11 +99,11 @@ pub fn find_pair<const N: usize>(bytes: &[u8], mut from: usize, first: u8, secon
 }
 
 /// Whether `bytes` starts with a line separator or paragraph separator (U+2028, U+2029).
-pub fn is_separator(bytes: &[u8]) -> bool {
+pub(crate) fn is_separator(bytes: &[u8]) -> bool {
 	matches!(bytes, [0xe2, 0x80, 0xa8 | 0xa9, ..])
 }
 
-pub fn line_end(bytes: &[u8]) -> usize {
+pub(crate) fn line_end(bytes: &[u8]) -> usize {
 	let mut i = 0;
 	loop {
 		i = find(bytes, i, *b"\n\r\xe2", false);
@@ -132,24 +114,11 @@ pub fn line_end(bytes: &[u8]) -> usize {
 	}
 }
 
-/// Where `*/` starts in `text`, and whether a line terminator precedes it.
-pub fn comment_end(text: &str) -> Option<(usize, bool)> {
-	let mut from = 0;
-	loop {
-		let star = from + text[from..].find('*')?;
-		if text.as_bytes().get(star + 1) == Some(&b'/') {
-			let body = &text.as_bytes()[..star];
-			return Some((star, line_end(body) < body.len()));
-		}
-		from = star + 1;
-	}
-}
-
-pub fn is_new_line(c: char) -> bool {
+pub(crate) fn is_new_line(c: char) -> bool {
 	matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
-pub fn is_whitespace(c: char) -> bool {
+pub(crate) fn is_whitespace(c: char) -> bool {
 	matches!(
 		c,
 		'\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
@@ -157,7 +126,7 @@ pub fn is_whitespace(c: char) -> bool {
 }
 
 /// ECMAScript white space or a line terminator.
-pub fn is_space(c: char) -> bool {
+pub(crate) fn is_space(c: char) -> bool {
 	matches!(c, ' ' | '\t'..='\r') || is_new_line(c) || is_whitespace(c)
 }
 
@@ -243,23 +212,21 @@ mod tests {
 	#[test]
 	fn classes_match_the_predicates() {
 		for b in 0..=255u8 {
-			assert_eq!(class(b) & SPACE != 0, matches!(b, b' ' | b'\t' | 0x0b | 0x0c));
-			assert_eq!(class(b) & NEWLINE != 0, matches!(b, b'\n' | b'\r'));
+			assert_eq!(CLASS[b as usize] & SPACE != 0, matches!(b, b' ' | b'\t' | 0x0b | 0x0c));
+			assert_eq!(CLASS[b as usize] & NEWLINE != 0, matches!(b, b'\n' | b'\r'));
 			assert_eq!(
-				class(b) & ID_START != 0,
+				CLASS[b as usize] & ID_START != 0,
 				b.is_ascii_alphabetic() || b == b'$' || b == b'_'
 			);
 			assert_eq!(
-				class(b) & ID_CONTINUE != 0,
+				CLASS[b as usize] & ID_CONTINUE != 0,
 				b.is_ascii_alphanumeric() || b == b'$' || b == b'_'
 			);
-			assert_eq!(class(b) & DIGIT != 0, b.is_ascii_digit());
+			assert_eq!(CLASS[b as usize] & DIGIT != 0, b.is_ascii_digit());
 			assert_eq!(
-				class(b) & REGEXP != 0,
+				CLASS[b as usize] & REGEXP != 0,
 				matches!(b, b'/' | b'\\' | b'[' | b']' | b'(' | 0xe2)
 			);
 		}
-		assert_eq!(run_of(b"abc1_$ x", 0, ID_CONTINUE), 6);
-		assert_eq!(run_of(b"  \tx", 0, SPACE), 3);
 	}
 }

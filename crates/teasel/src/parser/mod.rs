@@ -127,8 +127,6 @@ pub(crate) mod word {
 	/// A keyword.
 	pub(crate) const KEYWORD: u8 = 32;
 	pub(crate) const EVAL: u8 = 64;
-	/// Not computed yet; the flags take seven bits.
-	pub(crate) const UNKNOWN: u8 = 255;
 
 	pub(crate) fn flags(word: &str) -> u8 {
 		let mut flags = match word.as_bytes() {
@@ -216,7 +214,6 @@ pub enum Arg {
 pub struct LexError {
 	pub code: Code,
 	pub pos: u32,
-	pub end: u32,
 	pub arg: Arg,
 }
 
@@ -520,32 +517,6 @@ impl<'a> Lexer<'a> {
 		let bytes = self.src.as_bytes();
 		let mut pos = self.pos;
 		let mut flags = 0u8;
-		#[cfg(feature = "ws2")]
-		let (b, class) = {
-			// no gap or one space, nine tokens in ten of a line; the loop for the rest
-			let Some(&(mut b)) = bytes.get(pos) else {
-				return self.rest(pos, flags, regex);
-			};
-			if b == b' ' {
-				pos += 1;
-				match bytes.get(pos) {
-					Some(&next) => b = next,
-					None => return self.rest(pos, flags, regex),
-				}
-			}
-			let mut class = CLASS[b as usize];
-			while class & (SPACE | NEWLINE) != 0 {
-				flags |= (class & NEWLINE) >> 1;
-				pos += 1;
-				match bytes.get(pos) {
-					Some(&next) => b = next,
-					None => return self.rest(pos, flags, regex),
-				}
-				class = CLASS[b as usize];
-			}
-			(b, class)
-		};
-		#[cfg(not(feature = "ws2"))]
 		let (b, class) = loop {
 			let Some(&b) = bytes.get(pos) else {
 				return self.rest(pos, flags, regex);
@@ -563,7 +534,7 @@ impl<'a> Lexer<'a> {
 				return self.word_slow(pos, end, Kind::Ident, flags, regex);
 			}
 			self.pos = end;
-			return token(pos, end, keyword(bytes, pos, end), flags);
+			return token(pos, end, keyword_spelled(&bytes[pos..end]), flags);
 		}
 		let kind = SINGLE[b as usize];
 		if kind != Kind::Eof {
@@ -607,7 +578,7 @@ impl<'a> Lexer<'a> {
 					if bytes.get(end).is_some_and(|&b| b == b'\\' || b >= 0x80) {
 						return self.word_slow(start, end, Kind::Ident, flags, regex);
 					}
-					(keyword(bytes, start, end), end)
+					(keyword_spelled(&bytes[start..end]), end)
 				}
 				Lead::Single => (SINGLE[b as usize], pos + 1),
 				Lead::Dot => match (bytes.get(pos + 1), bytes.get(pos + 2)) {
@@ -845,8 +816,7 @@ impl<'a> Lexer<'a> {
 	}
 
 	/// The token from `start` does not lex: `code` at `at`. Under recovery it is recorded and
-	/// skipped from where its reader stopped, `reach`, or from the next character: what the
-	/// parser in use skips.
+	/// skipped from where its reader stopped, `reach`, or from the next character.
 	#[cold]
 	#[inline(never)]
 	fn bad(&mut self, start: usize, flags: u8, code: Code, at: usize, reach: usize, arg: Arg, regex: bool) -> Token {
@@ -883,17 +853,14 @@ impl<'a> Lexer<'a> {
 	}
 
 	/// An error in a regular expression's flags, which ends the input under recovery too: the
-	/// grammar's to recover from, after the escape as the lexer in use read it.
+	/// grammar's to recover from, after the escape.
 	#[cold]
 	#[inline(never)]
 	fn fail_hard(&mut self, code: Code, at: usize, escape: usize) -> Token {
 		if self.recover {
 			self.soft.get_or_insert_default().fail_pos = word_escape_reach(self.src.as_bytes(), escape);
 		}
-		let recover = std::mem::replace(&mut self.recover, false);
-		let token = self.fail_arg(code, at, Arg::None);
-		self.recover = recover;
-		token
+		self.fail_arg(code, at, Arg::None)
 	}
 
 	#[cold]
@@ -903,7 +870,6 @@ impl<'a> Lexer<'a> {
 			self.error = Some(LexError {
 				code,
 				pos: at as u32,
-				end: at as u32,
 				arg,
 			});
 		}
@@ -1316,7 +1282,7 @@ fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 	pos
 }
 
-#[cfg(not(any(feature = "swar", feature = "batch")))]
+#[cfg(not(feature = "batch"))]
 #[inline]
 fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 	while let Some(&b) = bytes.get(pos) {
@@ -1328,67 +1294,6 @@ fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 	pos
 }
 
-#[cfg(feature = "swar")]
-#[inline(always)]
-fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
-	const L: u64 = 0x0101_0101_0101_0101;
-	const H: u64 = 0x8080_8080_8080_8080;
-	// per byte of seven bits: the high bit where it is at least `n`
-	#[inline(always)]
-	fn at_least(v: u64, n: u8) -> u64 {
-		(v | H).wrapping_sub(L * n as u64) & H
-	}
-	#[inline(always)]
-	fn is(v: u64, c: u8) -> u64 {
-		!(((v ^ (L * c as u64)) | H).wrapping_sub(L)) & H
-	}
-	while let Some(chunk) = bytes.get(pos..pos + 8) {
-		let x = u64::from_le_bytes(chunk.try_into().unwrap());
-		let low = x & !H;
-		let lower = low | (L * 0x20);
-		let letter = at_least(lower, b'a') & !at_least(lower, b'z' + 1);
-		let digit = at_least(low, b'0') & !at_least(low, b'9' + 1);
-		let part = (letter | digit | is(low, b'_') | is(low, b'$')) & !x;
-		let stop = !part & H;
-		if stop != 0 {
-			return pos + (stop.trailing_zeros() / 8) as usize;
-		}
-		pos += 8;
-	}
-	while let Some(&b) = bytes.get(pos) {
-		if CLASS[b as usize] & ID_CONTINUE == 0 {
-			break;
-		}
-		pos += 1;
-	}
-	pos
-}
-
-#[cfg(feature = "hash")]
-#[inline(always)]
-fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
-	let len = end - start;
-	// the word as one integer, hashed to the one keyword it could be
-	if len <= 8
-		&& let Some(chunk) = bytes.get(start..start + 8)
-	{
-		let word = u64::from_le_bytes(chunk.try_into().unwrap()) & (u64::MAX >> (64 - 8 * len));
-		let (is, kind) = KEYWORDS[(word.wrapping_mul(MAGIC) >> SHIFT) as usize];
-		return if is == word { kind } else { Kind::Ident };
-	}
-	keyword_spelled(&bytes[start..end])
-}
-
-#[cfg(feature = "hash")]
-include!("../keywords.txt");
-
-#[cfg(not(any(feature = "first-byte", feature = "hash")))]
-#[inline(always)]
-fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
-	keyword_spelled(&bytes[start..end])
-}
-
-#[cfg(not(feature = "first-byte"))]
 #[inline(always)]
 fn keyword_spelled(word: &[u8]) -> Kind {
 	use Kind::*;
@@ -1432,88 +1337,6 @@ fn keyword_spelled(word: &[u8]) -> Kind {
 	}
 }
 
-#[cfg(feature = "first-byte")]
-#[inline(always)]
-fn keyword(bytes: &[u8], start: usize, end: usize) -> Kind {
-	use Kind::*;
-	let word = &bytes[start..end];
-	let rest = &word[1..];
-	match word[0] {
-		b'b' => match rest {
-			b"reak" => Break,
-			_ => Ident,
-		},
-		b'c' => match rest {
-			b"ase" => Case,
-			b"atch" => Catch,
-			b"lass" => Class,
-			b"onst" => Const,
-			b"ontinue" => Continue,
-			_ => Ident,
-		},
-		b'd' => match rest {
-			b"o" => Do,
-			b"elete" => Delete,
-			b"efault" => Default,
-			b"ebugger" => Debugger,
-			_ => Ident,
-		},
-		b'e' => match rest {
-			b"lse" => Else,
-			b"xport" => Export,
-			b"xtends" => Extends,
-			_ => Ident,
-		},
-		b'f' => match rest {
-			b"or" => For,
-			b"alse" => False,
-			b"inally" => Finally,
-			b"unction" => Function,
-			_ => Ident,
-		},
-		b'i' => match rest {
-			b"f" => If,
-			b"n" => In,
-			b"mport" => Import,
-			b"nstanceof" => Instanceof,
-			_ => Ident,
-		},
-		b'n' => match rest {
-			b"ew" => New,
-			b"ull" => Null,
-			_ => Ident,
-		},
-		b'r' => match rest {
-			b"eturn" => Return,
-			_ => Ident,
-		},
-		b's' => match rest {
-			b"uper" => Super,
-			b"witch" => Switch,
-			_ => Ident,
-		},
-		b't' => match rest {
-			b"ry" => Try,
-			b"his" => This,
-			b"rue" => True,
-			b"hrow" => Throw,
-			b"ypeof" => Typeof,
-			_ => Ident,
-		},
-		b'v' => match rest {
-			b"ar" => Var,
-			b"oid" => Void,
-			_ => Ident,
-		},
-		b'w' => match rest {
-			b"ith" => With,
-			b"hile" => While,
-			_ => Ident,
-		},
-		_ => Ident,
-	}
-}
-
 /// The end of the digits from `from`, separators checked; a misplaced separator's rule and place.
 fn digits(bytes: &[u8], from: usize, radix: u32, maybe_legacy_octal: bool) -> Result<usize, (Code, usize)> {
 	let legacy_octal = maybe_legacy_octal && bytes.get(from) == Some(&b'0');
@@ -1551,12 +1374,12 @@ fn digits(bytes: &[u8], from: usize, radix: u32, maybe_legacy_octal: bool) -> Re
 	Ok(pos)
 }
 
-/// Where the lexer in use stood when `digits` failed with `code` at `at`.
+/// Where the reader of a number's digits stood when it failed with `code` at `at`.
 fn digits_reach(code: Code, at: usize) -> usize {
 	at + (code == Code::NumericSeparatorLast) as usize
 }
 
-/// How many of the `len` bytes from `at` the lexer in use read as hex digits.
+/// Where the hex digits from `at` end, `len` of them at most.
 fn hex_reach(bytes: &[u8], at: usize, len: usize) -> usize {
 	let mut pos = at;
 	while pos < at + len && bytes.get(pos).is_some_and(u8::is_ascii_hexdigit) {
@@ -1565,7 +1388,7 @@ fn hex_reach(bytes: &[u8], at: usize, len: usize) -> usize {
 	pos
 }
 
-/// Where the lexer in use stopped in the code point after a `\u` that ends at `at`.
+/// Where the reader stopped in the code point after a `\u` that ends at `at`.
 fn code_point_reach(bytes: &[u8], at: usize) -> usize {
 	if bytes.get(at) != Some(&b'{') {
 		return hex_reach(bytes, at, 4);
@@ -1580,7 +1403,7 @@ fn code_point_reach(bytes: &[u8], at: usize) -> usize {
 	pos + 1
 }
 
-/// Where the lexer in use stopped in the word escape at `pos`, a backslash, that failed.
+/// Where the reader stopped in the word escape at `pos`, a backslash, that failed.
 fn word_escape_reach(bytes: &[u8], pos: usize) -> usize {
 	match bytes.get(pos + 1) {
 		Some(b'u') => code_point_reach(bytes, pos + 2),
@@ -1588,7 +1411,7 @@ fn word_escape_reach(bytes: &[u8], pos: usize) -> usize {
 	}
 }
 
-/// Where the lexer in use stopped in the string escape at `pos`, a backslash, that failed.
+/// Where the reader stopped in the string escape at `pos`, a backslash, that failed.
 fn string_escape_reach(bytes: &[u8], pos: usize) -> usize {
 	match bytes.get(pos + 1) {
 		Some(b'x') => hex_reach(bytes, pos + 2, 2),
