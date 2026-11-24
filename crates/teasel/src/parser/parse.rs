@@ -690,7 +690,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		// what starts with anything else has no facts of its own
 		let mut left = self.unary(true, &mut None);
 		if !std::mem::take(&mut self.bare_arrow) {
-			left = self.binary(left, start, 0);
+			if self.operator_follows() {
+				left = self.binary(left, start, 0);
+			}
 			if self.tok.kind == Kind::Question {
 				left = self.conditional(left, start);
 			}
@@ -765,7 +767,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		let mut left = self.unary(true, facts);
 		let arrow = std::mem::take(&mut self.bare_arrow);
 		if !arrow && !facts.as_ref().unwrap().pending() {
-			left = self.binary(left, start, 0);
+			if self.operator_follows() {
+				left = self.binary(left, start, 0);
+			}
 			if self.tok.kind == Kind::Question {
 				left = self.conditional(left, start);
 			}
@@ -811,6 +815,13 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		left
 	}
 
+	/// Whether the token at the cursor may be a binary operator, or a word TypeScript reads as one.
+	// tried: `binary` called after every operand, 0.5 to 1.9% more instructions per parse
+	#[inline(always)]
+	fn operator_follows(&self) -> bool {
+		PREC[self.tok.kind as usize] != 0 || (TS && self.tok.kind == Kind::Ident)
+	}
+
 	/// The operators after `left`, which starts at `left_start`, that bind tighter than `min`.
 	fn binary(&mut self, mut left: NodeId, left_start: u32, min: u8) -> NodeId {
 		let mut links = 0;
@@ -849,7 +860,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			if self.depth > MAX_DEPTH {
 				return self.raise(self.tok.start, Code::NestingDepth);
 			}
-			let right = self.binary(operand, right_start, prec);
+			let right = if self.operator_follows() {
+				self.binary(operand, right_start, prec)
+			} else {
+				operand
+			};
 			self.depth -= 1;
 			if matches!(self.ast.node(right).kind, NodeKind::PrivateIdentifier { .. }) && !self.error {
 				let at = self.ast.node(right).start;
