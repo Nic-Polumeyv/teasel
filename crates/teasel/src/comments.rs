@@ -9,13 +9,14 @@
 
 use crate::ast::{Ast, Attached, List, NodeId, NodeKind, Slots};
 use crate::parser::scan::{is_new_line, is_space};
-use std::cell::Cell;
 
-thread_local! {
-	/// The buffers of the last attachment on this thread, emptied, for the next.
-	// each attachment growing buffers of its own took 0.7% more instructions of a parse with comments
-	// and scopes (sheer-ui's TypeScript)
-	static SPARE: Cell<(Vec<NodeId>, Vec<Step>)> = const { Cell::new((Vec::new(), Vec::new())) };
+/// The buffers of the last attachment, emptied, kept by the tree for the next.
+// each attachment growing buffers of its own took 0.7% more instructions of a parse with comments
+// and scopes (sheer-ui's TypeScript)
+#[derive(Debug, Default)]
+pub struct Spare {
+	scratch: Vec<NodeId>,
+	steps: Vec<Step>,
 }
 
 /// Attaches the comments at or after `from` to the trees under `roots`, in order, replacing any
@@ -32,7 +33,7 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		ast.attached = attached;
 		return;
 	}
-	let (scratch, steps) = SPARE.take();
+	let Spare { scratch, steps } = std::mem::take(&mut ast.attaching);
 	let mut attacher = Attacher {
 		ast,
 		source,
@@ -47,8 +48,12 @@ pub fn attach(ast: &mut Ast, source: &str, roots: List, from: u32) {
 		attacher.walk(root);
 	}
 	let rest = attacher.next;
-	SPARE.set((attacher.scratch, attacher.steps));
+	let spare = Spare {
+		scratch: attacher.scratch,
+		steps: attacher.steps,
+	};
 	let mut attached = attacher.attached;
+	ast.attaching = spare;
 	let last_node = *ast.node(last);
 	if rest < ast.comments.len() as u32
 		&& !last_node.kind.is_svelte()
@@ -74,7 +79,7 @@ struct Attacher<'a> {
 }
 
 /// A node to visit, or one whose children are visited and whose trailing comments are next.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Step {
 	node: NodeId,
 	parent: Option<NodeId>,
