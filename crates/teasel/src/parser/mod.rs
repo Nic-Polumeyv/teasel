@@ -519,7 +519,7 @@ impl<'a> Lexer<'a> {
 		let mut flags = 0u8;
 		let (b, class) = loop {
 			let Some(&b) = bytes.get(pos) else {
-				return self.rest(pos, flags, regex);
+				return unpack(self.rest(pos, flags, regex));
 			};
 			let class = CLASS[b as usize];
 			if class & (SPACE | NEWLINE) == 0 {
@@ -531,7 +531,7 @@ impl<'a> Lexer<'a> {
 		if class & ID_START != 0 {
 			let end = ident_end(bytes, pos + 1);
 			if bytes.get(end).is_some_and(|&b| b == b'\\' || b >= 0x80) {
-				return self.word_slow(pos, end, Kind::Ident, flags, regex);
+				return unpack(self.word_slow_pair(pos, end, flags, regex));
 			}
 			self.pos = end;
 			return token(pos, end, keyword_spelled(&bytes[pos..end]), flags);
@@ -550,12 +550,23 @@ impl<'a> Lexer<'a> {
 			self.pos = pos + 1;
 			return token(pos, pos + 1, Kind::Dot, flags);
 		}
-		self.rest(pos, flags, regex)
+		unpack(self.rest(pos, flags, regex))
 	}
 
 	/// Every token, from `pos` on, `flags` being what the trivia before `pos` gave.
 	#[inline(never)]
-	fn rest(&mut self, mut pos: usize, mut flags: u8, regex: bool) -> Token {
+	fn rest(&mut self, pos: usize, flags: u8, regex: bool) -> (u64, u64) {
+		pack(self.rest_token(pos, flags, regex))
+	}
+
+	#[cold]
+	#[inline(never)]
+	fn word_slow_pair(&mut self, start: usize, from: usize, flags: u8, regex: bool) -> (u64, u64) {
+		pack(self.word_slow(start, from, Kind::Ident, flags, regex))
+	}
+
+	#[inline(always)]
+	fn rest_token(&mut self, mut pos: usize, mut flags: u8, regex: bool) -> Token {
 		let bytes = self.src.as_bytes();
 		loop {
 			let Some(&b) = bytes.get(pos) else {
@@ -851,7 +862,7 @@ impl<'a> Lexer<'a> {
 	fn skipped(&mut self, flags: u8, regex: bool) -> Token {
 		let mut newline = flags & NEWLINE_BEFORE;
 		loop {
-			let mut t = self.rest(self.pos, SKIPPING, regex);
+			let mut t = unpack(self.rest(self.pos, SKIPPING, regex));
 			newline |= t.flags & NEWLINE_BEFORE;
 			if t.flags & SKIPPED == 0 {
 				t.flags = (t.flags & !SKIPPING) | newline;
@@ -1239,6 +1250,22 @@ impl<'a> Lexer<'a> {
 		}
 		self.pos = pos;
 		token(start, pos, Kind::RegExp, flags)
+	}
+}
+
+#[inline(always)]
+fn pack(t: Token) -> (u64, u64) {
+	(t.start as u64 | (t.end as u64) << 32, t.kind as u8 as u64 | (t.flags as u64) << 8)
+}
+
+#[inline(always)]
+fn unpack((span, tag): (u64, u64)) -> Token {
+	Token {
+		start: span as u32,
+		end: (span >> 32) as u32,
+		// SAFETY: `pack` wrote a `Kind` there
+		kind: unsafe { std::mem::transmute::<u8, Kind>(tag as u8) },
+		flags: (tag >> 8) as u8,
 	}
 }
 
