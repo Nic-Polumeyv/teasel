@@ -1256,31 +1256,7 @@ fn token(start: usize, end: usize, kind: Kind, flags: u8) -> Token {
 }
 
 /// Where the run of ASCII identifier bytes from `pos` ends.
-#[cfg(feature = "batch")]
-#[inline(always)]
-fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
-	// eight bytes behind one bounds check
-	while let Some(chunk) = bytes.get(pos..pos + 8) {
-		let chunk: &[u8; 8] = chunk.try_into().unwrap();
-		let mut i = 0;
-		while i < 8 {
-			if CLASS[chunk[i] as usize] & ID_CONTINUE == 0 {
-				return pos + i;
-			}
-			i += 1;
-		}
-		pos += 8;
-	}
-	while let Some(&b) = bytes.get(pos) {
-		if CLASS[b as usize] & ID_CONTINUE == 0 {
-			break;
-		}
-		pos += 1;
-	}
-	pos
-}
-
-#[cfg(not(feature = "batch"))]
+// tried: eight bytes behind one bounds check, 0.2 to 3.3% more instructions per parse
 #[inline]
 fn ident_end(bytes: &[u8], mut pos: usize) -> usize {
 	while let Some(&b) = bytes.get(pos) {
