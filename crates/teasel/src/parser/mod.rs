@@ -541,6 +541,15 @@ impl<'a> Lexer<'a> {
 			self.pos = pos + 1;
 			return token(pos, pos + 1, kind, flags);
 		}
+		let after = bytes.get(pos + 1).copied().unwrap_or(0);
+		if b == b'=' && after != b'=' && after != b'>' {
+			self.pos = pos + 1;
+			return token(pos, pos + 1, Kind::Eq, flags);
+		}
+		if b == b'.' && after != b'.' && !after.is_ascii_digit() {
+			self.pos = pos + 1;
+			return token(pos, pos + 1, Kind::Dot, flags);
+		}
 		self.rest(pos, flags, regex)
 	}
 
