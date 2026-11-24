@@ -4,7 +4,7 @@ use super::checks::{
 	Binding, Label, LabelKind, PrivateKind, PrivateScope, SCOPE_CLASS_FIELD_INIT, SCOPE_CLASS_STATIC_BLOCK,
 	SCOPE_DIRECT_SUPER, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_TOP, function_flags,
 };
-use super::parse::{Ctx, Parser};
+use super::parse::{Ctx, MAX_DEPTH, Parser};
 use super::values::{self, Escape};
 use super::{ESCAPED, Kind, Token};
 use crate::ast::{Class, FieldKind, Function, List, MethodKind, NodeId, NodeKind, VariableKind};
@@ -317,10 +317,13 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	pub(super) fn statement(&mut self, place: u8) -> NodeId {
-		if self.too_deep() {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
 			return self.raise(self.tok.start, Code::NestingDepth);
 		}
-		self.statement_inner(place)
+		let node = self.statement_inner(place);
+		self.depth -= 1;
+		node
 	}
 
 	fn push_label(&mut self, kind: LabelKind) {
@@ -1189,7 +1192,8 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	pub(super) fn binding_atom(&mut self) -> NodeId {
 		match self.tok.kind {
 			Kind::BracketL => {
-				if self.too_deep() {
+				self.depth += 1;
+				if self.depth > MAX_DEPTH {
 					return self.raise(self.tok.start, Code::NestingDepth);
 				}
 				let start = self.tok.start;
@@ -1197,18 +1201,26 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 				let no_in = std::mem::replace(&mut self.ctx.no_in, false);
 				let elements = self.binding_list(Kind::BracketR, true);
 				self.ctx.no_in = no_in;
+				self.depth -= 1;
 				self.add(NodeKind::ArrayPattern { elements }, start)
 			}
 			Kind::BraceL => {
-				if self.too_deep() {
+				self.depth += 1;
+				if self.depth > MAX_DEPTH {
 					return self.raise(self.tok.start, Code::NestingDepth);
 				}
 				let no_in = std::mem::replace(&mut self.ctx.no_in, false);
 				let node = self.object_pattern();
 				self.ctx.no_in = no_in;
+				self.depth -= 1;
 				node
 			}
-			_ => self.ident(),
+			_ => {
+				if self.depth >= MAX_DEPTH {
+					return self.raise(self.tok.start, Code::NestingDepth);
+				}
+				self.ident()
+			}
 		}
 	}
 
@@ -1590,13 +1602,15 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 		}
 		let super_class = if self.tok.kind == Kind::Extends {
-			if self.too_deep() {
+			self.bump(true);
+			self.depth += 1;
+			if self.depth > MAX_DEPTH {
 				return self.raise(self.tok.start, Code::NestingDepth);
 			}
-			self.bump(true);
 			self.arrow_at = u32::MAX;
 			let at = self.tok.start;
 			let atom = self.atom(&mut None, false);
+			self.depth -= 1;
 			if self.error {
 				return atom;
 			}

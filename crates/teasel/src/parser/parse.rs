@@ -42,6 +42,7 @@ pub struct Scratch {
 	pub(super) stops_of: String,
 }
 
+pub(crate) const MAX_DEPTH: u32 = 1000;
 /// How many operators or subscripts one loop may chain: each nests the node before it.
 // wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
 const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
@@ -148,8 +149,7 @@ pub(crate) struct Parser<'a, const TS: bool> {
 	pub(super) ctx: Ctx,
 	pub(super) module: bool,
 	pub(super) strict: bool,
-	/// The lowest the stack may reach: a level of the grammar below it is too deep to read.
-	pub(super) floor: usize,
+	pub(super) depth: u32,
 	pub error: bool,
 	/// The first error of the grammar, and where the cursor stood when it was met.
 	pub(super) err: Option<SyntaxError>,
@@ -326,7 +326,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			},
 			module,
 			strict: module,
-			floor: crate::stack::floor(),
+			depth: 0,
 			error: false,
 			err: None,
 			err_at: 0,
@@ -439,12 +439,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			Kind::RegExp => t.start + 1 + (self.src.as_bytes().get(t.start as usize + 1) == Some(&b'=')) as u32,
 			_ => t.end,
 		}
-	}
-
-	/// Whether the stack has no room left for another level of the grammar.
-	#[inline(always)]
-	pub(super) fn too_deep(&self) -> bool {
-		crate::stack::position() < self.floor
 	}
 
 	/// `code` at `pos`: over the token at the cursor when it starts there, else at a point.
@@ -668,7 +662,8 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	pub(super) fn assign_with(&mut self, errors: &mut Errors) -> NodeId {
-		if self.too_deep() {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
 			return self.raise(self.tok.start, Code::NestingDepth);
 		}
 		if TS && (Kind::Lt as u8..=Kind::LtEq as u8).contains(&(self.tok.kind as u8)) {
@@ -678,11 +673,14 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 			if let Some(arrow) = arrow {
 				self.bare_arrow = false;
+				self.depth -= 1;
 				return arrow;
 			}
 		}
 		if self.ctx.generator && self.is_word(b"yield") {
-			return self.yield_expression();
+			let node = self.yield_expression();
+			self.depth -= 1;
+			return node;
 		}
 		let start = self.tok.start;
 		self.arrow_at = start;
@@ -721,8 +719,10 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 					right
 				}
 			};
+			self.depth -= 1;
 			return self.add(NodeKind::AssignmentExpression { operator, left, right }, start);
 		}
+		self.depth -= 1;
 		left
 	}
 
@@ -804,12 +804,14 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 				let held = facts.unwrap();
 				self.raise_expression_errors(&held);
 			}
+			self.depth -= 1;
 			return self.add(NodeKind::AssignmentExpression { operator, left, right }, start);
 		}
 		if !handing && facts.as_ref().unwrap().pending() {
 			let held = facts.unwrap();
 			self.raise_expression_errors(&held);
 		}
+		self.depth -= 1;
 		left
 	}
 
@@ -854,7 +856,8 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			self.bump(true);
 			let right_start = self.tok.start;
 			let operand = self.unary(true, &mut None);
-			if self.too_deep() {
+			self.depth += 1;
+			if self.depth > MAX_DEPTH {
 				return self.raise(self.tok.start, Code::NestingDepth);
 			}
 			let right = if self.operator_follows() {
@@ -862,6 +865,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			} else {
 				operand
 			};
+			self.depth -= 1;
 			if matches!(self.ast.node(right).kind, NodeKind::PrivateIdentifier { .. }) && !self.error {
 				let at = self.ast.node(right).start;
 				return self.raise(at, Code::PrivateNameOutsideIn);
@@ -879,10 +883,13 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	/// A prefix operator's expression, or an atom with what follows it; `exp` says a `**` may
 	/// follow, which no operator before it allows.
 	pub(super) fn unary(&mut self, exp: bool, errors: &mut Errors) -> NodeId {
-		if self.too_deep() {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
 			return self.raise(self.tok.start, Code::NestingDepth);
 		}
-		self.unary_inner(exp, errors)
+		let node = self.unary_inner(exp, errors);
+		self.depth -= 1;
+		node
 	}
 
 	fn unary_inner(&mut self, exp: bool, errors: &mut Errors) -> NodeId {
@@ -1547,6 +1554,10 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		if self.covering {
 			return Some(self.fail());
 		}
+		// a list of names holds a level while it is read, before its role is asked
+		if self.tok.kind == Kind::Ident && self.depth + 1 > MAX_DEPTH {
+			return Some(self.raise(self.tok.start, Code::NestingDepth));
+		}
 		let read = match self.tok.kind {
 			Kind::ParenR => return Some(self.empty_list(start)),
 			Kind::Ident => {
@@ -1618,6 +1629,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	fn name_list(&mut self, start: u32, one: bool) -> Option<NodeId> {
 		let back = (TS || !one).then(|| (self.tok_snap(), self.ast.mark()));
 		let base = self.scratch.items.len();
+		self.depth += 1;
 		let plain = loop {
 			if !self.plain_name(self.scratch.items.len() == base) {
 				break false;
@@ -1635,6 +1647,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 			self.bump(true);
 		};
+		self.depth -= 1;
 		if plain {
 			self.bump(false);
 			if self.tok.kind == Kind::Arrow && !self.newline() {
@@ -1930,8 +1943,19 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			self.await_ident_pos = 0;
 		}
 		let base = self.scratch.items.len();
+		let held = !matches!(self.tok.kind, Kind::ParenR | Kind::Ellipsis);
+		if held {
+			self.depth += 1;
+			if self.depth > MAX_DEPTH {
+				self.raise(self.tok.start, Code::NestingDepth);
+				return base;
+			}
+		}
 		self.modifiers_ok = false;
 		self.binding_items(Kind::ParenR, false);
+		if held {
+			self.depth -= 1;
+		}
 		if self.error {
 			return base;
 		}
@@ -2860,11 +2884,13 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			return self.add(NodeKind::MetaProperty { meta, property }, start);
 		}
 		let callee_start = self.tok.start;
-		if self.too_deep() {
+		self.depth += 1;
+		if self.depth > MAX_DEPTH {
 			return self.raise(self.tok.start, Code::NestingDepth);
 		}
 		self.arrow_at = u32::MAX;
 		let atom = self.atom(&mut None, true);
+		self.depth -= 1;
 		if self.error {
 			return atom;
 		}

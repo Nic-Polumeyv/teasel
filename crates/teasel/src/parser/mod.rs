@@ -24,6 +24,8 @@ use crate::error::SyntaxError;
 /// Errors travel boxed so every `Result` stays two words wide.
 pub(crate) type Result<T, E = Box<SyntaxError>> = std::result::Result<T, E>;
 
+pub(crate) use parse::MAX_DEPTH;
+
 /// The switches of a parse as one word, two bits per option in the order of npm/src/options.ts,
 /// holding the index of the option's value.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

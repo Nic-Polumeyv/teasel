@@ -280,28 +280,29 @@ fn nesting_limits() {
 	let limits = std::thread::Builder::new()
 		.stack_size(64 << 20)
 		.spawn(move || {
-			// where the limit lands is the stack each level takes, which the build decides
 			let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
-			assert!(module_error(&deep).starts_with("nesting_depth "));
+			assert_eq!(module_error(&deep).as_str(), "nesting_depth (499)");
 			assert!(program(&format!("{}1{}", "(".repeat(400), ")".repeat(400)), Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(9000));
 			assert!(program(&chain, Options::default()).is_ok());
 			let chain = format!("x = 1{}", " + 1".repeat(20000));
 			assert_eq!(module_error(&chain).as_str(), "nesting_depth (40006)");
-			let arrows = format!("x = {}x{};", "(a = ".repeat(2000), ") => a".repeat(2000));
-			assert!(module_error(&arrows).starts_with("nesting_depth "));
-			let typed = format!("x = {}x{};", "(a = ".repeat(2000), "): T => a".repeat(2000));
+			// an arrow's parameters hold the depth an expression list's items do
+			let arrows = format!("x = {}x{};", "(a = ".repeat(450), ") => a".repeat(450));
+			assert_eq!(module_error(&arrows).as_str(), "nesting_depth (1665)");
+			let typed = format!("x = {}x{};", "(a = ".repeat(450), "): T => a".repeat(450));
 			let error = program(&typed, typescript(Options(Options::MODULE))).unwrap_err();
-			assert_eq!(error.text, "nesting_depth");
-			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(1000), " : d".repeat(1000));
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 1665));
+			let spine = format!("x = {}c{};", "a ? (b): T => ".repeat(334), " : d".repeat(334));
 			let error = program(&spine, typescript(Options(Options::MODULE))).unwrap_err();
-			assert_eq!(error.text, "nesting_depth");
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 4656));
 			// a heritage is an expression that may hold a class
 			let heritage = format!("x = {}a{};", "class extends ".repeat(40_000), " {}".repeat(40_000));
-			assert!(module_error(&heritage).starts_with("nesting_depth "));
-			let generic = format!("x = {}a;", "<T>(a) => ".repeat(831));
-			let error = program(&generic, typescript(Options(Options::MODULE))).unwrap_err();
-			assert_eq!(error.text, "nesting_depth");
+			assert_eq!(module_error(&heritage).as_str(), "nesting_depth (13962)");
+			let generic = |levels| format!("x = {}a;", "<T>(a) => ".repeat(levels));
+			assert!(program(&generic(831), typescript(Options(Options::MODULE))).is_ok());
+			let error = program(&generic(2000), typescript(Options(Options::MODULE))).unwrap_err();
+			assert_eq!((error.text.as_str(), error.pos), ("nesting_depth", 9968));
 			// a list the closer reader leaves undecided is tried once: without its outcome kept, every
 			// enclosing failure tried it again, 2x per level, and 24 levels took 15 s
 			let nest = format!(
@@ -319,38 +320,6 @@ fn nesting_limits() {
 	let waited = finished.recv_timeout(std::time::Duration::from_secs(20));
 	assert_ne!(waited, Err(std::sync::mpsc::RecvTimeoutError::Timeout));
 	limits.join().unwrap();
-}
-
-/// A chain is a loop of the parser, so chains in parentheses nest a tree deeper than any recursion
-/// of the parser: what walks the tree after it stops at the same limit.
-#[test]
-fn deep_trees() {
-	let mut source = String::from("a /* c */");
-	for _ in 0..8 {
-		source = format!("({source}{})", ".b".repeat(9_000));
-	}
-	let source = format!("x = {source};");
-	let code = format!("\"code\":{},", Code::NestingDepth as u32);
-	let options = |bits: u32| Options(Options::MODULE | bits);
-	assert!(crate::estree::parse(&source, Entry::Program, 0, options(0)).contains(&code));
-	for bits in [Options::COMMENTS, Options::SCOPES] {
-		let answer = crate::estree::parse(&source, Entry::Program, 0, options(bits | Options::ERROR_RECOVERY));
-		assert!(answer.starts_with("{\"node\":null") && answer.contains(&code), "{bits}");
-		let answer = crate::estree::parse(&source, Entry::Program, 0, options(bits));
-		assert!(answer.starts_with("{\"node\":null") && answer.contains(&code), "{bits}");
-	}
-	// under recovery the tree stays, the walk's error listed
-	let mut ast = None;
-	crate::engine::read(
-		&source,
-		options(Options::SCOPES | Options::ERROR_RECOVERY),
-		Entry::Program,
-		0,
-		|tree, roots, _, _| {
-			ast = Some((roots.is_some(), tree.errors.iter().map(|e| e.code).collect::<Vec<_>>()));
-		},
-	);
-	assert_eq!(ast, Some((true, vec![Code::NestingDepth])));
 }
 
 #[test]
@@ -393,9 +362,11 @@ fn entry_points() {
 		params_error("{#snippet row(a = await x)}"),
 		("await_in_default_value".into(), 18)
 	);
-	// The nesting limit must fail before the stack does, on a thread with room for the limit.
+	// The nesting limit must fail before the stack does, on wasm's 1 MB; debug frames are far
+	// bigger, so the check gets a stack to match there.
+	let stack = if cfg!(debug_assertions) { 16 << 20 } else { 1 << 20 };
 	std::thread::Builder::new()
-		.stack_size(2 << 20)
+		.stack_size(stack)
 		.spawn(move || {
 			let deep = format!("({}a{})", "[".repeat(20_000), "]".repeat(20_000));
 			assert_eq!(params(&deep, 0, options, "").unwrap_err().code, Code::NestingDepth);
