@@ -497,7 +497,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	// ── statements and modules
 
 	/// First look at a statement; an answer replaces it entirely.
-	#[cold]
 	pub(super) fn ts_statement(&mut self) -> Option<NodeId> {
 		if self.tok.kind == Kind::At {
 			self.parse_decorators(true);
@@ -506,6 +505,12 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			}
 		}
 		let start = self.tok.start;
+		if self.tok.kind == Kind::Const && !self.peek_is_contextual("enum") {
+			if self.failed() {
+				return Some(self.fail_if_clean());
+			}
+			return None;
+		}
 		if self.head().is_some() || self.tok.kind == Kind::Const {
 			if let Some(opened) = self.open_declaration() {
 				return Some(self.parse_opened(start, opened));
@@ -2172,6 +2177,9 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	fn head(&self) -> Option<Head> {
 		if self.tok.kind != Kind::Ident || self.tok.flags & ESCAPED != 0 {
+			return None;
+		}
+		if !matches!(self.src.as_bytes()[self.tok.start as usize], b'a' | b'd' | b'e' | b'g' | b'i' | b'm' | b'n' | b't') {
 			return None;
 		}
 		Some(match self.tok_text() {
