@@ -2,7 +2,7 @@
 //! identifier resolved to the binding it names. Names are declared first, in the environment each
 //! belongs to, and every reference is resolved after, so hoisting and merging need nothing special.
 
-use crate::ast::{Ast, Kind, List, NodeId, NodeKind, VariableKind};
+use crate::ast::{Ast, Depth, Kind, List, NodeId, NodeKind, VariableKind};
 use crate::error::{Code, SyntaxError};
 use crate::handed::{Handed, Raw};
 use crate::interner::{FastMap, StrId};
@@ -562,8 +562,7 @@ pub struct Binder<'a> {
 	/// Whether any node has decorators.
 	// looked up at every node of a tree that has none instead, a parse with scopes took 1 to 2% longer
 	decorated: bool,
-	/// The lowest the stack may reach.
-	floor: usize,
+	depth: Depth,
 }
 
 impl<'a> Binder<'a> {
@@ -603,29 +602,7 @@ impl<'a> Binder<'a> {
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
 			decorated: ast.extras.records().iter().any(|extras| extras.decorators.is_some()),
-			floor: crate::stack::floor(),
-		}
-	}
-
-	/// Whether the walk can go no deeper: the tree is deeper than the stack has room for, or was.
-	#[inline(always)]
-	fn too_deep(&mut self, id: NodeId) -> bool {
-		if crate::stack::position() >= self.floor {
-			return false;
-		}
-		self.stop(id);
-		true
-	}
-
-	#[cold]
-	#[inline(never)]
-	fn stop(&mut self, id: NodeId) {
-		if self.floor != usize::MAX {
-			self.floor = usize::MAX;
-			let n = *self.ast.node(id);
-			self.out
-				.errors
-				.push(SyntaxError::new(n.start, Code::NestingDepth).to(n.end));
+			depth: Depth::default(),
 		}
 	}
 
@@ -1068,8 +1045,8 @@ impl<'a> Binder<'a> {
 	}
 
 	fn visit_member_target(&mut self, id: NodeId, root: Option<NodeId>) {
-		if self.too_deep(id) {
-			return;
+		if !self.depth.enter() {
+			return self.too_deep(id);
 		}
 		match self.kind(id) {
 			NodeKind::Identifier { .. } if Some(id) == root => self.reference(id, false, true),
@@ -1090,6 +1067,13 @@ impl<'a> Binder<'a> {
 				None => self.visit(id, Mode::Expression),
 			},
 		}
+		self.depth.leave();
+	}
+
+	#[cold]
+	#[inline(never)]
+	fn too_deep(&mut self, id: NodeId) {
+		self.out.errors.push(self.ast.too_deep(id));
 	}
 
 	fn decorators(&mut self, id: NodeId) {
@@ -1100,7 +1084,12 @@ impl<'a> Binder<'a> {
 		}
 	}
 
+	// with `class`, a level of its own: uncounted, a level of nested arrows took 352 bytes of stack
+	// against 184, of nested classes 244 against 168
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
+		if !self.depth.enter() {
+			return self.too_deep(id);
+		}
 		// a parameter's decorators are evaluated where the function is defined
 		if self.decorated {
 			for &param in self.ast.list(params).iter().flatten() {
@@ -1123,11 +1112,15 @@ impl<'a> Binder<'a> {
 			_ => self.visit(body, Mode::Expression),
 		}
 		self.exit();
+		self.depth.leave();
 	}
 
 	/// A class body: a class expression binds its own name inside, a declaration's body sees the
 	/// declaration's binding.
 	fn class(&mut self, id: NodeId, class: crate::ast::Class, expression: bool) {
+		if !self.depth.enter() {
+			return self.too_deep(id);
+		}
 		self.enter(ScopeKind::Class, Some(id), false);
 		if let (true, Some(name)) = (expression, class.id) {
 			self.declare_by(name, BindingKind::ClassName, id);
@@ -1135,6 +1128,7 @@ impl<'a> Binder<'a> {
 		self.maybe(class.super_class, Mode::Expression);
 		self.visit(class.body, Mode::Expression);
 		self.exit();
+		self.depth.leave();
 	}
 
 	fn declaration_kind(kind: VariableKind) -> BindingKind {
@@ -1247,8 +1241,8 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if self.too_deep(id) {
-			return;
+		if !self.depth.enter() {
+			return self.too_deep(id);
 		}
 		if extras && self.decorated {
 			self.decorators(id);
@@ -1776,13 +1770,14 @@ impl<'a> Binder<'a> {
 			}
 			ExportDefaultDeclaration { declaration } => self.visit(declaration, Mode::Expression),
 		}
+		self.depth.leave();
 	}
 
 	/// An assignment or update target: an identifier is written, a member chain mutates its root,
 	/// a pattern does both to what it names.
 	fn target(&mut self, id: NodeId) {
-		if self.too_deep(id) {
-			return;
+		if !self.depth.enter() {
+			return self.too_deep(id);
 		}
 		match self.kind(id) {
 			NodeKind::Identifier { .. } => self.reference(id, true, false),
@@ -1808,6 +1803,7 @@ impl<'a> Binder<'a> {
 				None => self.visit(id, Mode::Expression),
 			},
 		}
+		self.depth.leave();
 	}
 
 	fn targets(&mut self, list: List) {

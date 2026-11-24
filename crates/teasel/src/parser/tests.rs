@@ -322,6 +322,45 @@ fn nesting_limits() {
 	limits.join().unwrap();
 }
 
+/// A chain is a loop of the parser, so chains in parentheses nest a tree deeper than the parser
+/// recursed: the walks over it stop at their own count.
+#[test]
+fn deep_trees() {
+	std::thread::Builder::new()
+		.stack_size(64 << 20)
+		.spawn(|| {
+			let mut deep = String::from("a /* c */");
+			for _ in 0..5 {
+				deep = format!("({deep}{})", ".b".repeat(9_000));
+			}
+			let source = format!("y; // y\nx = {deep};\nlet y = 1; // let\n");
+			let answer = |bits: u32| crate::estree::parse(&source, Entry::Program, 0, Options(Options::MODULE | bits));
+			let failed = |end: u32| {
+				let code = Code::NestingDepth as u32;
+				format!(r#"{{"node":null,"errors":[{{"code":{code},"args":[],"pos":14,"end":{end},"line":2,"column":6}}]}}"#)
+			};
+			// the JSON writer, the comment attacher, the scope pass
+			assert_eq!(answer(0), failed(69555));
+			assert_eq!(answer(Options::COMMENTS), failed(69555));
+			assert_eq!(answer(Options::SCOPES), failed(69553));
+			// what lies outside the subtree keeps its facts
+			let options = Options(Options::MODULE | Options::COMMENTS | Options::SCOPES | Options::ERROR_RECOVERY);
+			crate::engine::read(&source, options, Entry::Program, 0, |ast, roots, _, _| {
+				assert!(roots.is_some());
+				let spans: Vec<_> = ast.errors.iter().map(|e| (e.code, e.pos, e.end)).collect();
+				assert_eq!(spans, [(Code::NestingDepth, 14, 69555), (Code::NestingDepth, 14, 69553)]);
+				let scopes = ast.scopes.as_ref().unwrap();
+				let y = scopes.references[0].binding.map(|b| ast.str(scopes.bindings[b as usize].name));
+				assert_eq!(y, Some("y"));
+				let trailing = |comment: u32| ast.attached.owners().iter().any(|&n| ast.attached.get(n).unwrap().trailing.indices().any(|i| i == comment));
+				assert!(trailing(0) && !trailing(1) && trailing(2));
+			});
+		})
+		.unwrap()
+		.join()
+		.unwrap();
+}
+
 #[test]
 fn entry_points() {
 	let options = Options(Options::MODULE);

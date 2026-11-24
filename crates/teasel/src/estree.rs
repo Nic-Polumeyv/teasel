@@ -1,9 +1,9 @@
 //! Serializes an `Ast` to ESTree as JSON text: what `cargo test` and `scripts/check.ts` read.
 
 use crate::Options;
-use crate::ast::{Ast, Extras, List, NodeId, NodeKind};
+use crate::ast::{Ast, Depth, Extras, List, NodeId, NodeKind};
 use crate::engine;
-use crate::error::{Code, SyntaxError};
+use crate::error::SyntaxError;
 use crate::interner::StrId;
 use crate::json::Json;
 use crate::layout::{Ty, tag};
@@ -39,10 +39,9 @@ pub struct Writer<'a> {
 	kept: Vec<(&'static str, NodeId)>,
 	/// Nodes erasure skipped whose facts the next node written takes over.
 	adopted: Vec<NodeId>,
-	/// The lowest the stack may reach.
-	floor: usize,
-	/// Where the tree reached deeper than that: the answer is this error alone.
-	deep: Option<SyntaxError>,
+	depth: Depth,
+	/// The subtrees too deep to write, each written as null.
+	deep: Vec<SyntaxError>,
 }
 
 impl<'a> Writer<'a> {
@@ -58,8 +57,8 @@ impl<'a> Writer<'a> {
 			name_only: false,
 			kept: Vec::new(),
 			adopted: Vec::new(),
-			floor: crate::stack::floor(),
-			deep: None,
+			depth: Depth::default(),
+			deep: Vec::new(),
 		}
 	}
 
@@ -76,16 +75,17 @@ impl<'a> Writer<'a> {
 			Some(roots) if entry == Entry::Params => self.list("node", roots),
 			Some(roots) => self.field("node", self.ast.list(roots)[0].unwrap()),
 		}
-		self.trailers(roots.is_none());
-		self.json.end();
-		if let Some(error) = self.deep {
+		if !self.deep.is_empty() && !self.options.has(Options::ERROR_RECOVERY) {
+			let first = *self.deep.iter().min_by_key(|error| error.pos).unwrap();
 			self.json = Json::default();
 			self.json.object();
 			self.key("node");
 			self.json.null();
-			self.errors(&[error]);
-			self.json.end();
+			self.errors(&[first]);
+		} else {
+			self.trailers(roots.is_none());
 		}
+		self.json.end();
 		self.json.finish()
 	}
 
@@ -256,15 +256,23 @@ impl<'a> Writer<'a> {
 	/// kept, the scopes; a failed parse lists its error alone.
 	/// A failed parse has its one error and nothing else listed.
 	fn trailers(&mut self, failed: bool) {
+		let ast = self.ast;
 		if failed {
-			return self.errors(&self.ast.errors);
+			return self.errors(&ast.errors);
 		}
 		if self.options.has(Options::COMMENTS) {
 			self.key("comments");
 			self.comment_list(0..self.ast.comments.len() as u32);
 		}
 		if self.options.has(Options::ERROR_RECOVERY) {
-			self.errors(&self.ast.errors);
+			if self.deep.is_empty() {
+				self.errors(&ast.errors);
+			} else {
+				let mut errors = ast.errors.clone();
+				errors.append(&mut self.deep);
+				errors.sort_by_key(|error| error.pos);
+				self.errors(&errors);
+			}
 		}
 		if self.options.has(Options::ERASE) {
 			self.all_kept();
@@ -388,6 +396,16 @@ impl<'a> Writer<'a> {
 	fn run(&mut self, id: NodeId, ops: &[Op], base: *const u8) -> bool {
 		for op in ops {
 			match *op {
+				Op::Keep(name) => {
+					if self.options.has(Options::ERASE) {
+						self.keep(name, id);
+					}
+				}
+				Op::KeepIf(name, slot) => {
+					if self.options.has(Options::ERASE) && get::<u8>(base, slot) == 1 {
+						self.keep(name, id);
+					}
+				}
 				Op::Through(slot) => {
 					if self.options.has(Options::ERASE) {
 						self.adopt(id);
@@ -395,19 +413,73 @@ impl<'a> Writer<'a> {
 						return false;
 					}
 				}
+				Op::EnumOr(key, slot, other) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					self.text(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
+				}
 				Op::Type(name) => self.begin(name, id),
+				Op::Bare(name) => {
+					self.json.begin(name);
+					self.scope_facts(id);
+				}
+				Op::Inner(key, front, back) => {
+					let node = self.ast.node(id);
+					self.key(key);
+					self.slice(node.start + front as u32, node.end - back as u32);
+				}
 				Op::TypeOf(slot) => {
 					let Ty::Enum(names) = slot.ty else { unreachable!() };
 					self.begin(names[get::<u8>(base, slot) as usize], id);
 				}
 				Op::Node(key, slot) => self.field(key, get(base, slot)),
+				Op::Int(key, slot) => {
+					self.key(key);
+					self.json.int(get(base, slot));
+				}
+				Op::Pair(key, slot) => {
+					self.key(key);
+					self.json.ints(&get::<[u32; 2]>(base, slot));
+				}
 				Op::Item(key, slot, place) => self.opt(key, self.ast.nth(get(base, slot), place as u32)),
 				Op::ItemKey(key, slot, place) => self.opt_key(key, self.ast.nth(get(base, slot), place as u32)),
+				Op::Slice(key, slot) => {
+					let span = self.ast.slice_of(get(base, slot));
+					self.key(key);
+					self.slice(span.start, span.end);
+				}
+				Op::SliceKey(key, slot) => {
+					if let Some(id) = get::<Option<crate::ast::SliceId>>(base, slot) {
+						let span = self.ast.slice_of(id);
+						self.key(key);
+						self.slice(span.start, span.end);
+					}
+				}
+				Op::Comments(key) => {
+					self.key(key);
+					self.comment_list(0..self.ast.comments.len() as u32);
+				}
+				Op::Edge(key, slot, end) => {
+					let span = self.ast.slice_of(get(base, slot));
+					let at = self
+						.positions
+						.offset(&mut self.cursor, if end { span.end } else { span.start });
+					self.key(key);
+					self.json.int(at);
+				}
 				Op::Splice(slot) => {
 					let held: NodeId = get(base, slot);
 					let kind = &self.ast.nodes[held.index() as usize].kind;
 					let base = kind as *const NodeKind as *const u8;
 					self.run(held, &KINDS[tag(base)][1..], base);
+				}
+				Op::Strs(key, slot) => {
+					let [start, len] = get::<[u32; 2]>(base, slot);
+					self.key(key);
+					self.json.list();
+					for i in start as usize..(start + len) as usize {
+						self.str_of(self.ast.modifiers[i]);
+					}
+					self.json.end();
 				}
 				Op::Opt(key, slot) => match slot.ty {
 					Ty::OptU32 => {
@@ -447,7 +519,10 @@ impl<'a> Writer<'a> {
 					}
 					_ => self.opt_key(key, get(base, slot)),
 				},
-				Op::Extra(key, ExtraSlot(slot)) => self.extra(id, key, slot),
+				Op::Extra(key, ExtraSlot(slot)) => {
+					let extras = self.ast.extras_of(id);
+					self.run(id, &[Op::Maybe(key, slot)], &extras as *const Extras as *const u8);
+				}
 				Op::List(key, slot) => self.list(key, get(base, slot)),
 				Op::OptListKey(key, slot) => {
 					if let Some(list) = get::<Option<List>>(base, slot) {
@@ -455,6 +530,49 @@ impl<'a> Writer<'a> {
 					}
 				}
 				Op::Params(key, slot) => self.params(key, get(base, slot)),
+				Op::Bool(key, slot) => self.bool(key, get(base, slot)),
+				Op::Str(key, slot) => self.interned(key, get(base, slot)),
+				Op::OptStrKey(key, slot) => {
+					if let Some(string) = get::<Option<StrId>>(base, slot) {
+						self.interned(key, string);
+					}
+				}
+				Op::Enum(key, slot) => {
+					let Ty::Enum(names) = slot.ty else { unreachable!() };
+					self.text(key, names[get::<u8>(base, slot) as usize]);
+				}
+				Op::Modifier(key, slot) => {
+					let Ty::OptEnum(names) = slot.ty else { unreachable!() };
+					if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
+						if name == "true" {
+							self.bool(key, true);
+						} else {
+							self.text(key, name);
+						}
+					}
+				}
+				Op::BoolNames(key, slot, &[yes, no]) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
+				Op::Float(key, slot) => {
+					let value = self.ast.numbers[get::<u32>(base, slot) as usize];
+					self.key(key);
+					if value.is_finite() {
+						self.json.float(value);
+					} else {
+						self.json.null();
+					}
+				}
+				Op::BigInt => {
+					let node = self.ast.node(id);
+					let raw = &self.source[node.start as usize..node.end as usize - 1];
+					let bigint = bigint_decimal(raw);
+					self.text("bigint", &bigint);
+				}
+				Op::ConstBool(key, value) => self.bool(key, value),
+				Op::Null(key) | Op::RegExp(key, ..) | Op::BigIntValue(key) => {
+					self.key(key);
+					self.json.null();
+				}
+				Op::EmptyList(key) => self.list(key, List::EMPTY),
 				Op::Object(key, inner) => {
 					self.key(key);
 					self.json.object();
@@ -462,157 +580,23 @@ impl<'a> Writer<'a> {
 					self.json.end();
 				}
 				Op::OtherName(key, name, binding) => self.other_name(key, get(base, name), get(base, binding)),
-				_ => self.leaf(id, *op, base),
 			}
 		}
 		true
 	}
 
-	/// An operation of a recipe that writes no node.
-	// in `run`, these took each level of a tree 496 bytes of stack against 160
-	#[inline(never)]
-	fn leaf(&mut self, id: NodeId, op: Op, base: *const u8) {
-		match op {
-			Op::Keep(name) => {
-				if self.options.has(Options::ERASE) {
-					self.keep(name, id);
-				}
-			}
-			Op::KeepIf(name, slot) => {
-				if self.options.has(Options::ERASE) && get::<u8>(base, slot) == 1 {
-					self.keep(name, id);
-				}
-			}
-			Op::EnumOr(key, slot, other) => {
-				let Ty::OptEnum(names) = slot.ty else { unreachable!() };
-				self.text(key, names.get(get::<u8>(base, slot) as usize).copied().unwrap_or(other));
-			}
-			Op::Bare(name) => {
-				self.json.begin(name);
-				self.scope_facts(id);
-			}
-			Op::Inner(key, front, back) => {
-				let node = self.ast.node(id);
-				self.key(key);
-				self.slice(node.start + front as u32, node.end - back as u32);
-			}
-			Op::Int(key, slot) => {
-				self.key(key);
-				self.json.int(get(base, slot));
-			}
-			Op::Pair(key, slot) => {
-				self.key(key);
-				self.json.ints(&get::<[u32; 2]>(base, slot));
-			}
-			Op::Slice(key, slot) => {
-				let span = self.ast.slice_of(get(base, slot));
-				self.key(key);
-				self.slice(span.start, span.end);
-			}
-			Op::SliceKey(key, slot) => {
-				if let Some(id) = get::<Option<crate::ast::SliceId>>(base, slot) {
-					let span = self.ast.slice_of(id);
-					self.key(key);
-					self.slice(span.start, span.end);
-				}
-			}
-			Op::Comments(key) => {
-				self.key(key);
-				self.comment_list(0..self.ast.comments.len() as u32);
-			}
-			Op::Edge(key, slot, end) => {
-				let span = self.ast.slice_of(get(base, slot));
-				let at = self
-					.positions
-					.offset(&mut self.cursor, if end { span.end } else { span.start });
-				self.key(key);
-				self.json.int(at);
-			}
-			Op::Strs(key, slot) => {
-				let [start, len] = get::<[u32; 2]>(base, slot);
-				self.key(key);
-				self.json.list();
-				for i in start as usize..(start + len) as usize {
-					self.str_of(self.ast.modifiers[i]);
-				}
-				self.json.end();
-			}
-			Op::Bool(key, slot) => self.bool(key, get(base, slot)),
-			Op::Str(key, slot) => self.interned(key, get(base, slot)),
-			Op::OptStrKey(key, slot) => {
-				if let Some(string) = get::<Option<StrId>>(base, slot) {
-					self.interned(key, string);
-				}
-			}
-			Op::Enum(key, slot) => {
-				let Ty::Enum(names) = slot.ty else { unreachable!() };
-				self.text(key, names[get::<u8>(base, slot) as usize]);
-			}
-			Op::Modifier(key, slot) => {
-				let Ty::OptEnum(names) = slot.ty else { unreachable!() };
-				if let Some(&name) = names.get(get::<u8>(base, slot) as usize) {
-					if name == "true" {
-						self.bool(key, true);
-					} else {
-						self.text(key, name);
-					}
-				}
-			}
-			Op::BoolNames(key, slot, &[yes, no]) => self.text(key, if get::<bool>(base, slot) { yes } else { no }),
-			Op::Float(key, slot) => {
-				let value = self.ast.numbers[get::<u32>(base, slot) as usize];
-				self.key(key);
-				if value.is_finite() {
-					self.json.float(value);
-				} else {
-					self.json.null();
-				}
-			}
-			Op::BigInt => {
-				let node = self.ast.node(id);
-				let raw = &self.source[node.start as usize..node.end as usize - 1];
-				let bigint = bigint_decimal(raw);
-				self.text("bigint", &bigint);
-			}
-			Op::ConstBool(key, value) => self.bool(key, value),
-			Op::Null(key) | Op::RegExp(key, ..) | Op::BigIntValue(key) => {
-				self.key(key);
-				self.json.null();
-			}
-			Op::EmptyList(key) => self.list(key, List::EMPTY),
-			_ => unreachable!("an operation that writes a node"),
-		}
-	}
-
-	// the record it copies would sit in `run`'s frame, at every level of the tree
-	#[inline(never)]
-	fn extra(&mut self, id: NodeId, key: &'static str, slot: Slot) {
-		let extras = self.ast.extras_of(id);
-		self.run(id, &[Op::Maybe(key, slot)], &extras as *const Extras as *const u8);
-	}
-
 	pub(crate) fn node(&mut self, id: NodeId) {
-		if crate::stack::position() < self.floor {
-			return self.too_deep(id);
+		if !self.depth.enter() {
+			self.deep.push(self.ast.too_deep(id));
+			return self.json.null();
 		}
 		let kind = &self.ast.nodes[id.index() as usize].kind;
 		// erasing may put a child in the node's place, which closes itself
 		let base = kind as *const NodeKind as *const u8;
-		if !self.run(id, KINDS[tag(base)], base) {
-			return;
+		if self.run(id, KINDS[tag(base)], base) {
+			self.end();
 		}
-		self.end();
-	}
-
-	#[cold]
-	#[inline(never)]
-	fn too_deep(&mut self, id: NodeId) {
-		if self.deep.is_none() {
-			self.floor = usize::MAX;
-			let node = self.ast.node(id);
-			self.deep = Some(SyntaxError::new(node.start, Code::NestingDepth).to(node.end));
-		}
-		self.json.null();
+		self.depth.leave();
 	}
 
 	/// Writes the keys TypeScript adds to a node.
