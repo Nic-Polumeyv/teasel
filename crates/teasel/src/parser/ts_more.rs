@@ -1985,9 +1985,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		if !self.enter() {
 			return NodeId::at(0);
 		}
-		let result = self.parse_module_or_namespace_declaration_inner(start, nested);
-		self.depth -= 1;
-		result
+		self.parse_module_or_namespace_declaration_inner(start, nested)
 	}
 
 	fn parse_module_or_namespace_declaration_inner(&mut self, start: u32, nested: bool) -> NodeId {

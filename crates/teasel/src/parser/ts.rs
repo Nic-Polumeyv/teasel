@@ -1,7 +1,7 @@
 //! TypeScript: its types, and the speculations that tell them from expressions.
 
 use super::checks::{Binding, SCOPE_ARROW, SCOPE_FUNCTION, SCOPE_TS_MODULE, function_flags};
-use super::parse::{Ctx, MAX_DEPTH, Parser};
+use super::parse::{Ctx, Parser};
 use super::{ESCAPED, Kind, LexError, NEWLINE_BEFORE, Token};
 use crate::ast::{
 	Accessibility, Clause, Extras, FieldKind, Keyword as TsKeyword, Kind as ImportKind, List, MethodKind, Modifier,
@@ -209,7 +209,6 @@ pub(super) struct Kept {
 	labels: usize,
 	private_names: usize,
 	undeclared_exports: usize,
-	depth: u32,
 	strict: bool,
 	in_type: bool,
 	state: Option<State>,
@@ -231,7 +230,6 @@ pub(super) struct Snap {
 	labels: usize,
 	private_names: usize,
 	undeclared_exports: usize,
-	depth: u32,
 	strict: bool,
 	state: Option<State>,
 	ast: crate::ast::Mark,
@@ -336,8 +334,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 	}
 
 	fn enter(&mut self) -> bool {
-		self.depth += 1;
-		if self.depth > MAX_DEPTH {
+		if self.too_deep() {
 			self.raise(self.tok.start, Code::NestingDepth);
 			return false;
 		}
@@ -466,7 +463,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			labels: self.scratch.checks.labels.len(),
 			private_names: self.scratch.checks.private_names.len(),
 			undeclared_exports: self.scratch.checks.undeclared_exports.len(),
-			depth: self.depth,
 			strict: self.strict,
 			state: TS.then(|| self.scratch.ts.state.clone()),
 			ast: self.ast.mark(),
@@ -485,7 +481,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			labels: self.scratch.checks.labels.len(),
 			private_names: self.scratch.checks.private_names.len(),
 			undeclared_exports: self.scratch.checks.undeclared_exports.len(),
-			depth: self.depth,
 			strict: self.strict,
 			in_type: self.in_type,
 			state: TS.then(|| self.scratch.ts.state.clone()),
@@ -504,7 +499,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.scratch.checks.labels.truncate(s.labels);
 		self.scratch.checks.private_names.truncate(s.private_names);
 		self.scratch.checks.undeclared_exports.truncate(s.undeclared_exports);
-		self.depth = s.depth;
 		self.set_strict(s.strict);
 		self.in_type = s.in_type;
 		if let Some(state) = s.state {
@@ -528,7 +522,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		self.scratch.checks.labels.truncate(s.labels);
 		self.scratch.checks.private_names.truncate(s.private_names);
 		self.scratch.checks.undeclared_exports.truncate(s.undeclared_exports);
-		self.depth = s.depth;
 		self.set_strict(s.strict);
 		if let Some(state) = s.state {
 			self.scratch.ts.state = state;
@@ -861,9 +854,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		if !self.enter() {
 			return NodeId::at(0);
 		}
-		let result = self.parse_type_inner();
-		self.depth -= 1;
-		result
+		self.parse_type_inner()
 	}
 
 	fn next_then_parse_type(&mut self) -> NodeId {
@@ -1104,7 +1095,6 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 			return NodeId::at(0);
 		}
 		let type_annotation = self.parse_type_operator_or_higher();
-		self.depth -= 1;
 		if self.error {
 			return type_annotation;
 		}

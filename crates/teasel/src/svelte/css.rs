@@ -492,7 +492,7 @@ impl Walker<'_> {
 
 	/// One more block or argument list open, `MAX_DEPTH` at most.
 	fn css_nest(&mut self) -> Result<()> {
-		if self.nesting >= crate::parser::MAX_DEPTH {
+		if self.nesting >= super::MAX_DEPTH {
 			return self.fail(self.at, self.at + 1, Code::NestingDepth, None);
 		}
 		self.nesting += 1;

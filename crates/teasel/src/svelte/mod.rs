@@ -19,6 +19,9 @@ use crate::interner::StrId;
 use crate::parser::scan::{find, is_space};
 use crate::parser::{Options, Result};
 
+/// How many elements, blocks and CSS blocks may be open at once.
+const MAX_DEPTH: u32 = 1000;
+
 /// Parses a Svelte component: its tree with the JavaScript inside it, positions of the whole
 /// source. Returns the tree and its root.
 pub(crate) fn parse_component(src: &str, options: Options, reused: Option<Box<Ast>>) -> (Box<Ast>, Result<NodeId>) {
@@ -348,7 +351,7 @@ impl<'a> Walker<'a> {
 	}
 
 	fn within_depth(&mut self, at: u32) -> Result<()> {
-		if self.frames.len() as u32 >= crate::parser::MAX_DEPTH {
+		if self.frames.len() as u32 >= MAX_DEPTH {
 			return self.fail(at, at + 1, Code::NestingDepth, None);
 		}
 		Ok(())
