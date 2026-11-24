@@ -1,0 +1,15 @@
+{
+	"node": null,
+	"errors": [
+		{
+			"code": 8,
+			"args": [
+				"𐀀"
+			],
+			"pos": 13,
+			"end": 13,
+			"line": 1,
+			"column": 13
+		}
+	]
+}

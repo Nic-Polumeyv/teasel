@@ -1,0 +1,48 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 35,
+		"scope": 0,
+		"body": [
+			{
+				"type": "TSImportEqualsDeclaration",
+				"start": 0,
+				"end": 35,
+				"importKind": "type",
+				"isExport": true,
+				"id": {
+					"type": "Identifier",
+					"start": 19,
+					"end": 20,
+					"decorators": [],
+					"optional": false,
+					"name": "A"
+				},
+				"moduleReference": {
+					"type": "TSExternalModuleReference",
+					"start": 23,
+					"end": 35,
+					"expression": {
+						"type": "Literal",
+						"start": 31,
+						"end": 34,
+						"value": "a",
+						"raw": "\"a\""
+					}
+				}
+			}
+		],
+		"sourceType": "module"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "module",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [],
+	"references": []
+}

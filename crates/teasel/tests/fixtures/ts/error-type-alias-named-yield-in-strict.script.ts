@@ -1,0 +1,1 @@
+"use strict"; type yield = 1

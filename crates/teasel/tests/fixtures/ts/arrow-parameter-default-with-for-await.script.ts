@@ -1,0 +1,1 @@
+(a = async function () { for await (x of y) /x/ }) => 1

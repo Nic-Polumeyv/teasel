@@ -1,0 +1,91 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 22,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ForOfStatement",
+				"start": 0,
+				"end": 22,
+				"await": false,
+				"left": {
+					"type": "VariableDeclaration",
+					"start": 5,
+					"end": 15,
+					"declarations": [
+						{
+							"type": "VariableDeclarator",
+							"start": 9,
+							"end": 15,
+							"defines": [
+								0
+							],
+							"id": {
+								"type": "ArrayPattern",
+								"start": 9,
+								"end": 15,
+								"elements": [
+									{
+										"type": "RestElement",
+										"start": 10,
+										"end": 14,
+										"argument": {
+											"type": "Identifier",
+											"start": 13,
+											"end": 14,
+											"declares": 0,
+											"name": "a"
+										}
+									}
+								]
+							},
+							"init": null
+						}
+					],
+					"kind": "var"
+				},
+				"right": {
+					"type": "Identifier",
+					"start": 19,
+					"end": 20,
+					"reference": 0,
+					"name": "b"
+				},
+				"body": {
+					"type": "EmptyStatement",
+					"start": 21,
+					"end": 22
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "var",
+			"scope": 0,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 0,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

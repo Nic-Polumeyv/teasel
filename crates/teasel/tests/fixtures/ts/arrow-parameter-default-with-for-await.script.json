@@ -1,0 +1,160 @@
+{
+	"node": {
+		"type": "Program",
+		"start": 0,
+		"end": 55,
+		"scope": 0,
+		"body": [
+			{
+				"type": "ExpressionStatement",
+				"start": 0,
+				"end": 55,
+				"expression": {
+					"type": "ArrowFunctionExpression",
+					"start": 0,
+					"end": 55,
+					"scope": 1,
+					"defines": [
+						0
+					],
+					"id": null,
+					"expression": true,
+					"generator": false,
+					"async": false,
+					"params": [
+						{
+							"type": "AssignmentPattern",
+							"start": 1,
+							"end": 49,
+							"decorators": [],
+							"optional": false,
+							"left": {
+								"type": "Identifier",
+								"start": 1,
+								"end": 2,
+								"declares": 0,
+								"decorators": [],
+								"optional": false,
+								"name": "a"
+							},
+							"right": {
+								"type": "FunctionExpression",
+								"start": 5,
+								"end": 49,
+								"scope": 2,
+								"declare": false,
+								"id": null,
+								"expression": false,
+								"generator": false,
+								"async": true,
+								"params": [],
+								"body": {
+									"type": "BlockStatement",
+									"start": 23,
+									"end": 49,
+									"body": [
+										{
+											"type": "ForOfStatement",
+											"start": 25,
+											"end": 47,
+											"await": true,
+											"left": {
+												"type": "Identifier",
+												"start": 36,
+												"end": 37,
+												"reference": 0,
+												"decorators": [],
+												"optional": false,
+												"name": "x"
+											},
+											"right": {
+												"type": "Identifier",
+												"start": 41,
+												"end": 42,
+												"reference": 1,
+												"writes": [
+													0
+												],
+												"decorators": [],
+												"optional": false,
+												"name": "y"
+											},
+											"body": {
+												"type": "ExpressionStatement",
+												"start": 44,
+												"end": 47,
+												"expression": {
+													"type": "Literal",
+													"start": 44,
+													"end": 47,
+													"value": null,
+													"raw": "/x/",
+													"regex": {
+														"pattern": "x",
+														"flags": ""
+													}
+												}
+											}
+										}
+									]
+								}
+							}
+						}
+					],
+					"body": {
+						"type": "Literal",
+						"start": 54,
+						"end": 55,
+						"value": 1,
+						"raw": "1"
+					}
+				}
+			}
+		],
+		"sourceType": "script"
+	},
+	"comments": [],
+	"scopes": [
+		{
+			"kind": "script",
+			"parent": null,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 0,
+			"topLevelAwait": false
+		},
+		{
+			"kind": "function",
+			"parent": 1,
+			"topLevelAwait": false
+		}
+	],
+	"bindings": [
+		{
+			"name": "a",
+			"kind": "param",
+			"scope": 1,
+			"write": true
+		}
+	],
+	"references": [
+		{
+			"scope": 2,
+			"binding": null,
+			"write": true,
+			"read": false,
+			"mutate": false,
+			"declares": false
+		},
+		{
+			"scope": 2,
+			"binding": null,
+			"write": false,
+			"read": true,
+			"mutate": false,
+			"declares": false
+		}
+	]
+}

@@ -1,0 +1,1 @@
+class A { #x; m() { 1 ** #x in y } }
