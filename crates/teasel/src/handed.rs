@@ -14,39 +14,20 @@ type Release = fn(NonNull<c_void>);
 thread_local! {
 	static ALLOCATE: Cell<Option<Allocate>> = const { Cell::new(None) };
 	static RELEASE: Cell<Option<Release>> = const { Cell::new(None) };
-	/// The lowest the stack may stand for `ALLOCATE` to be called: below it a buffer is the
-	/// process's own, and moves to one of the hook's when it is first viewed.
-	static FLOOR: Cell<usize> = const { Cell::new(0) };
-}
-
-/// How far below where the hook was set it may still be called. V8 ends the process when a buffer
-/// it allocates below its own stack limit (`--stack-size`, 984 KB on a main thread) starts a
-/// collection.
-const HOOK_DEPTH: usize = 128 << 10;
-
-/// Where the stack stands, to within the frame that asks.
-#[inline(always)]
-fn stack_position() -> usize {
-	let here = 0u8;
-	std::hint::black_box(&here) as *const u8 as usize
 }
 
 /// # Safety
 /// Each hook result must own a distinct writable allocation matching the layout, valid on this thread until
 /// `release` gets its token; `release` stays in force on this thread after `f` returns.
 pub unsafe fn allocating<R>(allocate: Allocate, release: Release, f: impl FnOnce() -> R) -> R {
-	struct Restore(Option<Allocate>, usize);
+	struct Restore(Option<Allocate>);
 	impl Drop for Restore {
 		fn drop(&mut self) {
 			ALLOCATE.set(self.0);
-			FLOOR.set(self.1);
 		}
 	}
 	RELEASE.set(Some(release));
-	let _restore = Restore(
-		ALLOCATE.replace(Some(allocate)),
-		FLOOR.replace(stack_position().saturating_sub(HOOK_DEPTH)),
-	);
+	let _restore = Restore(ALLOCATE.replace(Some(allocate)));
 	f()
 }
 
@@ -75,9 +56,7 @@ impl<T: Copy> Handed<T> {
 		let mut buffer = Self::new(least);
 		let layout = Layout::array::<T>(capacity).expect("buffer capacity overflow");
 		if layout.size() != 0 {
-			let ptr = if let Some(allocate) = ALLOCATE.get()
-				&& stack_position() >= FLOOR.get()
-			{
+			let ptr = if let Some(allocate) = ALLOCATE.get() {
 				let allocation = allocate(layout);
 				buffer.token = Some(allocation.token);
 				allocation.ptr
@@ -259,55 +238,8 @@ impl<T: Copy + 'static> Raw for Handed<T> {
 		}
 		if self.capacity == 0 {
 			self.grow(1);
-		} else if self.token.is_none() {
-			let mut lent = Self::with_capacity(self.capacity, self.least);
-			lent.extend_from_slice(self);
-			*self = lent;
 		}
 		self.viewed = true;
 		Some(self.token.expect("a view needs an allocation hook"))
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::{Allocation, Handed, Raw, allocating};
-	use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-
-	static LENT: AtomicUsize = AtomicUsize::new(0);
-
-	fn lend(layout: std::alloc::Layout) -> Allocation {
-		LENT.fetch_add(1, Relaxed);
-		let ptr = std::ptr::NonNull::new(unsafe { std::alloc::alloc(layout) }).unwrap();
-		Allocation { ptr, token: ptr.cast() }
-	}
-
-	fn keep(_: std::ptr::NonNull<std::ffi::c_void>) {}
-
-	#[inline(never)]
-	fn deep(levels: u32, buffer: &mut Handed<u32>) {
-		let room = std::hint::black_box([levels as u8; 4096]);
-		if levels == 0 {
-			buffer.extend_from_slice(&[room[0].into(); 64]);
-		} else {
-			deep(levels - 1, buffer);
-		}
-	}
-
-	/// A buffer that grows deep in the stack is the process's until it is viewed, near the top.
-	#[test]
-	fn lent_near_the_top() {
-		unsafe {
-			allocating(lend, keep, || {
-				let mut buffer = Handed::<u32>::with_capacity(4, 0);
-				buffer.push(7);
-				assert_eq!(LENT.load(Relaxed), 1);
-				deep(64, &mut buffer);
-				assert_eq!(LENT.load(Relaxed), 1);
-				assert!(buffer.allocation().is_some());
-				assert_eq!(LENT.load(Relaxed), 2);
-				assert_eq!((buffer[0], buffer[1], buffer.len()), (7, 0, 65));
-			});
-		}
 	}
 }

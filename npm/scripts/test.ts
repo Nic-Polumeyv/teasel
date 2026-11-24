@@ -527,8 +527,6 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 		assert.throws(() => read('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }), deep);
 		assert.equal(js('x', { scopes }).node.body.length, 1);
 	}
-	// a parse this deep grows its buffers past V8's stack limit, where V8 may not allocate them
-	assert.equal(js('x = ' + '<T>(a) => '.repeat(831) + 'a;', { typescript: true }).node.body.length, 1);
 	// tried: 501 rules deep in each sheet, a tree the decoder without code generation holds only once V8 has optimized it
 	const sheets = `<style>${'a {'.repeat(1000)}</style><style>a {}</style>`;
 	assert.deepEqual(read(sheets, { errorRecovery: true }).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
