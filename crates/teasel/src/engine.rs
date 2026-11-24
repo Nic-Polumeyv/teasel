@@ -14,7 +14,8 @@ use crate::svelte;
 pub type Words = crate::handed::Handed<u32>;
 
 /// The tree's layout, the names of its views and the recipes, as JSON: what the decoder reading
-/// the tree in place builds its readers from.
+/// the tree in place builds its readers from. The package carries it as `npm/src/layout.ts`,
+/// which `tests/fixtures.rs` writes.
 pub fn layout_json() -> String {
 	use crate::ast::Extras;
 	use crate::ast::Node;
@@ -122,7 +123,7 @@ pub fn layout_json() -> String {
 		}
 		w.end();
 	}
-	let mut w = Json::default();
+	let mut w = Json::wrapped(3);
 	w.object();
 	w.key("node");
 	w.object();
@@ -193,6 +194,25 @@ pub fn layout_json() -> String {
 	w.end();
 	w.end();
 	w.finish()
+}
+
+/// The stamp of a layout file: the number on its line `export const stamp = `, which a build
+/// carries so that the package refuses a build whose layout is not its own.
+pub const fn stamp(file: &[u8]) -> u32 {
+	const LINE: &[u8] = b"\nexport const stamp = ";
+	let mut at = 0;
+	let mut matched = 0;
+	while matched < LINE.len() {
+		assert!(at < file.len(), "a layout file names its stamp");
+		matched = if file[at] == LINE[matched] { matched + 1 } else { (file[at] == LINE[0]) as usize };
+		at += 1;
+	}
+	let mut stamp = 0u32;
+	while file[at].is_ascii_digit() {
+		stamp = stamp * 10 + (file[at] - b'0') as u32;
+		at += 1;
+	}
+	stamp
 }
 
 fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {

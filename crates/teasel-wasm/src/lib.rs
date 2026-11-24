@@ -92,7 +92,10 @@ pub extern "C" fn tree() -> *const u32 {
 	TREE.with(|t| t.as_ptr() as *const u32)
 }
 
+/// The layout this build writes the tree by, as the package's copy of it names it.
+const STAMP: u32 = teasel::engine::stamp(include_bytes!("../../../npm/src/layout.ts"));
+
 #[unsafe(no_mangle)]
-pub extern "C" fn layout() {
-	text(teasel::engine::layout_json());
+pub extern "C" fn stamp() -> u32 {
+	STAMP
 }

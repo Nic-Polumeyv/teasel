@@ -374,8 +374,6 @@ export type Tree = readonly (Uint32Array | Float64Array | Uint8Array | number | 
 
 /** What parses, as the reader sees it. */
 export interface Views {
-	/** The tree's memory layout, the names of its views and the recipes, as JSON. */
-	readonly layout: () => string;
 	/** The views of the last parse's tree, JavaScript's or TypeScript's; `moved` when a buffer of it has since this reader last took them. The same array as long as no view in it changed, `moved` aside. */
 	readonly tree: (typescript: boolean, moved: boolean) => Tree;
 }

@@ -4,6 +4,7 @@
 import type { Tree, Views } from './types.ts';
 import { CODES } from './types.ts';
 import { SLOT, type Flags } from './options.ts';
+import { layout } from './layout.ts';
 
 // symbol keys: ten times cheaper than a WeakMap entry, and skipped by JSON, Object.keys and for-in
 export const SCOPE = Symbol('scope');
@@ -13,38 +14,16 @@ export const PARENT = Symbol('parent');
 /** A decoded object: the tree decides its shape, `types.ts` describes it. */
 type Decoded = Record<string | symbol, any>;
 
-export interface Field {
-	name: string;
-	at: number;
-	ty: string;
-	names?: string[];
-	fields?: Field[];
-}
-interface Tagged {
-	tag: number;
-	missing: number;
-}
+type Layout = typeof layout;
 /** How the compiler spells a missing optional of each type. */
-interface Missing {
-	enum: number;
-	list: Tagged;
-	str: Tagged;
-	int: Tagged;
-}
-export type RawOp = [op: string, key: string, at: number, ty: string, names: string[], at2: number, value: string | boolean | null, other: string, inner: RawOp[]];
-export interface Layout {
-	/** A node's record: its size and where its span and its kind sit. */
-	node: { size: number; start: number; end: number; kind: number };
-	/** The kinds' names, by tag. */
-	kinds: string[];
-	extras?: { size: number; fields: Field[] };
-	/** The records beside the nodes and the tables, by their view's name. */
-	records: Record<'comments' | 'attached' | 'errors' | 'spans' | 'marks', { size: number; fields: Field[] }>;
-	none: Missing;
-	views: { js: string[]; ts?: string[] };
-	/** How each kind is spelled and what TypeScript adds to it, by tag; each table's name, its record's size and how its rows are spelled. */
-	recipes: { kinds: RawOp[][]; rows: [name: string, size: number, ops: RawOp[]][]; adds?: RawOp[][]; erased?: RawOp[] };
-}
+type Missing = Layout['none'];
+type Tagged = Missing['list' | 'str' | 'int'];
+/** `T`, what it lists at `key`, what that lists there, and so on down. */
+type Nested<T, K extends PropertyKey> = T | (T extends { readonly [k in K]: readonly (infer I)[] } ? Nested<I, K> : never);
+/** A record's field, a field of a record inside it among them. */
+type Field = Nested<Layout['extras']['fields'][number] | Layout['records'][keyof Layout['records']]['fields'][number], 'fields'>;
+/** An operation of a recipe as the layout spells it, an operation inside one among them. */
+type RawOp = Nested<Layout['recipes']['kinds'][number][number] | Layout['recipes']['rows'][number][2][number] | Layout['recipes']['adds'][number][number] | Layout['recipes']['erased'][number], 8>;
 
 // one class for every operation: the interpreter's switch stays monomorphic
 interface Op {
@@ -53,7 +32,7 @@ interface Op {
 	/** Byte offset of the field from the record's start. */
 	at: number;
 	ty: string;
-	names: string[];
+	names: readonly string[];
 	/** The binding's field of `othername`. */
 	at2: number;
 	/** What `constbool` spells, `boolnames`' name for true, or whether `edge` reads the end. */
@@ -64,7 +43,6 @@ interface Op {
 }
 
 interface Language {
-	layout: Layout;
 	/** Each view's place in the tree, by name. */
 	at: At;
 	/** By a kind's tag, resolved the first time the kind is met. */
@@ -93,7 +71,6 @@ interface Rows {
 	words: number;
 }
 interface Compiled {
-	layout: Layout;
 	words: number;
 	kind: number;
 	/** The first of Svelte's kinds: every kind from it on is one. */
@@ -111,39 +88,39 @@ interface Compiled {
 }
 
 /** A field by its path, `a` or `a.b.c`, an inner field at its offset in the record. */
-function field(fields: Field[], path: string): Field {
+function field(fields: readonly Field[], path: string) {
 	let found: Field | undefined, at = 0;
 	for (const name of path.split('.')) {
-		found = (found === undefined ? fields : found.fields!).find((f) => f.name === name)!;
+		found = (found === undefined || !('fields' in found) ? fields : found.fields).find((f) => f.name === name)!;
 		at += found.at;
 	}
 	return { ...found!, at };
 }
 
-/** The operations as the engine tells them, each field already found. */
-export function operations(raw: RawOp[]): Op[] {
+/** The operations as the layout spells them, each field already found. */
+export function operations(raw: readonly RawOp[]): Op[] {
 	return raw.map(([op, key, at, ty, names, at2, value, other, inner]) => ({ op, key, at, ty, names, at2, value, other, inner: operations(inner) }));
 }
 
 // a literal: an object filled by computed keys turns into a dictionary, a hash lookup per read
-function places(views: string[]) {
+function places(views: readonly string[]) {
 	const of = (name: string) => 1 + views.indexOf(name);
 	return { nodes: of('nodes'), lists: of('lists'), numbers: of('numbers'), text: of('text'), starts: of('starts'), marks: of('marks'), units: of('units'), spans: of('spans'), parenthesized: of('parenthesized'), erased: of('erased'), comments: of('comments'), attached_slots: of('attached_slots'), attached: of('attached'), errors: of('errors'), modifiers: of('modifiers'), slices: of('slices'), scopes: of('scopes'), bindings: of('bindings'), references: of('references'), roots: of('roots'), of_node: of('of_node'), of_identifier: of('of_identifier'), root_of: of('root_of'), declared_by: of('declared_by'), declared_by_at: of('declared_by_at'), writes_of: of('writes_of'), writes_of_at: of('writes_of_at'), extras_slots: of('extras_slots'), extras: of('extras'), rare: of('rare'), late: of('late'), /** Past the last view's length in the answer's words: where the tree's buffers sit, folded into two. */ sits: 1 + views.length };
 }
 /** Each view's place in a tree; zero for a view the tree does not have. */
 type At = ReturnType<typeof places>;
 
-function language(layout: Layout, views: string[], typescript: boolean): Language {
-	const out: Language = { layout, at: places(views), recipes: new Array(layout.kinds.length), adds: [], erased: [], sets: new Map(), last: -1, builders: undefined, state: undefined, tree: undefined, sat: [-1, -1] };
+function language(views: readonly string[], typescript: boolean): Language {
+	const out: Language = { at: places(views), recipes: new Array(layout.kinds.length), adds: [], erased: [], sets: new Map(), last: -1, builders: undefined, state: undefined, tree: undefined, sat: [-1, -1] };
 	if (typescript) {
-		out.adds = layout.recipes.adds!.map(operations);
-		out.erased = operations(layout.recipes.erased!);
+		out.adds = layout.recipes.adds.map(operations);
+		out.erased = operations(layout.recipes.erased);
 	}
 	return out;
 }
 
 // each record's words, and its fields' offsets in words, a byte's in bytes
-function records(layout: Layout) {
+function records() {
 	const R = layout.records;
 	const of = (name: keyof Layout['records'], path: string) => field(R[name].fields, path);
 	const word = (name: keyof Layout['records'], path: string) => of(name, path).at >> 2;
@@ -151,7 +128,7 @@ function records(layout: Layout) {
 	// an optional's tag word and its value's, as the layout spells a missing one of its type
 	const optional = (name: keyof Layout['records'], path: string) => {
 		const field = of(name, path);
-		const none = field.ty === '?str' ? layout.none.str : field.ty === '?u32' ? layout.none.int : undefined;
+		const none = field.ty === '?str' ? layout.none.str : undefined;
 		if (none === undefined) throw new Error(`${name}.${path} is not an optional the decoder reads`);
 		const [tag, value] = tagged(none, field.at);
 		return { tag: tag >> 2, value: value >> 2, missing: none.missing };
@@ -167,23 +144,21 @@ function records(layout: Layout) {
 }
 type Records = ReturnType<typeof records>;
 
-const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= operations(G.layout.recipes.kinds[tag]));
+const recipe = (G: Language, tag: number): Op[] => (G.recipes[tag] ??= operations(layout.recipes.kinds[tag]));
 
 const compiled = new WeakMap<object, Compiled>();
 
 function compile(engine: Views): Compiled {
 	const known = compiled.get(engine);
 	if (known !== undefined) return known;
-	const layout: Layout = JSON.parse(engine.layout());
-	const tag = (name: string) => layout.kinds.indexOf(name);
-	const blank = new Uint32Array((layout.extras?.size ?? 0) >> 2);
-	for (const field of layout.extras?.fields ?? []) {
+	const tag = (name: Layout['kinds'][number]) => layout.kinds.indexOf(name);
+	const blank = new Uint32Array(layout.extras.size >> 2);
+	for (const field of layout.extras.fields) {
 		if (field.ty === '?enum') blank[field.at >> 2] |= layout.none.enum << ((field.at & 3) << 3);
 		else if (field.ty === '?list') blank[(field.at >> 2) + layout.none.list.tag] = layout.none.list.missing;
 	}
-	const R = records(layout);
+	const R = records();
 	const made: Compiled = {
-		layout,
 		words: layout.node.size >> 2,
 		kind: layout.node.kind,
 		markup: tag('Fragment'),
@@ -192,7 +167,7 @@ function compile(engine: Views): Compiled {
 		blank,
 		R,
 		rows: undefined,
-		js: language(layout, layout.views.js, false),
+		js: language(layout.views.js, false),
 		ts: undefined,
 	};
 	compiled.set(engine, made);
@@ -200,7 +175,6 @@ function compile(engine: Views): Compiled {
 }
 
 function tables(C: Compiled): NonNullable<Compiled['rows']> {
-	const { layout } = C;
 	const rows = (name: Table): Rows => {
 		const [, size, ops] = layout.recipes.rows.find(([table]) => table === name)!;
 		return { build: row(C, name, operations(ops), LINKED[name]), words: size >> 2 };
@@ -368,7 +342,7 @@ for (let i = 0; i < 7; i++) new Room(true);
 
 // V8 turns a literal of three keys into a dictionary at the sixteenth key computed stores add, so a node that may have that many starts with room for 24
 function wide(S: State, id: number, P: Program): boolean {
-	if (P.extras === -1) P.extras = S.G !== S.C.ts ? 0 : program(S.erase ? S.G.erased : adds_of(S, id), S.C.layout.none, !S.erase).size;
+	if (P.extras === -1) P.extras = S.G !== S.C.ts ? 0 : program(S.erase ? S.G.erased : adds_of(S, id), layout.none, !S.erase).size;
 	const slot = S.attached_slots === null ? 0 : S.attached_slots[id];
 	return 6 + (S.parenthesized !== null ? 1 : 0) + P.extras + (slot > 0 ? 3 : 0) + P.size > 18;
 }
@@ -396,7 +370,7 @@ function begin(S: State, type: string, id: number, parent: Decoded | undefined, 
 	if (S.parenthesized !== null && bit(S.parenthesized, id)) n.parenthesized = true;
 	if (S.G === S.C.ts) {
 		const slot = S.extras_slots === null ? 0 : S.extras_slots[id];
-		const base = (slot - 1) * S.C.layout.extras!.size;
+		const base = (slot - 1) * layout.extras.size;
 		if (S.erase) {
 			if (slot > 0) apply(S, id, n, S.G.erased, S.extras, base);
 		} else {
@@ -438,7 +412,7 @@ interface Spelling<E, St> {
 	strings(index: E): E;
 	numbers(index: E): E;
 	/** A constant table, and an element of one. */
-	table(list: (string | true)[]): E;
+	table(list: readonly (string | true)[]): E;
 	at(table: E, index: E): E;
 	/** The node with an id, built into the node at hand. */
 	built(id: E): E;
@@ -630,7 +604,7 @@ class Closures implements Spelling<Value, Stmt> {
 			const slot = (this.xb = this.slots++);
 			this.lead.push((S, V, b, n, L, id) => {
 				const xs = S.extras_slots, x = xs !== null && id < xs.length ? xs[id] : 0;
-				L[slot] = x === 0 ? -1 : (x - 1) * (S.C.layout.extras!.size >> 2);
+				L[slot] = x === 0 ? -1 : (x - 1) * (layout.extras.size >> 2);
 			});
 		}
 		return this.xb;
@@ -644,7 +618,7 @@ class Closures implements Spelling<Value, Stmt> {
 	pick = (test: Value, yes: Value, no: Value): Value => (S, V, b, n, L) => (test(S, V, b, n, L) ? yes(S, V, b, n, L) : no(S, V, b, n, L));
 	strings = (index: Value): Value => (S, V, b, n, L) => S.strings[index(S, V, b, n, L)];
 	numbers = (index: Value): Value => (S, V, b, n, L) => S.numbers[index(S, V, b, n, L)];
-	table = (list: (string | true)[]): Value => () => list;
+	table = (list: readonly (string | true)[]): Value => () => list;
 	at = (table: Value, index: Value): Value => (S, V, b, n, L) => table(S, V, b, n, L)[index(S, V, b, n, L)];
 	built = (id: Value): Value => (S, V, b, n, L) => build(S, id(S, V, b, n, L), n);
 	items = (start: Value, len: Value, params_: boolean): Value => (S, V, b, n, L) => (params_ ? params : items)(S, start(S, V, b, n, L), len(S, V, b, n, L), n);
@@ -726,7 +700,7 @@ function program(ops: Op[], none: Missing, typescript: boolean): Program {
 			body.push((S, V, b, n) => {
 				const held = V[(b + at) >> 2] - 1;
 				const ops = recipe(S.G, S.N[held * S.C.words + (S.C.kind >> 2)]);
-				fill(S, held, n, program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase), S.N, held * S.C.words * 4 + S.C.kind);
+				fill(S, held, n, program(ops, layout.none, S.G === S.C.ts && !S.erase), S.N, held * S.C.words * 4 + S.C.kind);
 			});
 			continue;
 		}
@@ -741,7 +715,7 @@ function program(ops: Op[], none: Missing, typescript: boolean): Program {
 
 const NO_LOCALS: unknown[] = [];
 
-const apply = (S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, base: number) => fill(S, id, n, program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase), view, base);
+const apply = (S: State, id: number, n: Decoded, ops: Op[], view: Uint32Array, base: number) => fill(S, id, n, program(ops, layout.none, S.G === S.C.ts && !S.erase), view, base);
 
 function fill(S: State, id: number, n: Decoded, { slots, lead, body }: Program, view: Uint32Array, base: number) {
 	const L = slots === 0 ? NO_LOCALS : new Array<unknown>(slots);
@@ -769,7 +743,7 @@ function run(S: State, id: number, ops: Op[], view: Uint32Array, base: number, p
 		} else break;
 	}
 	const head = ops[at];
-	const P = program(ops, S.C.layout.none, S.G === S.C.ts && !S.erase);
+	const P = program(ops, layout.none, S.G === S.C.ts && !S.erase);
 	let n: Decoded;
 	if (head.op === 'bare') {
 		n = { type: head.key };
@@ -847,7 +821,7 @@ const sometimes = (op: Op, typescript: boolean) => CONDITIONAL.has(op.op) && !(t
 // ── The source spelling: what a generated builder is made of. `word` and `byte` spell a read of
 // the record at hand: a node's or a table row's.
 class Source implements Spelling<string, string> {
-	constants: (string | true)[][] = [];
+	constants: (readonly (string | true)[])[] = [];
 	lead: string[] = [];
 	count = 0;
 	word: (at: number) => string;
@@ -873,7 +847,7 @@ class Source implements Spelling<string, string> {
 	pick = (test: string, yes: string, no: string) => `(${test} ? ${yes} : ${no})`;
 	strings = (index: string) => `S.strings[${index}]`;
 	numbers = (index: string) => `S.numbers[${index}]`;
-	table = (list: (string | true)[]) => `K[${this.constants.push(list) - 1}]`;
+	table = (list: readonly (string | true)[]) => `K[${this.constants.push(list) - 1}]`;
 	at = (table: string, index: string) => `${table}[${index}]`;
 	// a child's builder is looked up where the child is read: each site sees its own few kinds
 	built = (id: string, into = 'n') => `J[N[${id} * ${this.words} + ${this.kind >> 2}]](S, ${id}, ${into})`;
@@ -935,7 +909,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 	const word = (at: number) => `N[b + ${(C.kind + at) >> 2}]`;
 	const byte = (at: number) => `(${word(at)} >>> ${((C.kind + at) & 3) << 3} & 255)`;
 	const B = new Source(word, byte, facts, C.words, C.kind);
-	const none = C.layout.none;
+	const none = layout.none;
 	let at = 0;
 	for (; ops[at].op === 'keep' || ops[at].op === 'through'; at++) {
 		if (!erase) continue;
@@ -958,7 +932,7 @@ function generate(C: Compiled, G: Language, config: number, ops: Op[], adds: Op[
 		B.lead = lead;
 		tail.push(B.set(key_of(op), v));
 	};
-	if (adds.length !== 0 || ops.some((op) => op.op === 'extra')) B.lead.push(`const xs = S.extras_slots, x = xs !== null && id < xs.length ? xs[id] : 0, X = x === 0 ? S.C.blank : S.extras, xb = x === 0 ? 0 : (x - 1) * ${C.layout.extras!.size >> 2};`);
+	if (adds.length !== 0 || ops.some((op) => op.op === 'extra')) B.lead.push(`const xs = S.extras_slots, x = xs !== null && id < xs.length ? xs[id] : 0, X = x === 0 ? S.C.blank : S.extras, xb = x === 0 ? 0 : (x - 1) * ${layout.extras.size >> 2};`);
 	if (adds.length !== 0) {
 		const own = [B.word, B.byte];
 		[B.word, B.byte] = [B.extra, B.extrabyte];
@@ -1059,7 +1033,7 @@ function row(C: Compiled, name: Table, ops: Op[], linked: Linked): Row {
 		};
 	}
 	const B = new Source((at) => `V[b + ${at >> 2}]`, (at) => `(V[b + ${at >> 2}] >>> ${(at & 3) << 3} & 255)`, false, C.words, C.kind);
-	const none = C.layout.none;
+	const none = layout.none;
 	const props = ops.map((op) => {
 		const key = JSON.stringify(op.key), into = linked.into[op.key];
 		if (into === undefined) return `${key}: ${value(B, op, none, false)}`;
@@ -1084,7 +1058,7 @@ function builders(C: Compiled, G: Language, config: number, typescript: boolean)
 		const ops = recipe(G, tag);
 		return generated ? generate(C, G, config, ops, typescript && (config & ERASE) === 0 ? G.adds[tag] : NO_OPS) : (S, id, parent) => run(S, id, ops, S.N, id * C.words * 4 + C.kind, parent);
 	};
-	const set: Builder[] = new Array<Builder>(C.layout.kinds.length).fill((S, id, parent) => (set[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent));
+	const set: Builder[] = new Array<Builder>(layout.kinds.length).fill((S, id, parent) => (set[S.N[id * C.words + (C.kind >> 2)]] = js(S.N[id * C.words + (C.kind >> 2)]))(S, id, parent));
 	G.sets.set(config, set);
 	return (G.builders = set);
 }
@@ -1183,7 +1157,7 @@ export function decode(words: Uint32Array, source: string, engine: Views): Decod
 	const lens = 1 + words[0];
 	const what = words[lens];
 	const typescript = (what & TS_OPTION) !== 0;
-	const G = typescript ? (C.ts ??= language(C.layout, C.layout.views.ts!, true)) : C.js;
+	const G = typescript ? (C.ts ??= language(layout.views.ts, true)) : C.js;
 	const at = G.at;
 	const lo = words[lens + at.sits], hi = words[lens + at.sits + 1];
 	const moved = lo !== G.sat[0] || hi !== G.sat[1];
@@ -1248,7 +1222,7 @@ export function decode(words: Uint32Array, source: string, engine: Views): Decod
 	S.strings = failed ? strings(C, tree, words, lens, at, args_of(C.R.error, rows, 0)) : strings(C, tree, words, lens, at);
 	S.P = spans ? (tree[at.spans] as Uint32Array) : S.N;
 	S.ps = spans ? C.R.span.words : C.words;
-	S.po = spans ? C.R.span.start : C.layout.node.start >> 2;
+	S.po = spans ? C.R.span.start : layout.node.start >> 2;
 	S.parenthesized = filled(tree, words, lens, at.parenthesized);
 	S.erased = erase ? filled(tree, words, lens, at.erased) : null;
 	const count = words[lens + at.comments] / C.R.comment.words;

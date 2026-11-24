@@ -94,7 +94,6 @@ api! {
 	fn napi_create_reference(env: Env, value: Value, count: u32, result: *mut Ref) -> Status;
 	fn napi_delete_reference(env: Env, reference: Ref) -> Status;
 	fn napi_get_reference_value(env: Env, reference: Ref, result: *mut Value) -> Status;
-	fn napi_create_string_utf8(env: Env, text: *const c_char, length: usize, result: *mut Value) -> Status;
 	fn napi_create_array_with_length(env: Env, length: usize, result: *mut Value) -> Status;
 	fn napi_set_element(env: Env, array: Value, index: u32, value: Value) -> Status;
 	fn napi_create_uint32(env: Env, value: u32, result: *mut Value) -> Status;

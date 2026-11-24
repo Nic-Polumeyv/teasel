@@ -1,9 +1,11 @@
 // the source goes over as bytes because V8's encoder beat the host reading a string out 3.4x at 1 MB and 10x at 56 KB on Node 26.8.1 (2026-10-28)
 import type { Engine, Tree } from '../types.ts';
+import { stamp } from '../layout.ts';
 import { load } from './addon.ts';
 import { compile } from './wasm.ts';
 
 const native = load();
+if (native !== undefined && native.stamp !== stamp) throw new Error('@teasel/parser: the native build writes the tree by another layout than this JavaScript reads it by; install or build the two together');
 const encoder = new TextEncoder();
 const trees: (Tree | undefined)[] = [undefined, undefined];
 let scratch = new Uint8Array(1 << 16);
@@ -19,7 +21,6 @@ function bytes(text: string) {
 
 export const engine: Engine = native === undefined ? compile() : {
 	parse: (source, flags, language) => native.parse(bytes(source), flags, language),
-	layout: native.layout,
 	// the addon keeps one array of views a tree and sets what moved: asked only then
 	tree: (typescript, moved) => (moved || trees[+typescript] === undefined ? (trees[+typescript] = native.tree()!) : trees[+typescript]!),
 };

@@ -564,10 +564,9 @@ if (name !== 'native') {
 	assert.equal((built.parse('<p>{x}</p>').node.fragment.nodes[0] as Any).name, 'p', `${name} dist`);
 }
 
-// src/children.ts is written from the engine's layout by scripts/children.ts: the two must agree
+// src/children.ts is written from src/layout.ts by scripts/children.ts: the two must agree
 {
-	const { engine } = await import('#engine');
-	const made = generate(JSON.parse(engine.layout()));
+	const made = generate();
 	assert.deepEqual(JSON.parse(JSON.stringify(tables.children)), made.children, 'run node scripts/children.ts');
 	assert.deepEqual([...m.extras], made.extras, 'run node scripts/children.ts');
 	assert.deepEqual(JSON.parse(JSON.stringify(m.children)), { ...made.children, ...made.svelte }, 'run node scripts/children.ts');

@@ -1,12 +1,12 @@
-// `node scripts/children.ts` writes src/children.ts from the engine's layout: for every node type, the fields that hold nodes; the tests check they agree
+// `node scripts/children.ts` writes src/children.ts from the engine's layout, src/layout.ts: for every node type, the fields that hold nodes; the tests check they agree
 import { writeFileSync } from 'node:fs';
-import { holds_nodes, operations, type Layout } from '../src/decode.ts';
+import { holds_nodes, operations } from '../src/decode.ts';
+import { layout } from '../src/layout.ts';
 
-/** From the layout the engine hands over: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
-export function generate(layout: Layout): { children: Record<string, string[]>; extras: string[]; svelte: Record<string, string[]> } {
-	const extra_fields = layout.extras?.fields ?? [];
+/** From the layout: each type with the keys that hold nodes or lists of nodes, and the keys TypeScript may add to any node. */
+export function generate(): { children: Record<string, string[]>; extras: string[]; svelte: Record<string, string[]> } {
 	// Svelte's root lists the scripts it never has, `js`, and its comments are not its children
-	const table = (kinds: Layout['recipes']['kinds'], svelte = false) => {
+	const table = (kinds: (typeof layout)['recipes']['kinds'][number][], svelte = false) => {
 		const children: Record<string, string[]> = {};
 		for (const raw of kinds) {
 			const ops = operations(raw);
@@ -26,9 +26,9 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 	const first = layout.kinds.indexOf('Fragment');
 	const children = table(layout.recipes.kinds.slice(0, first));
 	const svelte = table(layout.recipes.kinds.slice(first), true);
-	const adds = (layout.recipes.adds ?? []).flat();
+	const adds = layout.recipes.adds.flat();
 	const extras: string[] = [];
-	for (const field of extra_fields) {
+	for (const field of layout.extras.fields) {
 		const add = adds.find(([op, , at]) => op === 'maybe' && at === field.at);
 		if (add !== undefined && (field.ty === '?node' || field.ty === '?list')) extras.push(add[1]);
 	}
@@ -36,8 +36,7 @@ export function generate(layout: Layout): { children: Record<string, string[]>; 
 }
 
 if (import.meta.main) {
-	const { engine } = await import('../dist/engine/node.js');
-	const { children, extras, svelte } = generate(JSON.parse(engine.layout()));
+	const { children, extras, svelte } = generate();
 	const lines = (table: Record<string, string[]>) => Object.entries(table).map(([type, fields]) => `\t${type}: [${fields.map((f) => `'${f}'`).join(', ')}],`).join('\n');
 	writeFileSync(
 		new URL('../src/children.ts', import.meta.url),

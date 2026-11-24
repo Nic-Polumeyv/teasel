@@ -16,6 +16,9 @@ use teasel::handed::{Allocation, Element, Raw};
 #[cfg(all(target_env = "msvc", not(target_feature = "crt-static")))]
 compile_error!("the addon links the C runtime statically: build with .cargo/config.toml's rustflags");
 
+/// The layout this build writes the tree by, as the package's copy of it names it.
+const STAMP: u32 = engine::stamp(include_bytes!("../../../npm/src/layout.ts"));
+
 /// What JavaScript holds: the view of the words, then the views of the JavaScript tree and of
 /// the TypeScript one, each an array.
 const VIEWS: usize = 3;
@@ -76,12 +79,6 @@ fn source_text<'a>(env: Env, value: Value) -> Result<&'a str> {
 fn number(env: Env, value: Value) -> Result<f64> {
 	out(0.0, "a number", |r| unsafe {
 		node_api::napi_get_value_double(env, value, r)
-	})
-}
-
-fn text(env: Env, text: &str) -> Result<Value> {
-	out(null_mut(), "a string", |r| unsafe {
-		node_api::napi_create_string_utf8(env, text.as_ptr().cast(), text.len(), r)
 	})
 }
 
@@ -168,10 +165,6 @@ fn uint32(env: Env, value: u32) -> Result<Value> {
 	out(null_mut(), "a number", |r| unsafe {
 		node_api::napi_create_uint32(env, value, r)
 	})
-}
-
-unsafe extern "C" fn layout(env: Env, _: CallbackInfo) -> Value {
-	guard(env, || text(env, &teasel::engine::layout_json()))
 }
 
 // a panic must not cross into the host; it and any error become a thrown Error
@@ -352,7 +345,6 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 		for (name, callback) in [
 			(c"parse", parse as unsafe extern "C" fn(Env, CallbackInfo) -> Value),
 			(c"tree", tree),
-			(c"layout", layout),
 		] {
 			let mut function = null_mut();
 			check(
@@ -373,6 +365,10 @@ pub unsafe extern "C" fn napi_register_module_v1(env: Env, exports: Value) -> Va
 				"an export",
 			)?;
 		}
+		check(
+			unsafe { node_api::napi_set_named_property(env, exports, c"stamp".as_ptr(), uint32(env, STAMP)?) },
+			"an export",
+		)?;
 		Ok(exports)
 	})
 }

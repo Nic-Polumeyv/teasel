@@ -27,6 +27,23 @@ fn spellings() {
 	);
 }
 
+// the package reads the tree by this copy, and each build carries its stamp: a package and a build
+// from different layouts refuse each other at load
+#[test]
+fn layout() {
+	let json = teasel::engine::layout_json();
+	let stamp = json.bytes().fold(0x811c_9dc5u32, |hash, byte| (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193));
+	let file = format!(
+		"// written by `UPDATE=1 cargo test -p teasel --test fixtures layout` from crates/teasel's tables\nexport const stamp = {stamp};\n\n/** The tree's memory layout, the names of its views and the recipes: what the decoder reads the tree in place by. */\nexport const layout = {json} as const;\n"
+	);
+	let pin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../npm/src/layout.ts");
+	assert!(
+		common::pinned(&pin, &file),
+		"npm/src/layout.ts is stale: run with UPDATE=1 once the change is meant"
+	);
+	assert_eq!(teasel::engine::stamp(file.as_bytes()), stamp);
+}
+
 #[test]
 fn files() {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
