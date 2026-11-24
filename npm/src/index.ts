@@ -36,14 +36,13 @@ const JAVASCRIPT = 0, CSS = 1, SVELTE = 2;
 
 function read<T>(text: string, word: number, language: number): Parsed<T> {
 	if (typeof text !== 'string') throw new TypeError('a parse takes a string');
-	const words = engine.parse(text, word, language);
 	let error: Omit<Recovered, 'line' | 'column'>;
 	try {
-		const parsed = decode(words, text, engine) as Parsed<T>;
+		const parsed = decode(engine.parse(text, word, language), text, engine) as Parsed<T>;
 		if (parsed.node !== null) return parsed;
 		error = parsed.errors![0];
 	} catch (thrown) {
-		// a tree deeper than the caller's stack has room for overflowed the decoder
+		// a tree deeper than the caller's stack has room for overflowed the decoder, or the WebAssembly engine
 		if (!(thrown instanceof RangeError)) throw thrown;
 		error = { code: 'nesting_depth', args: [], pos: 0, end: 0 };
 	}

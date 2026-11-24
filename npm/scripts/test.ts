@@ -514,18 +514,20 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 // a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
 {
 	const deep = { code: 'nesting_depth' };
-	// chains are loops of the parser: in parentheses, they nest a tree deeper than the parser does
+	// chains are loops of the parser: in parentheses, they nest a tree deeper than the parser recursed
 	let chains = 'a /* c */';
-	for (let i = 0; i < 8; i++) chains = `(${chains}${'.b'.repeat(3_000)})`;
+	for (let i = 0; i < 5; i++) chains = `(${chains}${'.b'.repeat(3_000)})`;
 	for (const scopes of [false, true]) {
 		assert.throws(() => js('a' + '.b'.repeat(9_999), { scopes }), deep);
 		assert.throws(() => js(chains, { scopes, comments: true }), deep);
-		assert.throws(() => js('x = ' + 'class extends '.repeat(40_000) + 'a' + ' {}'.repeat(40_000), { scopes }), deep);
+		assert.throws(() => js('x = ' + 'class extends '.repeat(40_000) + 'a' + ' {}'.repeat(40_000), { scopes }), { code: 'nesting_depth', pos: 13962 });
 		assert.throws(() => js('new '.repeat(9_999) + 'x', { scopes }), deep);
 		assert.throws(() => js('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }), deep);
 		assert.throws(() => read('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }), deep);
 		assert.equal(js('x', { scopes }).node.body.length, 1);
 	}
+	// a parse this deep grows its buffers past V8's stack limit, where V8 may not allocate them
+	assert.equal(js('x = ' + '<T>(a) => '.repeat(831) + 'a;', { typescript: true }).node.body.length, 1);
 	// tried: 501 rules deep in each sheet, a tree the decoder without code generation holds only once V8 has optimized it
 	const sheets = `<style>${'a {'.repeat(1000)}</style><style>a {}</style>`;
 	assert.deepEqual(read(sheets, { errorRecovery: true }).errors.map((e: Any) => e.code), ['expected', 'unexpected_close']);
@@ -533,24 +535,32 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 
 // a component parses after the engine started over
 if (name !== 'native') {
-	let restarted = false;
+	// the engine starts over in an instance of its own
+	let instances = 0;
+	const { Instance } = WebAssembly;
+	WebAssembly.Instance = new Proxy(Instance, { construct: (target, args) => (instances++, Reflect.construct(target, args)) });
+	let overflowed: Any;
 	// a RangeError inside the engine is taken for a wasm stack overflow: exhaust the stack, then parse on the way back up
 	(function deep() {
 		try {
 			deep();
 		} catch {
-			if (!restarted) {
+			if (instances === 0) {
 				try {
 					read('<a>{x}</a>');
 				} catch (e: Any) {
-					restarted = /started over/.test(e.message);
-					// an overflow before the engine is reached says nothing: the next frame up tries again
-					if (!restarted) throw e;
+					// the next frame up tries again, until a parse starts the engine over
+					if (instances > 0) return;
+					overflowed = e;
+					throw e;
 				}
 			}
 		}
 	})();
-	assert.ok(restarted, `${name} the engine started over`);
+	WebAssembly.Instance = Instance;
+	assert.ok(instances > 0, `${name} the engine started over`);
+	// the parse that overflowed the engine's stack answered as one too deep does
+	assert.equal(overflowed.code, 'nesting_depth');
 	assert.equal(read('<a>{x}</a>').node.fragment.nodes[0].name, 'a');
 	assert.equal(css('a { b: c }').node.children[0].type, 'Rule');
 	// a source that grows the memory past 256 MiB leaves it to the instance the next parse replaces
