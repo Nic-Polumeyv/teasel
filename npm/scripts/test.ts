@@ -514,8 +514,13 @@ assert.equal(read('<x:foo></x:foo>').node.fragment.nodes[0].type, 'RegularElemen
 // a tree too deep for a walk is a parse error on every backend, and the engine reads the next source
 {
 	const deep = { code: 'nesting_depth' };
+	// chains are loops of the parser: in parentheses, they nest a tree deeper than the parser does
+	let chains = 'a /* c */';
+	for (let i = 0; i < 8; i++) chains = `(${chains}${'.b'.repeat(3_000)})`;
 	for (const scopes of [false, true]) {
 		assert.throws(() => js('a' + '.b'.repeat(9_999), { scopes }), deep);
+		assert.throws(() => js(chains, { scopes, comments: true }), deep);
+		assert.throws(() => js('x = ' + 'class extends '.repeat(40_000) + 'a' + ' {}'.repeat(40_000), { scopes }), deep);
 		assert.throws(() => js('new '.repeat(9_999) + 'x', { scopes }), deep);
 		assert.throws(() => js('type A = ' + 'B<'.repeat(999) + 'C' + '>'.repeat(999), { scopes, typescript: true }), deep);
 		assert.throws(() => read('<a>'.repeat(40_000) + '</a>'.repeat(40_000), { scopes }), deep);
