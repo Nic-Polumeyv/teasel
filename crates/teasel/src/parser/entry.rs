@@ -207,7 +207,7 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 		parser.recover = options.has(Options::ERROR_RECOVERY);
 		parser.lexer.recover = parser.recover;
 		parser.stops = stop;
-		parser.track = parser.recover || !stop.is_empty();
+		parser.track = parser.recover || !(stop.is_empty() || stop == "}");
 		parser.tree_limit = 16 * src.len() + 256;
 		if options.has(Options::ALLOW_AWAIT_OUTSIDE_FUNCTION) {
 			parser.ctx.can_await = true;
@@ -314,6 +314,11 @@ impl<'a, const TS: bool> Parser<'a, TS> {
 
 	/// One entry other than a program at the token at the cursor, in a scope of its own.
 	fn read_entry(&mut self, entry: Entry) -> Result<List> {
+		// counted and tested at each token like the other stops, a lone `}` took 2 to 4% of a
+		// component's parse: every entry's grammar ends at it, and only first is it the host's
+		if !self.track && self.tok.kind == Kind::BraceR && !self.stops.is_empty() {
+			self.stop_here();
+		}
 		self.enter_scope(super::checks::SCOPE_TOP);
 		let root = match entry {
 			Entry::Expression => {

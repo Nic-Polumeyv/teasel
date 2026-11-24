@@ -165,7 +165,8 @@ pub(crate) struct Parser<'a, const TS: bool> {
 	pub(super) recover: bool,
 	/// Inside an attempt, where a read fails as a strict one would.
 	pub(super) speculating: u32,
-	/// Brackets are counted and the host's stops tested at each token: a host's stops, or recovery.
+	/// Brackets are counted and the host's stops tested at each token: under recovery, or with
+	/// stops other than a lone `}`.
 	pub(super) track: bool,
 	/// The host's stop tokens, separated by spaces.
 	pub(super) stops: &'a str,
