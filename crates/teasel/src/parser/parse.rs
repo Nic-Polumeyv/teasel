@@ -44,8 +44,7 @@ pub struct Scratch {
 
 pub(crate) const MAX_DEPTH: u32 = 1000;
 /// How many operators or subscripts one loop may chain: each nests the node before it.
-// wasm frames sit on the embedder's stack: the scope walk overflowed it past 5,000 links
-const MAX_CHAIN: u32 = if cfg!(target_arch = "wasm32") { 4_000 } else { 10_000 };
+const MAX_CHAIN: u32 = 10_000;
 
 /// The facts of the literal being read, where it may yet be a pattern.
 pub(super) type Errors = Option<Facts>;
