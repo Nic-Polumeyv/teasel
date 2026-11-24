@@ -559,9 +559,9 @@ pub struct Binder<'a> {
 	owned: FastMap<BindingId, u32>,
 	arguments: Option<StrId>,
 	this_name: Option<StrId>,
-	/// Whether TypeScript added keys to any node, decorators among them.
-	// looked up at every node of a JavaScript tree instead, a parse with scopes took 1% longer
-	extras: bool,
+	/// Whether any node has decorators.
+	// looked up at every node of a tree that has none instead, a parse with scopes took 1 to 2% longer
+	decorated: bool,
 }
 
 impl<'a> Binder<'a> {
@@ -600,7 +600,7 @@ impl<'a> Binder<'a> {
 			owned,
 			arguments: ast.strings.find("arguments"),
 			this_name: ast.strings.find("this"),
-			extras: !ast.extras.is_empty(),
+			decorated: ast.extras.records().iter().any(|extras| extras.decorators.is_some()),
 		}
 	}
 
@@ -1074,7 +1074,7 @@ impl<'a> Binder<'a> {
 
 	fn function(&mut self, id: NodeId, params: List, body: NodeId, arrow: bool) {
 		// a parameter's decorators are evaluated where the function is defined
-		if self.extras {
+		if self.decorated {
 			for &param in self.ast.list(params).iter().flatten() {
 				self.decorators(param);
 			}
@@ -1219,7 +1219,7 @@ impl<'a> Binder<'a> {
 
 	fn visit_with(&mut self, id: NodeId, mode: Mode, extras: bool) {
 		use NodeKind::*;
-		if extras && self.extras {
+		if extras && self.decorated {
 			self.decorators(id);
 		}
 		match self.kind(id) {

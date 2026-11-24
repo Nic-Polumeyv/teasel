@@ -156,6 +156,10 @@ impl<T: Copy + 'static> Slots<T> {
 		&self.owners
 	}
 
+	pub fn records(&self) -> &[T] {
+		&self.list
+	}
+
 	pub fn is_empty(&self) -> bool {
 		self.list.is_empty()
 	}
