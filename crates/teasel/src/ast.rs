@@ -443,37 +443,35 @@ impl Ast {
 		let from = out.len();
 		let kind = &self.node(id).kind;
 		let base = kind as *const NodeKind as *const u8;
-		self.held(base, node_layout::VARIANTS[tag(base)].fields, out);
+		self.held(base, node_layout::HELD[tag(base)], out);
 		if kind.is_svelte() {
 			self.through_fragments(from, out);
 		}
 		if let Some(extras) = self.extras.get(id) {
-			self.held(extras as *const Extras as *const u8, Extras::FIELDS, out);
+			self.held(extras as *const Extras as *const u8, Extras::HELD, out);
 		}
 		if !out[from..].is_sorted_by_key(|&child| self.node(child).start) {
 			out[from..].sort_unstable_by_key(|&child| self.node(child).start);
 		}
 	}
 
-	/// The nodes the fields of the record at `base` hold.
-	fn held(&self, base: *const u8, fields: &[Field], out: &mut Vec<NodeId>) {
-		for field in fields {
-			let at = unsafe { base.add(field.at) };
-			match field.ty {
-				Ty::Node => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
-				Ty::OptNode => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
-				Ty::List => out.extend(
+	/// The nodes the record at `base` holds at `places`, as `layout::held` gives them.
+	fn held(&self, base: *const u8, places: &[u32], out: &mut Vec<NodeId>) {
+		for &place in places {
+			let at = unsafe { base.add(place as usize >> 2) };
+			match place & 3 {
+				0 => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
+				1 => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
+				2 => out.extend(
 					self.list(unsafe { at.cast::<List>().read_unaligned() })
 						.iter()
 						.flatten(),
 				),
-				Ty::OptList => {
+				_ => {
 					if let Some(list) = unsafe { at.cast::<Option<List>>().read_unaligned() } {
 						out.extend(self.list(list).iter().flatten());
 					}
 				}
-				Ty::Struct(inner) => self.held(at, inner, out),
-				_ => {}
 			}
 		}
 	}
