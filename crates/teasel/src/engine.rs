@@ -4,9 +4,10 @@ use crate::Options;
 use crate::ast::{Ast, List};
 use crate::comments::attach;
 use crate::handed::Raw;
-use crate::json::Json;
+use crate::layout::{Field, Ty};
 use crate::parser::{Entry, parse_at};
 use crate::positions::Positions;
+use crate::recipe::{Op, Rest, Slot};
 use crate::scopes;
 use crate::svelte;
 
@@ -15,190 +16,323 @@ pub type Words = crate::handed::Handed<u32>;
 
 /// The tree's layout, the names of its views and the recipes, as JSON: what the decoder reading
 /// the tree in place builds its readers from.
-pub fn layout_json() -> String {
-	use crate::ast::Extras;
-	use crate::ast::Node;
+pub fn layout_json() -> &'static str {
+	LAYOUT
+}
+
+const LAYOUT: &str = match std::str::from_utf8(&LAYOUT_BYTES) {
+	Ok(text) => text,
+	Err(_) => panic!("the layout is UTF-8"),
+};
+
+const LAYOUT_BYTES: [u8; LAYOUT_LEN] = {
+	let mut out = [0; LAYOUT_LEN];
+	layout(&mut out);
+	out
+};
+
+const LAYOUT_LEN: usize = layout(&mut []);
+
+/// Writes the layout into `out` as far as it has room, and says how long it is.
+const fn layout(out: &mut [u8]) -> usize {
 	use crate::ast::node_layout::VARIANTS;
-	use crate::layout::{Field, Ty};
-	use crate::recipe::{Op, Rest, Slot};
-	fn ty(ty: Ty) -> &'static str {
-		match ty {
-			Ty::Node => "node",
-			Ty::OptNode => "?node",
-			Ty::List => "list",
-			Ty::OptList => "?list",
-			Ty::Str => "str",
-			Ty::OptStr => "?str",
-			Ty::Bool => "bool",
-			Ty::U32 => "u32",
-			Ty::OptU32 => "?u32",
-			Ty::Pair => "pair",
-			Ty::Slice => "slice",
-			Ty::OptSlice => "?slice",
-			Ty::Enum(_) => "enum",
-			Ty::OptEnum(_) => "?enum",
-			Ty::Struct(_) => "struct",
+	use crate::ast::{Extras, Node, RECORDS, VIEWS};
+	use crate::recipe::{ADDS, EXTRAS_ERASED, KINDS, ROWS};
+	let mut w = Text {
+		out,
+		len: 0,
+		first: true,
+	};
+	w.open(b'{');
+	w.key("node");
+	w.open(b'{');
+	w.key("size");
+	w.int(size_of::<Node>());
+	w.key("start");
+	w.int(std::mem::offset_of!(Node, start));
+	w.key("end");
+	w.int(std::mem::offset_of!(Node, end));
+	w.key("kind");
+	w.int(std::mem::offset_of!(Node, kind));
+	w.close(b'}');
+	w.key("kinds");
+	w.open(b'[');
+	let mut i = 0;
+	while i < VARIANTS.len() {
+		w.text(VARIANTS[i].name);
+		i += 1;
+	}
+	w.close(b']');
+	w.key("extras");
+	w.record(size_of::<Extras>(), Extras::FIELDS);
+	w.key("records");
+	w.open(b'{');
+	let mut i = 0;
+	while i < RECORDS.len() {
+		let (name, size, fields) = RECORDS[i];
+		w.key(name);
+		w.record(size, fields);
+		i += 1;
+	}
+	w.close(b'}');
+	let none = crate::layout::missing();
+	w.key("none");
+	w.open(b'{');
+	w.key("enum");
+	w.int(none.r#enum as usize);
+	w.tagged("list", &none.list);
+	w.tagged("str", &none.str);
+	w.tagged("int", &none.int);
+	w.close(b'}');
+	w.key("views");
+	w.open(b'{');
+	w.key("js");
+	w.texts(VIEWS.split_at(VIEWS.len() - 2).0);
+	w.key("ts");
+	w.texts(&VIEWS);
+	w.close(b'}');
+	w.key("recipes");
+	w.open(b'{');
+	w.key("kinds");
+	w.open(b'[');
+	let mut i = 0;
+	while i < KINDS.len() {
+		w.ops(KINDS[i]);
+		i += 1;
+	}
+	w.close(b']');
+	w.key("rows");
+	w.open(b'[');
+	let mut i = 0;
+	while i < ROWS.len() {
+		let (name, size, ops) = ROWS[i];
+		w.open(b'[');
+		w.text(name);
+		w.int(size);
+		w.ops(ops);
+		w.close(b']');
+		i += 1;
+	}
+	w.close(b']');
+	w.key("adds");
+	w.open(b'[');
+	let mut i = 0;
+	while i < ADDS.len() {
+		w.ops(ADDS[i]);
+		i += 1;
+	}
+	w.close(b']');
+	w.key("erased");
+	w.ops(EXTRAS_ERASED);
+	w.close(b'}');
+	w.close(b'}');
+	w.len
+}
+
+/// JSON written into `out` as far as it has room, its whole length counted.
+struct Text<'a> {
+	out: &'a mut [u8],
+	len: usize,
+	/// Whether the next entry of the open container is its first.
+	first: bool,
+}
+
+impl Text<'_> {
+	const fn byte(&mut self, byte: u8) {
+		if self.len < self.out.len() {
+			self.out[self.len] = byte;
+		}
+		self.len += 1;
+	}
+
+	const fn sep(&mut self) {
+		if !self.first {
+			self.byte(b',');
+		}
+		self.first = false;
+	}
+
+	const fn open(&mut self, bracket: u8) {
+		self.sep();
+		self.byte(bracket);
+		self.first = true;
+	}
+
+	const fn close(&mut self, bracket: u8) {
+		self.byte(bracket);
+		self.first = false;
+	}
+
+	const fn key(&mut self, key: &str) {
+		self.text(key);
+		self.byte(b':');
+		self.first = true;
+	}
+
+	const fn word(&mut self, word: &str) {
+		self.sep();
+		let mut i = 0;
+		while i < word.len() {
+			self.byte(word.as_bytes()[i]);
+			i += 1;
 		}
 	}
-	fn field(w: &mut Json, field: &Field) {
-		w.object();
-		w.key("name");
-		w.text(field.name);
-		w.key("at");
-		w.int(field.at as u32);
-		w.key("ty");
-		w.text(ty(field.ty));
-		match field.ty {
-			Ty::Enum(names) | Ty::OptEnum(names) => {
-				w.key("names");
-				w.list();
-				names.iter().for_each(|name| w.text(name));
-				w.end();
-			}
-			Ty::Struct(inner) => {
-				w.key("fields");
-				fields(w, inner);
-			}
-			_ => {}
+
+	const fn text(&mut self, text: &str) {
+		self.sep();
+		self.byte(b'"');
+		let mut i = 0;
+		while i < text.len() {
+			let byte = text.as_bytes()[i];
+			assert!(byte >= b' ' && byte != b'"' && byte != b'\\', "a name needs no escape");
+			self.byte(byte);
+			i += 1;
 		}
-		w.end();
+		self.byte(b'"');
 	}
-	fn fields(w: &mut Json, list: &[Field]) {
-		w.list();
-		list.iter().for_each(|f| field(w, f));
-		w.end();
+
+	const fn texts(&mut self, texts: &[&str]) {
+		self.open(b'[');
+		let mut i = 0;
+		while i < texts.len() {
+			self.text(texts[i]);
+			i += 1;
+		}
+		self.close(b']');
 	}
-	fn record(w: &mut Json, size: usize, list: &[Field]) {
-		w.object();
-		w.key("size");
-		w.int(size as u32);
-		w.key("fields");
-		fields(w, list);
-		w.end();
+
+	const fn int(&mut self, value: usize) {
+		self.sep();
+		let mut unit = 1;
+		while value / unit >= 10 {
+			unit *= 10;
+		}
+		while unit > 0 {
+			self.byte(b'0' + (value / unit % 10) as u8);
+			unit /= 10;
+		}
 	}
+
+	const fn record(&mut self, size: usize, fields: &[Field]) {
+		self.open(b'{');
+		self.key("size");
+		self.int(size);
+		self.key("fields");
+		self.fields(fields);
+		self.close(b'}');
+	}
+
+	const fn fields(&mut self, fields: &[Field]) {
+		self.open(b'[');
+		let mut i = 0;
+		while i < fields.len() {
+			let field = &fields[i];
+			self.open(b'{');
+			self.key("name");
+			self.text(field.name);
+			self.key("at");
+			self.int(field.at);
+			self.key("ty");
+			self.text(ty(field.ty));
+			match field.ty {
+				Ty::Enum(names) | Ty::OptEnum(names) => {
+					self.key("names");
+					self.texts(names);
+				}
+				Ty::Struct(inner) => {
+					self.key("fields");
+					self.fields(inner);
+				}
+				_ => {}
+			}
+			self.close(b'}');
+			i += 1;
+		}
+		self.close(b']');
+	}
+
+	const fn tagged(&mut self, name: &str, tagged: &crate::layout::Tagged) {
+		self.key(name);
+		self.open(b'{');
+		self.key("tag");
+		self.int(tagged.tag);
+		self.key("missing");
+		self.int(tagged.missing as usize);
+		self.close(b'}');
+	}
+
 	// an operation is its name, its key, where its field sits, the field's type and an enum's
 	// names, where its second field sits, what a constant spells or the name for true, the name
 	// for false or for none, and the operations inside it
-	fn ops(w: &mut Json, list: &[Op]) {
-		w.list();
-		for op in list {
-			let (name, key, slot, rest) = op.told();
-			w.list();
-			w.text(name);
-			w.text(key);
-			w.int(match (slot, &rest) {
-				(Some(slot), _) => slot.at as u32,
-				(None, Rest::Cut(front, _)) => *front as u32,
+	const fn ops(&mut self, ops: &[Op]) {
+		self.open(b'[');
+		let mut i = 0;
+		while i < ops.len() {
+			let (name, key, slot, rest) = ops[i].told();
+			self.open(b'[');
+			self.text(name);
+			self.text(key);
+			self.int(match (slot, &rest) {
+				(Some(slot), _) => slot.at,
+				(None, Rest::Cut(front, _)) => *front as usize,
 				_ => 0,
 			});
-			w.text(slot.map_or("", |slot| ty(*slot.ty)));
-			w.list();
-			if let Some(Slot {
-				ty: Ty::Enum(names) | Ty::OptEnum(names),
-				..
-			}) = slot
-			{
-				names.iter().for_each(|name| w.text(name));
+			match slot {
+				Some(slot) => self.text(ty(*slot.ty)),
+				None => self.text(""),
 			}
-			w.end();
-			w.int(match rest {
-				Rest::Second(slot) => slot.at as u32,
-				Rest::Cut(_, back) => back as u32,
-				Rest::Place(place) => place as u32,
+			match slot {
+				Some(Slot {
+					ty: Ty::Enum(names) | Ty::OptEnum(names),
+					..
+				}) => self.texts(names),
+				_ => self.texts(&[]),
+			}
+			self.int(match &rest {
+				Rest::Second(slot) => slot.at,
+				Rest::Cut(_, back) => *back as usize,
+				Rest::Place(place) => *place as usize,
 				_ => 0,
 			});
-			match rest {
-				Rest::Bool(value) => w.bool(value),
-				Rest::Names(yes, _) => w.text(yes),
-				_ => w.null(),
+			match &rest {
+				Rest::Bool(true) => self.word("true"),
+				Rest::Bool(false) => self.word("false"),
+				Rest::Names(yes, _) => self.text(yes),
+				_ => self.word("null"),
 			}
-			w.text(if let Rest::Names(_, other) | Rest::Other(other) = rest {
-				other
-			} else {
-				""
-			});
-			ops(w, if let Rest::Ops(inner) = rest { inner } else { &[] });
-			w.end();
+			match &rest {
+				Rest::Names(_, other) | Rest::Other(other) => self.text(other),
+				_ => self.text(""),
+			}
+			match &rest {
+				Rest::Ops(inner) => self.ops(inner),
+				_ => self.ops(&[]),
+			}
+			self.close(b']');
+			i += 1;
 		}
-		w.end();
+		self.close(b']');
 	}
-	let mut w = Json::default();
-	w.object();
-	w.key("node");
-	w.object();
-	w.key("size");
-	w.int(size_of::<Node>() as u32);
-	w.key("start");
-	w.int(std::mem::offset_of!(Node, start) as u32);
-	w.key("end");
-	w.int(std::mem::offset_of!(Node, end) as u32);
-	w.key("kind");
-	w.int(std::mem::offset_of!(Node, kind) as u32);
-	w.end();
-	w.key("kinds");
-	texts(&mut w, VARIANTS.iter().map(|variant| variant.name));
-	w.key("extras");
-	record(&mut w, size_of::<Extras>(), Extras::FIELDS);
-	w.key("records");
-	w.object();
-	for (name, size, list) in crate::ast::RECORDS {
-		w.key(name);
-		record(&mut w, *size, list);
-	}
-	w.end();
-	let none = crate::layout::missing();
-	w.key("none");
-	w.object();
-	w.key("enum");
-	w.int(none.r#enum as u32);
-	for (name, tagged) in [("list", none.list), ("str", none.str), ("int", none.int)] {
-		w.key(name);
-		w.object();
-		w.key("tag");
-		w.int(tagged.tag as u32);
-		w.key("missing");
-		w.int(tagged.missing);
-		w.end();
-	}
-	w.end();
-	w.key("views");
-	w.object();
-	w.key("js");
-	texts(&mut w, view_names(false));
-	w.key("ts");
-	texts(&mut w, view_names(true));
-	w.end();
-	w.key("recipes");
-	w.object();
-	w.key("kinds");
-	w.list();
-	crate::recipe::KINDS.iter().for_each(|list| ops(&mut w, list));
-	w.end();
-	w.key("rows");
-	w.list();
-	for (name, size, list) in crate::recipe::ROWS {
-		w.list();
-		w.text(name);
-		w.int(*size as u32);
-		ops(&mut w, list);
-		w.end();
-	}
-	w.end();
-	w.key("adds");
-	w.list();
-	crate::recipe::ADDS.iter().for_each(|list| ops(&mut w, list));
-	w.end();
-	w.key("erased");
-	ops(&mut w, crate::recipe::EXTRAS_ERASED);
-	w.end();
-	w.end();
-	w.finish()
 }
 
-fn texts<'a>(w: &mut Json, list: impl IntoIterator<Item = &'a str>) {
-	w.list();
-	list.into_iter().for_each(|text| w.text(text));
-	w.end();
+const fn ty(ty: Ty) -> &'static str {
+	match ty {
+		Ty::Node => "node",
+		Ty::OptNode => "?node",
+		Ty::List => "list",
+		Ty::OptList => "?list",
+		Ty::Str => "str",
+		Ty::OptStr => "?str",
+		Ty::Bool => "bool",
+		Ty::U32 => "u32",
+		Ty::OptU32 => "?u32",
+		Ty::Pair => "pair",
+		Ty::Slice => "slice",
+		Ty::OptSlice => "?slice",
+		Ty::Enum(_) => "enum",
+		Ty::OptEnum(_) => "?enum",
+		Ty::Struct(_) => "struct",
+	}
 }
 
 /// The whole source as `entry` reads it: a program, a stylesheet or a Svelte component. Its words
@@ -217,7 +351,7 @@ pub fn parse(source: &str, options: Options, entry: Entry) {
 		words.extend(roots.iter().map(|root| root.unwrap().index()));
 		words.push((options.0 & !FAILED) | if failed { FAILED } else { 0 });
 		let mut sits = 0u64;
-		let mut note = |_, buffer: Option<&mut dyn Raw>| {
+		let mut note = |buffer: Option<&mut dyn Raw>| {
 			words.push(buffer.as_ref().map_or(0, |buffer| buffer.elements() as u32));
 			if let Some(buffer) = buffer {
 				sits = (sits ^ buffer.as_ptr() as u64 ^ (buffer.capacity_bytes() as u64) << 32)
@@ -254,22 +388,16 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
 /// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(mut f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
+pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
+		let mut names = crate::ast::VIEWS.iter();
 		session.trees[typescript as usize]
 			.as_deref_mut()?
-			.views(typescript, &mut f);
+			.views(typescript, &mut |buffer| f(names.next().unwrap(), buffer));
 		Some(typescript)
 	})
-}
-
-/// The names of a tree's views in order.
-fn view_names(typescript: bool) -> Vec<&'static str> {
-	let mut names = Vec::new();
-	Ast::default().views(typescript, &mut |name, _| names.push(name));
-	names
 }
 
 /// The language of a number: 0 JavaScript, 1 CSS, 2 Svelte.

@@ -36,7 +36,7 @@ pub unsafe extern "C" fn parse(ptr: *mut u8, len: u32, capacity: u32, flags: u32
 	match parsed {
 		Ok(()) => 0,
 		Err(message) => {
-			text(message);
+			text(&message);
 			1
 		}
 	}
@@ -62,7 +62,7 @@ pub extern "C" fn text_len() -> u32 {
 	TEXT.with(|t| t.borrow().len() as u32)
 }
 
-fn text(json: String) {
+fn text(json: &str) {
 	TEXT.with(|t| {
 		let mut t = t.borrow_mut();
 		t.clear();

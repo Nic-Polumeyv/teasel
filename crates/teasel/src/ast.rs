@@ -173,14 +173,9 @@ impl<T: Copy + 'static> Slots<T> {
 		self.owners.truncate(len);
 	}
 
-	pub fn views(
-		&mut self,
-		name: &'static str,
-		records: &'static str,
-		out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>),
-	) {
-		out(name, Some(&mut self.slots));
-		out(records, Some(&mut self.list));
+	pub fn views(&mut self, out: &mut impl FnMut(Option<&mut dyn Raw>)) {
+		out(Some(&mut self.slots));
+		out(Some(&mut self.list));
 	}
 }
 
@@ -406,36 +401,72 @@ impl Ast {
 		}
 	}
 
-	/// The tree's buffers the decoder reads in place, by the names `engine::layout_json` lists; a
+	/// The tree's buffers the decoder reads in place, in the order `VIEWS` names them; a
 	/// TypeScript tree's tables last.
-	pub fn views(&mut self, typescript: bool, out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
-		out("nodes", Some(&mut self.nodes));
-		out("lists", Some(&mut self.lists));
-		out("numbers", Some(&mut self.numbers));
+	pub fn views(&mut self, typescript: bool, out: &mut impl FnMut(Option<&mut dyn Raw>)) {
+		out(Some(&mut self.nodes));
+		out(Some(&mut self.lists));
+		out(Some(&mut self.numbers));
 		let (text, starts, marks) = self.strings.buffers();
-		out("text", Some(text));
-		out("starts", Some(starts));
-		out("marks", Some(marks));
-		out("units", Some(&mut self.units));
-		out("spans", Some(&mut self.spans));
-		out("parenthesized", Some(self.parenthesized.words()));
-		out("erased", Some(self.erased.words()));
-		out("rare", Some(self.rare.words()));
-		out("late", Some(self.late.words()));
-		out("comments", Some(&mut self.comment_rows));
-		self.attached.views("attached_slots", "attached", out);
-		out("errors", Some(&mut self.error_rows));
-		out("modifiers", Some(&mut self.modifiers));
-		out("slices", Some(&mut self.slices));
+		out(Some(text));
+		out(Some(starts));
+		out(Some(marks));
+		out(Some(&mut self.units));
+		out(Some(&mut self.spans));
+		out(Some(self.parenthesized.words()));
+		out(Some(self.erased.words()));
+		out(Some(self.rare.words()));
+		out(Some(self.late.words()));
+		out(Some(&mut self.comment_rows));
+		self.attached.views(out);
+		out(Some(&mut self.error_rows));
+		out(Some(&mut self.modifiers));
+		out(Some(&mut self.slices));
 		match &mut self.scopes {
-			Some(scopes) => scopes.views(out),
-			None => crate::scopes::Scopes::no_views(out),
+			Some(scopes) => scopes.views().into_iter().for_each(|view| out(Some(view))),
+			None => (0..crate::scopes::Scopes::VIEWS).for_each(|_| out(None)),
 		}
 		if typescript {
-			self.extras.views("extras_slots", "extras", out);
+			self.extras.views(out);
 		}
 	}
 }
+
+/// The names of the buffers `Ast::views` visits, in its order, which the decoder reads them by;
+/// only a TypeScript tree has the last two.
+pub const VIEWS: [&str; 31] = [
+	"nodes",
+	"lists",
+	"numbers",
+	"text",
+	"starts",
+	"marks",
+	"units",
+	"spans",
+	"parenthesized",
+	"erased",
+	"rare",
+	"late",
+	"comments",
+	"attached_slots",
+	"attached",
+	"errors",
+	"modifiers",
+	"slices",
+	"scopes",
+	"bindings",
+	"references",
+	"roots",
+	"of_node",
+	"of_identifier",
+	"root_of",
+	"declared_by",
+	"declared_by_at",
+	"writes_of",
+	"writes_of_at",
+	"extras_slots",
+	"extras",
+];
 
 impl Ast {
 	/// Appends the children of `id` in source order.

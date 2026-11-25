@@ -366,19 +366,24 @@ impl Scopes {
 		&self.scopes[id as usize]
 	}
 
+	/// How many tables the decoder reads in place; a tree without analysis has none of them.
+	pub const VIEWS: usize = 11;
+
 	/// The per-node tables the decoder reads in place.
-	pub fn views(&mut self, out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
-		out("scopes", Some(&mut self.scopes));
-		out("bindings", Some(&mut self.bindings));
-		out("references", Some(&mut self.references));
-		out("roots", Some(&mut self.roots));
-		out("of_node", Some(&mut self.of_node.0));
-		out("of_identifier", Some(&mut self.of_identifier.0));
-		out("root_of", Some(&mut self.root_of.0));
-		out("declared_by", Some(&mut self.declared_by.ids));
-		out("declared_by_at", Some(&mut self.declared_by.starts.0));
-		out("writes_of", Some(&mut self.writes_of.ids));
-		out("writes_of_at", Some(&mut self.writes_of.starts.0));
+	pub fn views(&mut self) -> [&mut dyn Raw; Scopes::VIEWS] {
+		[
+			&mut self.scopes,
+			&mut self.bindings,
+			&mut self.references,
+			&mut self.roots,
+			&mut self.of_node.0,
+			&mut self.of_identifier.0,
+			&mut self.root_of.0,
+			&mut self.declared_by.ids,
+			&mut self.declared_by.starts.0,
+			&mut self.writes_of.ids,
+			&mut self.writes_of.starts.0,
+		]
 	}
 
 	/// Marks the nodes with what the decoder links once a node is whole, in `late`, and those with
@@ -399,25 +404,6 @@ impl Scopes {
 			if !matches!(ast.node(node).kind, NodeKind::Identifier { .. }) {
 				rare.insert(node);
 			}
-		}
-	}
-
-	/// The same names over nothing, for a tree without analysis.
-	pub fn no_views(out: &mut impl FnMut(&'static str, Option<&mut dyn Raw>)) {
-		for name in [
-			"scopes",
-			"bindings",
-			"references",
-			"roots",
-			"of_node",
-			"of_identifier",
-			"root_of",
-			"declared_by",
-			"declared_by_at",
-			"writes_of",
-			"writes_of_at",
-		] {
-			out(name, None);
 		}
 	}
 

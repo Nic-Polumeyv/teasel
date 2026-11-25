@@ -275,16 +275,19 @@ pub struct Tagged {
 
 // the tag is found in the `Some`, every word of which is written; of the `None` only that word
 // is read, the rest of it is never written
-fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values: &[u32]) -> Tagged {
-	let tag = (0..N).find(|&i| !values.contains(&some[i])).expect("a tag word");
-	for (i, value) in some
-		.iter()
-		.enumerate()
-		.filter(|&(i, _)| i != tag)
-		.map(|(_, &w)| w)
-		.enumerate()
-	{
-		assert_eq!(value, values[i], "the value's words follow their order");
+const fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values: &[u32]) -> Tagged {
+	let mut tag = 0;
+	while tag < N && contains(values, some[tag]) {
+		tag += 1;
+	}
+	assert!(tag < N, "a tag word");
+	let (mut word, mut value) = (0, 0);
+	while word < N {
+		if word != tag {
+			assert!(some[word] == values[value], "the value's words follow their order");
+			value += 1;
+		}
+		word += 1;
 	}
 	Tagged {
 		tag,
@@ -292,7 +295,15 @@ fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values
 	}
 }
 
-pub fn missing() -> Missing {
+const fn contains(values: &[u32], word: u32) -> bool {
+	let mut i = 0;
+	while i < values.len() && values[i] != word {
+		i += 1;
+	}
+	i < values.len()
+}
+
+pub const fn missing() -> Missing {
 	unsafe {
 		Missing {
 			r#enum: std::mem::transmute::<Option<crate::ast::PropertyKind>, u8>(None),
