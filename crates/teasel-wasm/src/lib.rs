@@ -75,7 +75,7 @@ fn text(json: &str) {
 pub extern "C" fn tree() -> *const u32 {
 	let mut out = [0u32; 148];
 	let mut count = 0;
-	let found = teasel::engine::tree(&mut |_, buffer| {
+	let found = teasel::engine::tree(&mut |buffer| {
 		if let Some(buffer) = buffer {
 			out[1 + 3 * count..][..3].copy_from_slice(&[
 				buffer.as_ptr() as u32,

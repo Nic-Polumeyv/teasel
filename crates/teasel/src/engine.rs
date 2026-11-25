@@ -388,14 +388,16 @@ pub fn words<R>(f: impl FnOnce(&mut Words) -> R) -> R {
 
 /// Visits the buffers of the last parse's tree on this thread, kept until the next parse takes
 /// it, in the order `layout_json` names them; whether it is the TypeScript tree, None before any.
-pub fn tree(f: &mut dyn FnMut(&'static str, Option<&mut dyn Raw>)) -> Option<bool> {
+pub fn tree(f: &mut dyn FnMut(Option<&mut dyn Raw>)) -> Option<bool> {
 	SESSION.with(|session| {
 		let session = &mut *session.borrow_mut();
 		let typescript = session.typescript;
-		let mut names = crate::ast::VIEWS.iter();
-		session.trees[typescript as usize]
-			.as_deref_mut()?
-			.views(typescript, &mut |buffer| f(names.next().unwrap(), buffer));
+		let mut count = 0;
+		session.trees[typescript as usize].as_deref_mut()?.views(typescript, &mut |buffer| {
+			count += 1;
+			f(buffer)
+		});
+		debug_assert_eq!(count, crate::ast::VIEWS.len() - if typescript { 0 } else { 2 });
 		Some(typescript)
 	})
 }

@@ -111,7 +111,7 @@ unsafe extern "C" fn tree(env: Env, _: CallbackInfo) -> Value {
 		in_env(env, || {
 			let mut moved = Vec::new();
 			let mut count = 0;
-			let typescript = teasel::engine::tree(&mut |_, buffer| {
+			let typescript = teasel::engine::tree(&mut |buffer| {
 				count += 1;
 				if let Some(buffer) = buffer {
 					moved.push((count, buffer_view(env, buffer)));
