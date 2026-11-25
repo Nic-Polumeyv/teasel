@@ -36,7 +36,7 @@ pub unsafe extern "C" fn parse(ptr: *mut u8, len: u32, capacity: u32, flags: u32
 	match parsed {
 		Ok(()) => 0,
 		Err(message) => {
-			text(message);
+			text(&message);
 			1
 		}
 	}
@@ -62,7 +62,7 @@ pub extern "C" fn text_len() -> u32 {
 	TEXT.with(|t| t.borrow().len() as u32)
 }
 
-fn text(json: String) {
+fn text(json: &str) {
 	TEXT.with(|t| {
 		let mut t = t.borrow_mut();
 		t.clear();
@@ -75,7 +75,7 @@ fn text(json: String) {
 pub extern "C" fn tree() -> *const u32 {
 	let mut out = [0u32; 148];
 	let mut count = 0;
-	let found = teasel::engine::tree(&mut |_, buffer| {
+	let found = teasel::engine::tree(&mut |buffer| {
 		if let Some(buffer) = buffer {
 			out[1 + 3 * count..][..3].copy_from_slice(&[
 				buffer.as_ptr() as u32,

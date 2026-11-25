@@ -135,6 +135,7 @@ macro_rules! record {
 					ty: <$t as $crate::layout::Described>::TY,
 				}
 			),* ];
+			pub const HELD: &[u32] = &$crate::layout::held::<{ $crate::layout::holding(Self::FIELDS) }>(Self::FIELDS);
 		}
 
 		impl $crate::layout::Described for $S {
@@ -185,6 +186,8 @@ macro_rules! kinds {
 							ty: <$tt as Described>::TY,
 						} )?
 					];
+
+					pub const HELD: &[u32] = &$crate::layout::held::<{ $crate::layout::holding(FIELDS) }>(FIELDS);
 				}
 			)*
 
@@ -198,10 +201,62 @@ macro_rules! kinds {
 					fields: $V::FIELDS,
 				}
 			),* ];
+
+			/// Each kind's places that hold nodes, by tag.
+			pub const HELD: &[&[u32]] = &[ $( $V::HELD ),* ];
 		}
 	};
 }
 pub(crate) use kinds;
+
+/// How a place holds a node: the low two bits of each entry `held` gives.
+pub mod holds {
+	pub const NODE: u32 = 0;
+	pub const OPT_NODE: u32 = 1;
+	pub const LIST: u32 = 2;
+	pub const OPT_LIST: u32 = 3;
+}
+
+/// The places of `fields` that hold nodes, a record's inside them among them: each its byte
+/// offset times four, plus how it holds them, one of `holds`. What a walk of the tree reads,
+/// without the names the fields carry.
+pub const fn held<const N: usize>(fields: &[Field]) -> [u32; N] {
+	let mut out = [0; N];
+	place(fields, 0, &mut out, 0);
+	out
+}
+
+/// How many places of `fields` hold nodes.
+pub const fn holding(fields: &[Field]) -> usize {
+	place(fields, 0, &mut [], 0)
+}
+
+// writes what `out` has room for, and counts on past it
+const fn place(fields: &[Field], base: usize, out: &mut [u32], mut n: usize) -> usize {
+	let mut i = 0;
+	while i < fields.len() {
+		let at = base + fields[i].at;
+		let how = match fields[i].ty {
+			Ty::Node => Some(holds::NODE),
+			Ty::OptNode => Some(holds::OPT_NODE),
+			Ty::List => Some(holds::LIST),
+			Ty::OptList => Some(holds::OPT_LIST),
+			Ty::Struct(inner) => {
+				n = place(inner, at, out, n);
+				None
+			}
+			_ => None,
+		};
+		if let Some(how) = how {
+			if n < out.len() {
+				out[n] = (at * 4) as u32 + how;
+			}
+			n += 1;
+		}
+		i += 1;
+	}
+	n
+}
 
 /// How the compiler spells a missing optional: the byte of a missing enum, and for a
 /// list or a string id, which word of the field is the tag and what it holds when missing; the
@@ -220,16 +275,19 @@ pub struct Tagged {
 
 // the tag is found in the `Some`, every word of which is written; of the `None` only that word
 // is read, the rest of it is never written
-fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values: &[u32]) -> Tagged {
-	let tag = (0..N).find(|&i| !values.contains(&some[i])).expect("a tag word");
-	for (i, value) in some
-		.iter()
-		.enumerate()
-		.filter(|&(i, _)| i != tag)
-		.map(|(_, &w)| w)
-		.enumerate()
-	{
-		assert_eq!(value, values[i], "the value's words follow their order");
+const fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values: &[u32]) -> Tagged {
+	let mut tag = 0;
+	while tag < N && contains(values, some[tag]) {
+		tag += 1;
+	}
+	assert!(tag < N, "a tag word");
+	let (mut word, mut value) = (0, 0);
+	while word < N {
+		if word != tag {
+			assert!(some[word] == values[value], "the value's words follow their order");
+			value += 1;
+		}
+		word += 1;
 	}
 	Tagged {
 		tag,
@@ -237,7 +295,15 @@ fn tagged<const N: usize>(some: [u32; N], missing: [MaybeUninit<u32>; N], values
 	}
 }
 
-pub fn missing() -> Missing {
+const fn contains(values: &[u32], word: u32) -> bool {
+	let mut i = 0;
+	while i < values.len() && values[i] != word {
+		i += 1;
+	}
+	i < values.len()
+}
+
+pub const fn missing() -> Missing {
 	unsafe {
 		Missing {
 			r#enum: std::mem::transmute::<Option<crate::ast::PropertyKind>, u8>(None),

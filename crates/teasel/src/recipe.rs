@@ -121,7 +121,7 @@ pub enum Rest {
 impl Op {
 	/// The operation as the layout tells it: its name, its key, its field and the rest.
 	#[rustfmt::skip]
-	pub fn told(&self) -> (&'static str, &'static str, Option<Slot>, Rest) {
+	pub const fn told(&self) -> (&'static str, &'static str, Option<Slot>, Rest) {
 		match *self {
 			Type(t) => ("type", t, None, Rest::Nothing),
 			Bare(t) => ("bare", t, None, Rest::Nothing),

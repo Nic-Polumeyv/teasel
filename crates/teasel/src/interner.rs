@@ -57,7 +57,7 @@ pub type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher
 pub struct StrId(u32);
 
 impl StrId {
-	pub fn at(index: u32) -> Self {
+	pub const fn at(index: u32) -> Self {
 		StrId(index)
 	}
 
