@@ -1,6 +1,6 @@
 use crate::handed::{Handed, Raw};
 use crate::interner::{Interner, StrId, Surrogate};
-use crate::layout::{Field, Ty, tag};
+use crate::layout::{Field, Ty, holds, tag};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
@@ -455,19 +455,20 @@ impl Ast {
 		}
 	}
 
-	/// The nodes the record at `base` holds at `places`, as `layout::held` gives them.
+	/// The nodes the record at `base` holds at `places`, as `layout::held` gives them. The reads
+	/// rely on `base` being a record of the type `places` was made from.
 	fn held(&self, base: *const u8, places: &[u32], out: &mut Vec<NodeId>) {
 		for &place in places {
 			let at = unsafe { base.add(place as usize >> 2) };
 			match place & 3 {
-				0 => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
-				1 => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
-				2 => out.extend(
+				holds::NODE => out.push(unsafe { at.cast::<NodeId>().read_unaligned() }),
+				holds::OPT_NODE => out.extend(unsafe { at.cast::<Option<NodeId>>().read_unaligned() }),
+				holds::LIST => out.extend(
 					self.list(unsafe { at.cast::<List>().read_unaligned() })
 						.iter()
 						.flatten(),
 				),
-				_ => {
+				holds::OPT_LIST.. => {
 					if let Some(list) = unsafe { at.cast::<Option<List>>().read_unaligned() } {
 						out.extend(self.list(list).iter().flatten());
 					}

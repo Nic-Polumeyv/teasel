@@ -209,9 +209,17 @@ macro_rules! kinds {
 }
 pub(crate) use kinds;
 
+/// How a place holds a node: the low two bits of each entry `held` gives.
+pub mod holds {
+	pub const NODE: u32 = 0;
+	pub const OPT_NODE: u32 = 1;
+	pub const LIST: u32 = 2;
+	pub const OPT_LIST: u32 = 3;
+}
+
 /// The places of `fields` that hold nodes, a record's inside them among them: each its byte
-/// offset times four, plus 0 for a node, 1 for an optional one, 2 for a list and 3 for an
-/// optional list. What a walk of the tree reads, without the names the fields carry.
+/// offset times four, plus how it holds them, one of `holds`. What a walk of the tree reads,
+/// without the names the fields carry.
 pub const fn held<const N: usize>(fields: &[Field]) -> [u32; N] {
 	let mut out = [0; N];
 	place(fields, 0, &mut out, 0);
@@ -228,20 +236,20 @@ const fn place(fields: &[Field], base: usize, out: &mut [u32], mut n: usize) -> 
 	let mut i = 0;
 	while i < fields.len() {
 		let at = base + fields[i].at;
-		let held = match fields[i].ty {
-			Ty::Node => 0,
-			Ty::OptNode => 1,
-			Ty::List => 2,
-			Ty::OptList => 3,
+		let how = match fields[i].ty {
+			Ty::Node => Some(holds::NODE),
+			Ty::OptNode => Some(holds::OPT_NODE),
+			Ty::List => Some(holds::LIST),
+			Ty::OptList => Some(holds::OPT_LIST),
 			Ty::Struct(inner) => {
 				n = place(inner, at, out, n);
-				4
+				None
 			}
-			_ => 4,
+			_ => None,
 		};
-		if held < 4 {
+		if let Some(how) = how {
 			if n < out.len() {
-				out[n] = (at * 4) as u32 + held;
+				out[n] = (at * 4) as u32 + how;
 			}
 			n += 1;
 		}
